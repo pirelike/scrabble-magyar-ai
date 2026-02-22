@@ -1,0 +1,481 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #1a1a2e;
+    color: #eee;
+    min-height: 100vh;
+    overflow-x: hidden;
+}
+
+.screen {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* Név és várakozó képernyő */
+.center-box {
+    background: #16213e;
+    padding: 40px;
+    border-radius: 12px;
+    text-align: center;
+    min-width: 350px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+}
+
+.center-box h1, .center-box h2 {
+    margin-bottom: 24px;
+    color: #e8b930;
+}
+
+input[type="text"], select {
+    padding: 10px 16px;
+    border: 2px solid #0f3460;
+    border-radius: 6px;
+    background: #1a1a2e;
+    color: #eee;
+    font-size: 16px;
+    width: 100%;
+    margin-bottom: 12px;
+}
+
+input[type="text"]:focus {
+    border-color: #e8b930;
+    outline: none;
+}
+
+button {
+    padding: 10px 24px;
+    border: none;
+    border-radius: 6px;
+    font-size: 16px;
+    cursor: pointer;
+    background: #e8b930;
+    color: #1a1a2e;
+    font-weight: bold;
+    transition: background 0.2s;
+}
+
+button:hover {
+    background: #f0c850;
+}
+
+button:disabled {
+    background: #555;
+    color: #888;
+    cursor: not-allowed;
+}
+
+button.danger {
+    background: #c0392b;
+    color: #fff;
+    margin-top: 12px;
+}
+
+button.danger:hover {
+    background: #e74c3c;
+}
+
+/* Lobby */
+.lobby-container {
+    max-width: 700px;
+    width: 100%;
+    padding: 30px;
+}
+
+.lobby-container h1 {
+    color: #e8b930;
+    margin-bottom: 24px;
+}
+
+.subtitle {
+    font-size: 0.5em;
+    color: #aaa;
+}
+
+.lobby-actions {
+    margin-bottom: 24px;
+}
+
+.create-room {
+    background: #16213e;
+    padding: 20px;
+    border-radius: 8px;
+}
+
+.create-room h3 {
+    margin-bottom: 12px;
+    color: #e8b930;
+}
+
+.create-room select {
+    margin-bottom: 12px;
+}
+
+.rooms-list h3 {
+    margin-bottom: 12px;
+    color: #e8b930;
+}
+
+.empty-msg {
+    color: #888;
+    font-style: italic;
+}
+
+.room-card {
+    background: #16213e;
+    padding: 16px;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.room-card .room-info {
+    flex: 1;
+}
+
+.room-card .room-name {
+    font-weight: bold;
+    font-size: 1.1em;
+}
+
+.room-card .room-details {
+    color: #aaa;
+    font-size: 0.9em;
+}
+
+/* Várakozó szoba */
+#waiting-players {
+    margin: 16px 0;
+    text-align: left;
+}
+
+.player-item {
+    padding: 8px 16px;
+    background: #1a1a2e;
+    border-radius: 4px;
+    margin-bottom: 4px;
+}
+
+.player-item.owner::after {
+    content: ' (tulajdonos)';
+    color: #e8b930;
+    font-size: 0.85em;
+}
+
+/* Játék layout */
+.game-layout {
+    display: flex;
+    gap: 20px;
+    padding: 20px;
+    min-height: 100vh;
+    align-items: flex-start;
+}
+
+.side-panel {
+    background: #16213e;
+    padding: 20px;
+    border-radius: 8px;
+    min-width: 200px;
+    position: sticky;
+    top: 20px;
+}
+
+.side-panel h2 {
+    color: #e8b930;
+    margin-bottom: 12px;
+    font-size: 1.1em;
+}
+
+#scoreboard .score-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 0;
+    border-bottom: 1px solid #0f3460;
+}
+
+#scoreboard .score-item.active {
+    color: #e8b930;
+    font-weight: bold;
+}
+
+.game-info {
+    margin-top: 16px;
+    font-size: 0.9em;
+    color: #aaa;
+}
+
+.game-info > div {
+    margin-bottom: 6px;
+}
+
+.last-action {
+    color: #7ec8e3 !important;
+    font-style: italic;
+    min-height: 20px;
+}
+
+.actions {
+    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.action-btn {
+    width: 100%;
+    padding: 8px;
+    font-size: 14px;
+}
+
+/* Tábla */
+.board-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.board {
+    display: grid;
+    grid-template-columns: repeat(15, 1fr);
+    grid-template-rows: repeat(15, 1fr);
+    gap: 1px;
+    background: #333;
+    border: 2px solid #555;
+    border-radius: 4px;
+    width: min(70vw, 600px);
+    height: min(70vw, 600px);
+}
+
+.cell {
+    background: #2d5a27;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: min(2.2vw, 14px);
+    font-weight: bold;
+    position: relative;
+    cursor: pointer;
+    user-select: none;
+    aspect-ratio: 1;
+}
+
+.cell.premium-DL {
+    background: #6bb3d9;
+    color: #1a1a2e;
+}
+
+.cell.premium-TL {
+    background: #1a6fb5;
+    color: #eee;
+}
+
+.cell.premium-DW {
+    background: #e8a0b0;
+    color: #1a1a2e;
+}
+
+.cell.premium-TW {
+    background: #c0392b;
+    color: #eee;
+}
+
+.cell.premium-ST {
+    background: #e8b930;
+    color: #1a1a2e;
+}
+
+.cell .premium-label {
+    font-size: min(1.5vw, 9px);
+    opacity: 0.8;
+    text-align: center;
+    line-height: 1.1;
+}
+
+.cell.has-tile {
+    background: #f5e6c8 !important;
+    color: #1a1a2e !important;
+    font-size: min(2.5vw, 16px);
+    border-radius: 2px;
+}
+
+.cell.has-tile .tile-value {
+    position: absolute;
+    bottom: 1px;
+    right: 2px;
+    font-size: min(1.3vw, 8px);
+    font-weight: normal;
+    color: #666;
+}
+
+.cell.placed-this-turn {
+    background: #ffd700 !important;
+    box-shadow: 0 0 4px rgba(255, 215, 0, 0.6);
+}
+
+.cell.drop-target {
+    background: #4a7a44 !important;
+    box-shadow: inset 0 0 6px rgba(255,255,255,0.3);
+}
+
+/* Betűtartó */
+.hand {
+    display: flex;
+    gap: 6px;
+    margin-top: 16px;
+    padding: 12px;
+    background: #16213e;
+    border-radius: 8px;
+    min-height: 60px;
+    align-items: center;
+}
+
+.hand-tile {
+    width: 48px;
+    height: 48px;
+    background: #f5e6c8;
+    color: #1a1a2e;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    font-weight: bold;
+    cursor: grab;
+    position: relative;
+    user-select: none;
+    border: 2px solid #d4c5a0;
+    transition: transform 0.1s;
+}
+
+.hand-tile:hover {
+    transform: translateY(-4px);
+}
+
+.hand-tile.selected {
+    border-color: #e8b930;
+    box-shadow: 0 0 8px rgba(232, 185, 48, 0.6);
+    transform: translateY(-6px);
+}
+
+.hand-tile.exchange-selected {
+    border-color: #c0392b;
+    box-shadow: 0 0 8px rgba(192, 57, 43, 0.6);
+}
+
+.hand-tile .tile-value {
+    position: absolute;
+    bottom: 2px;
+    right: 3px;
+    font-size: 10px;
+    font-weight: normal;
+    color: #888;
+}
+
+.hand-tile.blank-tile {
+    color: #888;
+    font-style: italic;
+}
+
+/* Joker dialog */
+.dialog {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 100;
+}
+
+.dialog-content {
+    background: #16213e;
+    padding: 30px;
+    border-radius: 12px;
+    max-width: 500px;
+    width: 90%;
+    text-align: center;
+}
+
+.dialog-content h3, .dialog-content h2 {
+    color: #e8b930;
+    margin-bottom: 16px;
+}
+
+.blank-letters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+}
+
+.blank-letters button {
+    width: 44px;
+    height: 44px;
+    font-size: 16px;
+    padding: 0;
+    background: #f5e6c8;
+    color: #1a1a2e;
+}
+
+.blank-letters button:hover {
+    background: #e8b930;
+}
+
+/* Játék vége */
+#final-scores .score-final {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid #0f3460;
+    font-size: 1.1em;
+}
+
+#final-scores .score-final.winner {
+    color: #e8b930;
+    font-weight: bold;
+    font-size: 1.3em;
+}
+
+#btn-back-lobby {
+    margin-top: 20px;
+}
+
+/* Reszponzív */
+@media (max-width: 768px) {
+    .game-layout {
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .side-panel {
+        width: 100%;
+        position: static;
+    }
+
+    .board {
+        width: 95vw;
+        height: 95vw;
+    }
+
+    .hand-tile {
+        width: 40px;
+        height: 40px;
+        font-size: 16px;
+    }
+}

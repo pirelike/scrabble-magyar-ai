@@ -1,0 +1,159 @@
+# Magyar Scrabble
+
+Webes magyar Scrabble játék online multiplayer támogatással. Flask + Socket.IO backend, vanilla JS frontend.
+
+## Funkciók
+
+- **1-4 játékos** — egyedül is játszható
+- **Online multiplayer** — lobby rendszer, szobák létrehozása/csatlakozás, automatikus Cloudflare tunnel publikus URL-lel
+- **Teljes magyar betűkészlet** — 100 zseton, beleértve a többkarakteres betűket (SZ, CS, GY, LY, NY, ZS, TY)
+- **Standard Scrabble pontozás** — DL, TL, DW, TW premium mezők, 50 pont bónusz mind a 7 zseton kirakásakor
+- **Szótár-ellenőrzés** — hunspell hu_HU szótár alapján, ragozott alakokat is felismeri
+- **Drag & drop és kattintásos** betűelhelyezés
+- **Joker** — üres zseton bármely betűként használható
+- **Betűcsere és passz**
+
+## Telepítés
+
+### Követelmények
+
+- Python 3.10+
+- Opcionális: `cloudflared` (Cloudflare tunnel-hez, publikus URL-hez)
+
+### Windows
+
+```powershell
+git clone <repo-url>
+cd scrabble
+
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+```
+
+A `pyenchant` csomag Windows-on automatikusan tartalmazza a hunspell backendet. A magyar szótár fájlok (`hu_HU.dic`, `hu_HU.aff`) a repó `dict/` mappájában vannak, amit a program automatikusan megtalál.
+
+### Linux
+
+```bash
+git clone <repo-url>
+cd scrabble
+
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+```
+
+A `dict/` mappában lévő szótár automatikusan működik. Alternatívaként a rendszer hunspell szótár is használható:
+
+```bash
+# Arch Linux
+sudo pacman -S hunspell hunspell-hu
+
+# Debian/Ubuntu
+sudo apt install hunspell hunspell-hu
+```
+
+## Futtatás
+
+### Windows
+
+```powershell
+# Csak helyi hálózat
+.venv\Scripts\python server.py --no-tunnel
+
+# Cloudflare tunnel-lel (publikus URL)
+.venv\Scripts\python server.py
+```
+
+### Linux
+
+```bash
+# Csak helyi hálózat
+.venv/bin/python3 server.py --no-tunnel
+
+# Cloudflare tunnel-lel (publikus URL)
+.venv/bin/python3 server.py
+```
+
+Böngészőben: http://localhost:5000
+
+### Cloudflare Tunnel (online multiplayer)
+
+A Cloudflare Tunnel lehetővé teszi, hogy az interneten keresztül is elérhető legyen a szerver — portnyitás, domain vagy statikus IP nélkül. Indításkor a szerver automatikusan generál egy ideiglenes publikus URL-t (pl. `https://xyz-abc.trycloudflare.com`), amit megosztva bárki csatlakozhat.
+
+#### Telepítés
+
+**Windows:**
+
+```powershell
+# Winget-tel
+winget install --id Cloudflare.cloudflared
+
+# Vagy Scoop-pal
+scoop install cloudflared
+
+# Vagy Chocolatey-vel
+choco install cloudflared
+```
+
+Alternatívaként a `cloudflared.exe` letölthető közvetlenül a [Cloudflare GitHub Releases](https://github.com/cloudflare/cloudflared/releases) oldalról — tedd a PATH-ba vagy a projekt mappájába.
+
+**Linux (Arch):**
+
+```bash
+sudo pacman -S cloudflared
+```
+
+**Linux (Debian/Ubuntu):**
+
+```bash
+curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflared.list
+sudo apt update && sudo apt install cloudflared
+```
+
+#### Használat
+
+Ha a `cloudflared` telepítve van, a szerver indításakor automatikusan elindul a tunnel:
+
+```
+==================================================
+  PUBLIKUS URL: https://xyz-abc.trycloudflare.com
+  Oszd meg ezt a linket a barátaiddal!
+==================================================
+```
+
+A tunnel a `--no-tunnel` kapcsolóval kikapcsolható. Regisztráció vagy Cloudflare fiók nem szükséges.
+
+## Projekt struktúra
+
+```
+server.py          — Flask + Socket.IO szerver, lobby/szoba kezelés, Cloudflare tunnel
+game.py            — Játéklogika (Game, Player osztályok), körök, pontozás
+board.py           — 15×15 tábla, premium mezők, szóelhelyezés validáció és pontozás
+dictionary.py      — Magyar szótár-ellenőrzés (pyenchant / hunspell)
+tiles.py           — Magyar betűkészlet (100 zseton), TileBag osztály
+dict/              — Beágyazott hu_HU hunspell szótár fájlok
+templates/
+  index.html       — Egyoldalas UI
+static/
+  app.js           — Kliens logika, drag & drop, Socket.IO kommunikáció
+  style.css        — Stílusok
+```
+
+## Játékszabályok
+
+- A játékosok felváltva raknak le betűket a 15×15-ös táblára
+- Az első szónak a középső (csillag) mezőt kell fednie, és legalább 2 betűből kell állnia
+- Minden további szónak csatlakoznia kell meglévő betűkhöz
+- A betűknek egy sorban vagy oszlopban, folytonosan kell elhelyezkedniük
+- A lerakott szavakat a hunspell magyar szótár ellenőrzi
+- Premium mezők: dupla/tripla betű (DL/TL) és dupla/tripla szó (DW/TW)
+- Ha valaki mind a 7 zsetonját lerakja, 50 pont bónuszt kap
+- A játék véget ér, ha valaki elfogyasztja az összes zsetonját (és a zsák üres), vagy ha mindenki 2× egymás után passzol
+
+## TODO
+
+- Challenge rendszer (szó megkérdőjelezése)
+- Chat
+- Spectator mód
+- Felhasználói fiókok / adatbázis
