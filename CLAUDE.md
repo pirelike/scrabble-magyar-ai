@@ -35,8 +35,19 @@ Böngészőben: http://localhost:5000
 - Betűcsere és passz
 - Szótár-ellenőrzés: pyenchant + beágyazott hu_HU szótár (cross-platform, Windows-kompatibilis)
 
+## Biztonság
+- `SECRET_KEY`: környezeti változóból (`SECRET_KEY`) vagy futásidőben generált véletlenszerű kulcs
+- CORS: `cors_allowed_origins=[]` — csak same-origin kérések engedélyezve
+- Rate limiting: minden Socket.IO event-re (konfigurálható küszöbök `_RATE_LIMITS` dict-ben)
+- Input validáció: játékos nevek, szoba nevek, tile placement adatok szerver oldali validálás
+- Board bounds check: a `board.py` és `server.py` is ellenőrzi a pozíciók érvényességét
+- Dictionary sanitizálás: szavak regex-szel validálva hunspell hívás előtt
+- Debug mód kikapcsolva, `allow_unsafe_werkzeug` eltávolítva
+- XSS védelem: frontend innerHTML helyett DOM API (textContent, createElement, addEventListener)
+
 ## Következő lépés
-- **Biztonság növelése**: A `server.py`-ban a `SECRET_KEY` hardkódolt, input validáció hiányos, nincs rate limiting, a Socket.IO CORS minden origint engedélyez (`cors_allowed_origins="*"`). Ezeket kell átnézni és megerősíteni, különösen mert a Cloudflare tunnel publikusan elérhetővé teszi a szervert.
+- Challenge rendszer (szó megkérdőjelezése más játékos által)
+- Chat funkció
 
 ## Ismert problémák / TODO
 - Nincs challenge rendszer (szó megkérdőjelezése más játékos által)

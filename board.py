@@ -87,8 +87,10 @@ class Board:
         if not tiles_placed:
             return False, [], "Legalább egy zsetont le kell rakni."
 
-        # Ellenőrizzük, hogy a mezők üresek
+        # Pozíció validálás és foglaltság ellenőrzés
         for r, c, letter, is_blank in tiles_placed:
+            if not (0 <= r < BOARD_SIZE and 0 <= c < BOARD_SIZE):
+                return False, [], f"A ({r},{c}) pozíció a táblán kívül van."
             if self.cells[r][c] is not None:
                 return False, [], f"A ({r},{c}) mező már foglalt."
 

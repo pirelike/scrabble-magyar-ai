@@ -84,26 +84,38 @@ socket.on('rooms_list', (rooms) => {
         container.innerHTML = '<p class="empty-msg">Nincs elérhető szoba.</p>';
         return;
     }
-    container.innerHTML = rooms.map(room => `
-        <div class="room-card">
-            <div class="room-info">
-                <div class="room-name">${escapeHtml(room.name)}</div>
-                <div class="room-details">
-                    ${room.players}/${room.max_players} játékos |
-                    Tulajdonos: ${escapeHtml(room.owner)} |
-                    ${room.started ? 'Folyamatban' : 'Várakozik'}
-                </div>
-            </div>
-            ${!room.started && room.players < room.max_players ?
-                `<button onclick="joinRoom('${room.id}')">Csatlakozás</button>` :
-                ''}
-        </div>
-    `).join('');
-});
+    container.innerHTML = '';
+    rooms.forEach(room => {
+        const card = document.createElement('div');
+        card.className = 'room-card';
 
-function joinRoom(roomId) {
-    socket.emit('join_room', { room_id: roomId });
-}
+        const info = document.createElement('div');
+        info.className = 'room-info';
+
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'room-name';
+        nameDiv.textContent = room.name;
+
+        const details = document.createElement('div');
+        details.className = 'room-details';
+        details.textContent = `${room.players}/${room.max_players} játékos | Tulajdonos: ${room.owner} | ${room.started ? 'Folyamatban' : 'Várakozik'}`;
+
+        info.appendChild(nameDiv);
+        info.appendChild(details);
+        card.appendChild(info);
+
+        if (!room.started && room.players < room.max_players) {
+            const btn = document.createElement('button');
+            btn.textContent = 'Csatlakozás';
+            btn.addEventListener('click', () => {
+                socket.emit('join_room', { room_id: room.id });
+            });
+            card.appendChild(btn);
+        }
+
+        container.appendChild(card);
+    });
+});
 
 // ===== Szoba =====
 socket.on('room_joined', (data) => {
@@ -402,21 +414,23 @@ function showBlankDialog(handIdx, row, col) {
     const dialog = document.getElementById('blank-dialog');
     const lettersContainer = document.getElementById('blank-letters');
 
-    lettersContainer.innerHTML = ALL_LETTERS.map(l =>
-        `<button onclick="selectBlankLetter('${l}', ${handIdx}, ${row}, ${col})">${l}</button>`
-    ).join('');
+    lettersContainer.innerHTML = '';
+    ALL_LETTERS.forEach(l => {
+        const btn = document.createElement('button');
+        btn.textContent = l;
+        btn.addEventListener('click', () => {
+            placedTiles.push({ row, col, letter: l, is_blank: true, handIdx });
+            selectedTileIdx = null;
+            dialog.classList.add('hidden');
+            renderBoard();
+            renderHand();
+            updateButtons();
+        });
+        lettersContainer.appendChild(btn);
+    });
 
     dialog.classList.remove('hidden');
 }
-
-window.selectBlankLetter = function(letter, handIdx, row, col) {
-    placedTiles.push({ row, col, letter, is_blank: true, handIdx });
-    selectedTileIdx = null;
-    document.getElementById('blank-dialog').classList.add('hidden');
-    renderBoard();
-    renderHand();
-    updateButtons();
-};
 
 // Akció gombok
 document.getElementById('btn-place').addEventListener('click', () => {

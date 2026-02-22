@@ -1,19 +1,22 @@
 import uuid
+import os
 import subprocess
 import shutil
 import threading
 import re
 import signal
 import sys
+import time
 import atexit
+from collections import defaultdict
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit, join_room, leave_room
 
 from game import Game
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'scrabble-secret-key'
-socketio = SocketIO(app, cors_allowed_origins="*")
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(32).hex())
+socketio = SocketIO(app, cors_allowed_origins=[])
 
 # Aktív szobák: {room_id: {game, owner, name, max_players}}
 rooms = {}
@@ -21,6 +24,72 @@ rooms = {}
 player_rooms = {}
 # Játékos nevek: {sid: name}
 player_names = {}
+
+# --- Rate limiting ---
+# {sid: {event_name: [timestamp, ...]}}
+_rate_limits = defaultdict(lambda: defaultdict(list))
+# Események limitjei: (max_kérés, időablak_mp)
+_RATE_LIMITS = {
+    'set_name': (5, 10),
+    'create_room': (3, 30),
+    'join_room': (5, 10),
+    'place_tiles': (10, 10),
+    'exchange_tiles': (5, 10),
+    'pass_turn': (5, 10),
+    'get_rooms': (10, 5),
+}
+
+
+def _check_rate_limit(sid, event):
+    """Ellenőrzi, hogy a játékos túllépte-e a rate limitet. True = engedélyezve."""
+    if event not in _RATE_LIMITS:
+        return True
+    max_requests, window = _RATE_LIMITS[event]
+    now = time.time()
+    timestamps = _rate_limits[sid][event]
+    # Régi bejegyzések törlése
+    _rate_limits[sid][event] = [t for t in timestamps if now - t < window]
+    if len(_rate_limits[sid][event]) >= max_requests:
+        return False
+    _rate_limits[sid][event].append(now)
+    return True
+
+
+# --- Input validáció ---
+# Megengedett karakterek: betűk (magyar ékezetesek is), számok, szóköz, néhány írásjel
+_VALID_NAME_RE = re.compile(r'^[\w\sáéíóöőúüűÁÉÍÓÖŐÚÜŰ._-]{1,20}$', re.UNICODE)
+_VALID_ROOM_NAME_RE = re.compile(r'^[\w\sáéíóöőúüűÁÉÍÓÖŐÚÜŰ._!?-]{1,30}$', re.UNICODE)
+
+# Érvényes magyar Scrabble betűk
+_VALID_LETTERS = frozenset([
+    'A', 'Á', 'B', 'C', 'CS', 'D', 'E', 'É', 'F', 'G', 'GY', 'H', 'I', 'Í',
+    'J', 'K', 'L', 'LY', 'M', 'N', 'NY', 'O', 'Ó', 'Ö', 'Ő', 'P', 'R', 'S',
+    'SZ', 'T', 'TY', 'U', 'Ú', 'Ü', 'Ű', 'V', 'Z', 'ZS',
+])
+
+
+def _sanitize_name(name, max_len=20):
+    """Játékos név validálása és tisztítása."""
+    if not isinstance(name, str):
+        return None
+    name = name.strip()
+    if not name or len(name) > max_len:
+        return None
+    if not _VALID_NAME_RE.match(name):
+        return None
+    return name
+
+
+def _sanitize_room_name(name, max_len=30):
+    """Szoba név validálása és tisztítása."""
+    if not isinstance(name, str):
+        return None
+    name = name.strip()
+    if not name or len(name) > max_len:
+        return None
+    if not _VALID_ROOM_NAME_RE.match(name):
+        return None
+    return name
 
 
 @app.route('/')
@@ -73,25 +142,50 @@ def handle_disconnect():
     if sid in player_names:
         del player_names[sid]
 
+    # Rate limit bejegyzések törlése
+    if sid in _rate_limits:
+        del _rate_limits[sid]
+
     # Lobby frissítés
     emit('rooms_list', get_rooms_list(), broadcast=True)
 
 
 @socketio.on('set_name')
 def handle_set_name(data):
-    player_names[request.sid] = data.get('name', 'Névtelen')
+    sid = request.sid
+    if not _check_rate_limit(sid, 'set_name'):
+        emit('error', {'message': 'Túl sok kérés, várj egy kicsit.'})
+        return
+    if not isinstance(data, dict):
+        return
+    name = _sanitize_name(data.get('name', ''))
+    if not name:
+        name = 'Névtelen'
+    player_names[sid] = name
 
 
 @socketio.on('get_rooms')
 def handle_get_rooms():
+    if not _check_rate_limit(request.sid, 'get_rooms'):
+        return
     emit('rooms_list', get_rooms_list())
 
 
 @socketio.on('create_room')
 def handle_create_room(data):
     sid = request.sid
-    name = data.get('name', 'Szoba')
-    max_players = min(max(int(data.get('max_players', 4)), 2), 4)
+    if not _check_rate_limit(sid, 'create_room'):
+        emit('error', {'message': 'Túl sok szoba létrehozás, várj egy kicsit.'})
+        return
+    if not isinstance(data, dict):
+        return
+    name = _sanitize_room_name(data.get('name', ''))
+    if not name:
+        name = 'Szoba'
+    try:
+        max_players = min(max(int(data.get('max_players', 4)), 2), 4)
+    except (ValueError, TypeError):
+        max_players = 4
     player_name = player_names.get(sid, 'Névtelen')
 
     room_id = str(uuid.uuid4())[:8]
@@ -121,7 +215,15 @@ def handle_create_room(data):
 @socketio.on('join_room')
 def handle_join_room(data):
     sid = request.sid
+    if not _check_rate_limit(sid, 'join_room'):
+        emit('error', {'message': 'Túl sok kérés, várj egy kicsit.'})
+        return
+    if not isinstance(data, dict):
+        return
     room_id = data.get('room_id')
+    if not isinstance(room_id, str) or len(room_id) > 8:
+        emit('error', {'message': 'Érvénytelen szoba azonosító.'})
+        return
     player_name = player_names.get(sid, 'Névtelen')
 
     if room_id not in rooms:
@@ -215,22 +317,51 @@ def handle_start_game():
 @socketio.on('place_tiles')
 def handle_place_tiles(data):
     sid = request.sid
+    if not _check_rate_limit(sid, 'place_tiles'):
+        emit('error', {'message': 'Túl sok kérés, várj egy kicsit.'})
+        return
     room_id = player_rooms.get(sid)
     if not room_id or room_id not in rooms:
+        return
+    if not isinstance(data, dict):
         return
 
     game = rooms[room_id]['game']
     tiles = data.get('tiles', [])
 
-    # Konvertáljuk a tiles listát
+    if not isinstance(tiles, list) or len(tiles) == 0 or len(tiles) > 7:
+        emit('action_result', {'success': False, 'message': 'Érvénytelen lerakás.'})
+        return
+
+    # Konvertáljuk és validáljuk a tiles listát
     tiles_placed = []
     for t in tiles:
-        tiles_placed.append((
-            int(t['row']),
-            int(t['col']),
-            t['letter'],
-            bool(t.get('is_blank', False)),
-        ))
+        if not isinstance(t, dict):
+            emit('action_result', {'success': False, 'message': 'Érvénytelen adat.'})
+            return
+        try:
+            row = int(t['row'])
+            col = int(t['col'])
+        except (KeyError, ValueError, TypeError):
+            emit('action_result', {'success': False, 'message': 'Érvénytelen pozíció.'})
+            return
+        if not (0 <= row <= 14 and 0 <= col <= 14):
+            emit('action_result', {'success': False, 'message': 'Pozíció a táblán kívül.'})
+            return
+        letter = t.get('letter', '')
+        is_blank = bool(t.get('is_blank', False))
+        if not isinstance(letter, str):
+            emit('action_result', {'success': False, 'message': 'Érvénytelen betű.'})
+            return
+        if is_blank:
+            if letter not in _VALID_LETTERS:
+                emit('action_result', {'success': False, 'message': f'Érvénytelen joker betű: {letter}'})
+                return
+        else:
+            if letter not in _VALID_LETTERS:
+                emit('action_result', {'success': False, 'message': f'Érvénytelen betű: {letter}'})
+                return
+        tiles_placed.append((row, col, letter, is_blank))
 
     success, msg, score = game.place_tiles(sid, tiles_placed)
 
@@ -245,12 +376,26 @@ def handle_place_tiles(data):
 @socketio.on('exchange_tiles')
 def handle_exchange_tiles(data):
     sid = request.sid
+    if not _check_rate_limit(sid, 'exchange_tiles'):
+        emit('error', {'message': 'Túl sok kérés, várj egy kicsit.'})
+        return
     room_id = player_rooms.get(sid)
     if not room_id or room_id not in rooms:
+        return
+    if not isinstance(data, dict):
         return
 
     game = rooms[room_id]['game']
     indices = data.get('indices', [])
+    if not isinstance(indices, list) or len(indices) > 7:
+        emit('action_result', {'success': False, 'message': 'Érvénytelen csere.'})
+        return
+    # Validáljuk az indexeket
+    try:
+        indices = [int(i) for i in indices]
+    except (ValueError, TypeError):
+        emit('action_result', {'success': False, 'message': 'Érvénytelen index.'})
+        return
 
     success, msg = game.exchange_tiles(sid, indices)
 
@@ -265,6 +410,9 @@ def handle_exchange_tiles(data):
 @socketio.on('pass_turn')
 def handle_pass_turn():
     sid = request.sid
+    if not _check_rate_limit(sid, 'pass_turn'):
+        emit('error', {'message': 'Túl sok kérés, várj egy kicsit.'})
+        return
     room_id = player_rooms.get(sid)
     if not room_id or room_id not in rooms:
         return
@@ -331,5 +479,5 @@ if __name__ == '__main__':
     if use_tunnel:
         start_tunnel(port)
 
-    socketio.run(app, host='0.0.0.0', port=port, debug=True,
-                 allow_unsafe_werkzeug=True, use_reloader=False)
+    socketio.run(app, host='0.0.0.0', port=port, debug=False,
+                 use_reloader=False)
