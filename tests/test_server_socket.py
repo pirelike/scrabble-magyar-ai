@@ -106,12 +106,13 @@ class TestGetRooms:
 
 
 class TestCreateRoom:
-    def test_guest_cannot_create_room(self, guest_client):
+    def test_guest_can_create_room(self, guest_client):
         guest_client.emit('create_room', {'name': 'TestRoom', 'max_players': 4})
         received = guest_client.get_received()
-        error_events = [r for r in received if r['name'] == 'error']
-        assert len(error_events) >= 1
-        assert 'regisztrált' in error_events[0]['args'][0]['message']
+        join_events = [r for r in received if r['name'] == 'room_joined']
+        assert len(join_events) >= 1
+        assert join_events[0]['args'][0]['room_name'] == 'TestRoom'
+        assert join_events[0]['args'][0]['is_owner'] is True
 
     def test_registered_can_create_room(self, registered_client):
         registered_client.emit('create_room', {'name': 'TestRoom', 'max_players': 4})

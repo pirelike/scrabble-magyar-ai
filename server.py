@@ -432,12 +432,6 @@ def handle_create_room(data):
     if not isinstance(data, dict):
         return
 
-    # Csak regisztrált felhasználó hozhat létre lobbyt
-    auth = player_auth.get(sid, {})
-    if auth.get('is_guest', True):
-        emit('error', {'message': 'Csak regisztrált felhasználók hozhatnak létre szobát.'})
-        return
-
     name = _sanitize_room_name(data.get('name', ''))
     if not name:
         name = 'Szoba'

@@ -269,13 +269,8 @@ function enterLobby(displayName) {
     // Lobby UI beállítás
     document.getElementById('lobby-user-name').textContent = displayName + (isGuest ? ' (vendég)' : '');
 
-    // Szoba létrehozás szekció: csak regisztrált felhasználóknak
-    const createSection = document.getElementById('create-room-section');
-    if (isGuest) {
-        createSection.classList.add('hidden');
-    } else {
-        createSection.classList.remove('hidden');
-    }
+    // Szoba létrehozás szekció megjelenítése
+    document.getElementById('create-room-section').classList.remove('hidden');
 
     showScreen('lobby-screen');
     socket.emit('get_rooms');
