@@ -130,6 +130,11 @@ document.getElementById('btn-reg-send-code').addEventListener('click', async () 
             regEmail = email;
             document.getElementById('reg-step-1').classList.add('hidden');
             document.getElementById('reg-step-2').classList.remove('hidden');
+            if (data.dev_code) {
+                document.getElementById('reg-code').value = data.dev_code;
+                const info = document.querySelector('#reg-step-2 .step-info');
+                info.textContent = 'Fejlesztői mód: a kód automatikusan kitöltve.';
+            }
         } else {
             showAuthError(errorEl, data.message);
         }
@@ -154,6 +159,9 @@ document.getElementById('btn-reg-resend').addEventListener('click', async () => 
             errorEl.classList.remove('hidden');
             errorEl.style.color = '#4CAF50';
             setTimeout(() => { errorEl.style.color = ''; }, 3000);
+            if (data.dev_code) {
+                document.getElementById('reg-code').value = data.dev_code;
+            }
         } else {
             showAuthError(errorEl, data.message);
         }
@@ -234,7 +242,12 @@ document.getElementById('btn-reg-finish').addEventListener('click', async () => 
 // --- Vendég belépés ---
 document.getElementById('btn-guest-enter').addEventListener('click', () => {
     const name = document.getElementById('guest-name').value.trim();
-    if (!name) return;
+    const errorEl = document.getElementById('guest-error');
+    if (errorEl) errorEl.classList.add('hidden');
+    if (!name) {
+        if (errorEl) showAuthError(errorEl, 'Add meg a neved a belépéshez.');
+        return;
+    }
     currentUser = null;
     isGuest = true;
     enterLobby(name);

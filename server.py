@@ -21,7 +21,7 @@ from flask import Flask, render_template, request, jsonify, make_response
 from flask_socketio import SocketIO, emit, join_room, leave_room
 
 from game import Game
-from config import AUTH_RATE_LIMITS
+from config import AUTH_RATE_LIMITS, SMTP_CONFIGURED
 from auth import init_db, get_user_by_email, create_user, verify_password, \
     create_verification_code, verify_code, create_session, validate_session, \
     delete_session, cleanup_expired
@@ -181,7 +181,11 @@ def auth_request_code():
     code = create_verification_code(email)
     send_verification_email(email, code)
 
-    return jsonify({'success': True, 'message': 'Verifikációs kód elküldve.'})
+    response = {'success': True, 'message': 'Verifikációs kód elküldve.'}
+    if not SMTP_CONFIGURED:
+        response['dev_code'] = code
+        response['message'] = 'Fejlesztői mód: SMTP nincs konfigurálva.'
+    return jsonify(response)
 
 
 @app.route('/api/auth/verify-code', methods=['POST'])
