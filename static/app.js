@@ -327,7 +327,7 @@ document.getElementById('btn-create-room').addEventListener('click', () => {
 document.getElementById('btn-join-by-code').addEventListener('click', () => {
     const code = document.getElementById('join-code-input').value.trim();
     if (!code || code.length !== 6) {
-        showMessage('6 számjegyű kódot adj meg.');
+        showMessage('6 számjegyű kódot adj meg.', true);
         return;
     }
     socket.emit('join_room', { code });
@@ -410,7 +410,7 @@ document.getElementById('btn-copy-code').addEventListener('click', () => {
             btn.textContent = 'Másolva!';
             setTimeout(() => { btn.textContent = 'Másolás'; }, 2000);
         }).catch(() => {
-            showMessage('Másolás sikertelen.');
+            showMessage('Másolás sikertelen.', true);
         });
     }
 });
@@ -480,7 +480,7 @@ socket.on('game_state', (state) => {
 
 socket.on('action_result', (data) => {
     if (!data.success) {
-        showMessage(data.message);
+        showMessage(data.message, true);
     } else {
         placedTiles = [];
         selectedTileIdx = null;
@@ -490,11 +490,52 @@ socket.on('action_result', (data) => {
 });
 
 socket.on('error', (data) => {
-    showMessage(data.message);
+    showMessage(data.message, true);
 });
 
-function showMessage(msg) {
-    alert(msg);
+function showMessage(msg, isError = false) {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = 'toast' + (isError ? ' toast-error' : '');
+    toast.textContent = msg;
+    container.appendChild(toast);
+
+    // Auto-eltüntetés
+    setTimeout(() => {
+        toast.classList.add('toast-out');
+        toast.addEventListener('animationend', () => toast.remove());
+    }, 3000);
+
+    // Kattintásra eltüntetés
+    toast.addEventListener('click', () => {
+        toast.classList.add('toast-out');
+        toast.addEventListener('animationend', () => toast.remove());
+    });
+}
+
+// Touch-eszköz felismerés
+const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+
+// Touch drag állapot
+let touchDragTile = null;
+let touchDragGhost = null;
+
+function createDragGhost(tile, x, y) {
+    const ghost = document.createElement('div');
+    ghost.className = 'hand-tile drag-ghost';
+    ghost.style.cssText = `position:fixed;left:${x - 22}px;top:${y - 22}px;z-index:150;pointer-events:none;opacity:0.85;`;
+    ghost.innerHTML = tile.innerHTML;
+    document.body.appendChild(ghost);
+    return ghost;
+}
+
+function removeDragGhost() {
+    if (touchDragGhost) {
+        touchDragGhost.remove();
+        touchDragGhost = null;
+    }
+    touchDragTile = null;
+    document.querySelectorAll('.cell.drop-target').forEach(c => c.classList.remove('drop-target'));
 }
 
 // Tábla felépítése
@@ -536,6 +577,7 @@ function buildBoard() {
 function renderBoard() {
     if (!gameState) return;
     const cells = document.querySelectorAll('.cell');
+    const hasSelected = selectedTileIdx !== null;
     cells.forEach(cell => {
         const r = parseInt(cell.dataset.row);
         const c = parseInt(cell.dataset.col);
@@ -544,7 +586,7 @@ function renderBoard() {
         // Lerakott zseton ebben a körben?
         const placed = placedTiles.find(t => t.row === r && t.col === c);
 
-        cell.classList.remove('has-tile', 'placed-this-turn');
+        cell.classList.remove('has-tile', 'placed-this-turn', 'can-place');
 
         if (placed) {
             cell.classList.add('has-tile', 'placed-this-turn');
@@ -553,6 +595,10 @@ function renderBoard() {
             cell.classList.add('has-tile');
             cell.innerHTML = `${boardCell.letter}<span class="tile-value">${boardCell.is_blank ? 0 : (TILE_VALUES[boardCell.letter] || 0)}</span>`;
         } else {
+            // Üres cella - jelöljük ha van kiválasztott betű
+            if (hasSelected) {
+                cell.classList.add('can-place');
+            }
             const premium = PREMIUM_MAP[`${r},${c}`];
             if (premium) {
                 cell.innerHTML = `<span class="premium-label">${PREMIUM_LABELS[premium]}</span>`;
@@ -592,11 +638,65 @@ function renderHand() {
             el.classList.add('exchange-selected');
         }
 
-        el.draggable = true;
+        el.draggable = !isTouchDevice;
         el.addEventListener('dragstart', (e) => {
             e.dataTransfer.setData('text/plain', idx.toString());
             selectedTileIdx = idx;
         });
+
+        // Touch drag support
+        if (isTouchDevice) {
+            let touchStartTimer = null;
+            let touchMoved = false;
+
+            el.addEventListener('touchstart', (e) => {
+                touchMoved = false;
+                touchStartTimer = setTimeout(() => {
+                    // Hosszú érintés: drag indítás
+                    e.preventDefault();
+                    touchDragTile = idx;
+                    selectedTileIdx = idx;
+                    const touch = e.touches[0];
+                    touchDragGhost = createDragGhost(el, touch.clientX, touch.clientY);
+                    el.classList.add('selected');
+                }, 200);
+            }, { passive: false });
+
+            el.addEventListener('touchmove', (e) => {
+                touchMoved = true;
+                if (touchDragTile !== null) {
+                    e.preventDefault();
+                    const touch = e.touches[0];
+                    if (touchDragGhost) {
+                        touchDragGhost.style.left = (touch.clientX - 22) + 'px';
+                        touchDragGhost.style.top = (touch.clientY - 22) + 'px';
+                    }
+                    // Highlight cella alatta
+                    const targetEl = document.elementFromPoint(touch.clientX, touch.clientY);
+                    document.querySelectorAll('.cell.drop-target').forEach(c => c.classList.remove('drop-target'));
+                    if (targetEl && targetEl.classList.contains('cell')) {
+                        targetEl.classList.add('drop-target');
+                    }
+                }
+            }, { passive: false });
+
+            el.addEventListener('touchend', (e) => {
+                clearTimeout(touchStartTimer);
+                if (touchDragTile !== null && touchMoved) {
+                    // Drop a célcellára
+                    const touch = e.changedTouches[0];
+                    const targetEl = document.elementFromPoint(touch.clientX, touch.clientY);
+                    if (targetEl && targetEl.classList.contains('cell')) {
+                        const r = parseInt(targetEl.dataset.row);
+                        const c = parseInt(targetEl.dataset.col);
+                        placeTileOnBoard(touchDragTile, r, c);
+                    }
+                    removeDragGhost();
+                    return;
+                }
+                removeDragGhost();
+            });
+        }
 
         el.addEventListener('click', () => {
             if (exchangeMode) {
@@ -752,7 +852,7 @@ document.getElementById('btn-exchange').addEventListener('click', () => {
         renderBoard();
         renderHand();
         updateButtons();
-        showMessage('Kattints a cserélendő zsetonokra, majd nyomd meg újra a Csere gombot.');
+        showMessage('Jelöld ki a cserélendő zsetonokat, majd nyomd meg újra a Csere gombot.');
     }
 });
 

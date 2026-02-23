@@ -481,6 +481,11 @@ button.link-btn:hover {
     box-shadow: inset 0 0 6px rgba(255,255,255,0.3);
 }
 
+/* Kiválasztott betű indikátor - üres cellák villogása */
+.cell.can-place {
+    box-shadow: inset 0 0 4px rgba(232, 185, 48, 0.3);
+}
+
 /* Betűtartó */
 .hand {
     display: flex;
@@ -538,6 +543,12 @@ button.link-btn:hover {
 .hand-tile.blank-tile {
     color: #888;
     font-style: italic;
+}
+
+.hand-tile.drag-ghost {
+    box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+    border-color: #e8b930;
+    transform: scale(1.1);
 }
 
 /* Joker dialog */
@@ -607,37 +618,352 @@ button.link-btn:hover {
     margin-top: 20px;
 }
 
+/* Toast értesítések */
+#toast-container {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+    width: 90%;
+    max-width: 400px;
+}
+
+.toast {
+    background: #16213e;
+    color: #eee;
+    padding: 14px 20px;
+    border-radius: 8px;
+    border-left: 4px solid #e8b930;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    font-size: 15px;
+    pointer-events: auto;
+    animation: toastIn 0.3s ease-out;
+    word-break: break-word;
+}
+
+.toast.toast-error {
+    border-left-color: #e74c3c;
+}
+
+.toast.toast-out {
+    animation: toastOut 0.3s ease-in forwards;
+}
+
+@keyframes toastIn {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes toastOut {
+    from { opacity: 1; transform: translateY(0); }
+    to { opacity: 0; transform: translateY(-20px); }
+}
+
+/* Touch-friendly tap feedback */
+button:active:not(:disabled) {
+    transform: scale(0.96);
+    opacity: 0.85;
+}
+
+.hand-tile:active {
+    transform: scale(0.93) !important;
+}
+
+.cell:active {
+    opacity: 0.7;
+}
+
+/* Touch-specifikus */
+.hand-tile, .cell, button {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.hand-tile {
+    touch-action: none;
+}
+
+.cell {
+    touch-action: manipulation;
+}
+
 /* Reszponzív */
 @media (max-width: 768px) {
     .game-layout {
-        flex-direction: column;
+        flex-direction: column-reverse;
         align-items: center;
+        padding: 8px;
+        gap: 8px;
+        min-height: auto;
     }
 
     .side-panel {
         width: 100%;
-        position: static;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        top: auto;
+        border-radius: 12px 12px 0 0;
+        padding: 10px 16px;
+        z-index: 50;
+        box-shadow: 0 -4px 16px rgba(0,0,0,0.3);
+        max-height: 40vh;
+        overflow-y: auto;
+    }
+
+    .side-panel h2 {
+        font-size: 1em;
+        margin-bottom: 6px;
+    }
+
+    .side-panel .actions {
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 10px;
+    }
+
+    .side-panel .action-btn {
+        flex: 1 1 calc(50% - 6px);
+        min-width: 0;
+        padding: 12px 6px;
+        font-size: 14px;
+        min-height: 44px;
+    }
+
+    #scoreboard .score-item {
+        padding: 4px 0;
+        font-size: 0.9em;
+    }
+
+    .game-info {
+        margin-top: 8px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 12px;
+        font-size: 0.85em;
+    }
+
+    .game-info > div {
+        margin-bottom: 0;
+    }
+
+    .board-area {
+        padding-bottom: 8px;
     }
 
     .board {
-        width: 95vw;
-        height: 95vw;
+        width: min(95vw, calc(100vh - 260px));
+        height: min(95vw, calc(100vh - 260px));
+    }
+
+    .cell {
+        font-size: min(5vw, 14px);
+    }
+
+    .cell.has-tile {
+        font-size: min(5.5vw, 16px);
+    }
+
+    .cell .premium-label {
+        font-size: min(2.2vw, 8px);
+        line-height: 1;
+    }
+
+    .cell.has-tile .tile-value {
+        font-size: min(2vw, 8px);
+    }
+
+    .hand {
+        gap: 5px;
+        margin-top: 8px;
+        padding: 8px 10px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        justify-content: center;
+        flex-wrap: wrap;
     }
 
     .hand-tile {
-        width: 40px;
-        height: 40px;
-        font-size: 16px;
+        width: 44px;
+        height: 44px;
+        font-size: 17px;
+        flex-shrink: 0;
+    }
+
+    .hand-tile:hover {
+        transform: none;
+    }
+
+    .hand-tile.selected {
+        transform: translateY(-4px);
+        border-width: 3px;
     }
 
     .auth-box {
-        min-width: 320px;
-        max-width: 95vw;
-        padding: 24px;
+        min-width: 0;
+        width: 95vw;
+        max-width: 440px;
+        padding: 24px 20px;
+    }
+
+    .center-box {
+        min-width: 0;
+        width: 95vw;
+        max-width: 440px;
+        padding: 24px 20px;
+    }
+
+    .lobby-container {
+        padding: 16px;
     }
 
     .lobby-header {
         flex-direction: column;
         align-items: flex-start;
+    }
+
+    .lobby-header h1 {
+        font-size: 1.4em;
+    }
+
+    .room-card {
+        flex-direction: column;
+        gap: 10px;
+        align-items: stretch;
+    }
+
+    .room-card button {
+        min-height: 44px;
+    }
+
+    .code-input-row {
+        flex-direction: column;
+    }
+
+    .code-input-row button {
+        min-height: 44px;
+    }
+
+    button {
+        min-height: 44px;
+        font-size: 16px;
+    }
+
+    button.small-btn {
+        min-height: 36px;
+        font-size: 14px;
+    }
+
+    button.link-btn {
+        min-height: 36px;
+    }
+
+    .dialog-content {
+        padding: 20px;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+
+    .blank-letters {
+        gap: 5px;
+    }
+
+    .blank-letters button {
+        width: 44px;
+        height: 44px;
+        font-size: 15px;
+    }
+
+    input[type="text"], input[type="email"], input[type="password"], select {
+        padding: 12px 16px;
+        font-size: 16px;
+        min-height: 44px;
+    }
+
+    .auth-tab {
+        padding: 12px 6px;
+        font-size: 14px;
+    }
+
+    /* Játék vége dialog mobilon */
+    #game-over-dialog .dialog-content {
+        width: 95%;
+    }
+
+    /* Side panel toggle gomb */
+    .side-panel-toggle {
+        display: block;
+    }
+}
+
+/* Kis telefonok (< 375px) */
+@media (max-width: 374px) {
+    .board {
+        width: 98vw;
+        height: 98vw;
+    }
+
+    .hand-tile {
+        width: 40px;
+        height: 40px;
+        font-size: 15px;
+    }
+
+    .blank-letters button {
+        width: 38px;
+        height: 38px;
+        font-size: 14px;
+    }
+
+    .auth-box, .center-box {
+        padding: 16px 12px;
+    }
+
+    .side-panel .action-btn {
+        font-size: 13px;
+        padding: 10px 4px;
+    }
+}
+
+/* Tablet tájkép */
+@media (min-width: 769px) and (max-width: 1024px) {
+    .board {
+        width: min(60vw, 550px);
+        height: min(60vw, 550px);
+    }
+}
+
+/* Landscape kis kijelzőn */
+@media (max-width: 768px) and (orientation: landscape) {
+    .game-layout {
+        flex-direction: row;
+        align-items: flex-start;
+    }
+
+    .side-panel {
+        position: static;
+        width: 200px;
+        min-width: 180px;
+        max-height: none;
+        border-radius: 8px;
+        box-shadow: none;
+    }
+
+    .board {
+        width: min(55vh, 400px);
+        height: min(55vh, 400px);
+    }
+
+    .hand {
+        flex-wrap: nowrap;
+        overflow-x: auto;
     }
 }
