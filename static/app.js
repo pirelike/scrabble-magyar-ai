@@ -672,10 +672,11 @@ function renderHand() {
                         touchDragGhost.style.top = (touch.clientY - 22) + 'px';
                     }
                     // Highlight cella alatta
-                    const targetEl = document.elementFromPoint(touch.clientX, touch.clientY);
+                    const rawEl = document.elementFromPoint(touch.clientX, touch.clientY);
+                    const targetCell = rawEl && rawEl.closest('.cell');
                     document.querySelectorAll('.cell.drop-target').forEach(c => c.classList.remove('drop-target'));
-                    if (targetEl && targetEl.classList.contains('cell')) {
-                        targetEl.classList.add('drop-target');
+                    if (targetCell) {
+                        targetCell.classList.add('drop-target');
                     }
                 }
             }, { passive: false });
@@ -685,10 +686,11 @@ function renderHand() {
                 if (touchDragTile !== null && touchMoved) {
                     // Drop a célcellára
                     const touch = e.changedTouches[0];
-                    const targetEl = document.elementFromPoint(touch.clientX, touch.clientY);
-                    if (targetEl && targetEl.classList.contains('cell')) {
-                        const r = parseInt(targetEl.dataset.row);
-                        const c = parseInt(targetEl.dataset.col);
+                    const rawEl = document.elementFromPoint(touch.clientX, touch.clientY);
+                    const targetCell = rawEl && rawEl.closest('.cell');
+                    if (targetCell) {
+                        const r = parseInt(targetCell.dataset.row);
+                        const c = parseInt(targetCell.dataset.col);
                         placeTileOnBoard(touchDragTile, r, c);
                     }
                     removeDragGhost();

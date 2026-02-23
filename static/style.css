@@ -448,6 +448,11 @@ button.link-btn:hover {
     color: #1a1a2e;
 }
 
+.cell .premium-label,
+.cell .tile-value {
+    pointer-events: none;
+}
+
 .cell .premium-label {
     font-size: min(1.5vw, 9px);
     opacity: 0.8;
@@ -695,12 +700,18 @@ button:active:not(:disabled) {
 
 /* Reszponzív */
 @media (max-width: 768px) {
+    #game-screen.screen {
+        min-height: 0;
+        align-items: flex-start;
+    }
+
     .game-layout {
-        flex-direction: column-reverse;
+        flex-direction: column;
         align-items: center;
-        padding: 8px;
+        padding: 8px 8px 0;
         gap: 8px;
         min-height: auto;
+        padding-bottom: 160px;
     }
 
     .side-panel {
@@ -714,7 +725,7 @@ button:active:not(:disabled) {
         padding: 10px 16px;
         z-index: 50;
         box-shadow: 0 -4px 16px rgba(0,0,0,0.3);
-        max-height: 40vh;
+        max-height: 35vh;
         overflow-y: auto;
     }
 
@@ -756,12 +767,18 @@ button:active:not(:disabled) {
     }
 
     .board-area {
-        padding-bottom: 8px;
+        padding-bottom: 0;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
     }
 
     .board {
-        width: min(95vw, calc(100vh - 260px));
-        height: min(95vw, calc(100vh - 260px));
+        --board-size: min(92vw, calc(100vh - 300px));
+        width: var(--board-size);
+        height: var(--board-size);
+        max-width: 100%;
     }
 
     .cell {
@@ -789,6 +806,8 @@ button:active:not(:disabled) {
         -webkit-overflow-scrolling: touch;
         justify-content: center;
         flex-wrap: wrap;
+        width: 100%;
+        max-width: var(--board-size, 92vw);
     }
 
     .hand-tile {
@@ -946,6 +965,7 @@ button:active:not(:disabled) {
     .game-layout {
         flex-direction: row;
         align-items: flex-start;
+        padding-bottom: 8px;
     }
 
     .side-panel {
@@ -958,8 +978,9 @@ button:active:not(:disabled) {
     }
 
     .board {
-        width: min(55vh, 400px);
-        height: min(55vh, 400px);
+        --board-size: min(70vh, 400px);
+        width: var(--board-size);
+        height: var(--board-size);
     }
 
     .hand {
