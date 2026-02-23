@@ -77,6 +77,8 @@ sudo apt install hunspell hunspell-hu
 
 Böngészőben: http://localhost:5000
 
+A szerver eventlet WSGI-t használ (production-ready), a `PORT` környezeti változóból olvassa a portot (alapértelmezett: 5000).
+
 ### Cloudflare Tunnel (online multiplayer)
 
 A Cloudflare Tunnel lehetővé teszi, hogy az interneten keresztül is elérhető legyen a szerver — portnyitás, domain vagy statikus IP nélkül. Indításkor a szerver automatikusan generál egy ideiglenes publikus URL-t (pl. `https://xyz-abc.trycloudflare.com`), amit megosztva bárki csatlakozhat.

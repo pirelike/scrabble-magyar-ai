@@ -1,3 +1,10 @@
+# eventlet monkey-patch MUST be first, before any other imports
+try:
+    import eventlet
+    eventlet.monkey_patch()
+except ImportError:
+    pass
+
 import uuid
 import os
 import subprocess
@@ -748,7 +755,7 @@ atexit.register(stop_tunnel)
 
 
 if __name__ == '__main__':
-    port = 5000
+    port = int(os.environ.get('PORT', 5000))
     use_tunnel = '--no-tunnel' not in sys.argv
 
     # Lejárt sessionök és kódok tisztítása induláskor

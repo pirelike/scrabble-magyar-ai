@@ -25,7 +25,7 @@ Böngészőben: http://localhost:5000
 - `static/app.js` — Kliens logika, drag & drop, Socket.IO kommunikáció, auth flow
 - `static/style.css` — Stílusok
 - `tests/` — Tesztek (pytest)
-- `requirements.txt` — Python függőségek (flask, flask-socketio, pyenchant)
+- `requirements.txt` — Python függőségek (flask, flask-socketio, pyenchant, eventlet)
 - `.venv/` — Virtual environment
 
 ## Funkciók
@@ -47,7 +47,7 @@ Böngészőben: http://localhost:5000
 - Input validáció: játékos nevek, szoba nevek, tile placement, email, jelszó szerver oldali validálás
 - Board bounds check: a `board.py` és `server.py` is ellenőrzi a pozíciók érvényességét
 - Dictionary sanitizálás: szavak regex-szel validálva hunspell hívás előtt
-- Debug mód kikapcsolva, `allow_unsafe_werkzeug` eltávolítva
+- Production szerver: eventlet WSGI (nem Werkzeug dev server), `allow_unsafe_werkzeug` nem használt
 - XSS védelem: frontend innerHTML helyett DOM API (textContent, createElement, addEventListener)
 - Jelszó: `werkzeug.security` PBKDF2-SHA256, 260k iteráció, random salt
 - Verifikációs kód: 6 számjegy, 10 perc lejárat, max 5 próbálkozás/kód
