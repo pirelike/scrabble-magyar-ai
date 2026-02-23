@@ -46,10 +46,13 @@ const PREMIUM_LABELS = {
 let gameState = null;
 let myPlayerId = null;
 let isOwner = false;
+let isGuest = true;
+let currentUser = null;  // {id, email, display_name} ha be van jelentkezve
 let selectedTileIdx = null;
 let exchangeMode = false;
 let exchangeIndices = new Set();
 let placedTiles = []; // [{row, col, letter, is_blank, handIdx}]
+let currentRoomCode = null;
 
 // Képernyő váltás
 function showScreen(screenId) {
@@ -57,25 +60,273 @@ function showScreen(screenId) {
     document.getElementById(screenId).classList.remove('hidden');
 }
 
-// ===== Név képernyő =====
-document.getElementById('btn-set-name').addEventListener('click', () => {
-    const name = document.getElementById('player-name').value.trim();
-    if (!name) return;
-    socket.emit('set_name', { name });
-    myPlayerId = socket.id;
-    showScreen('lobby-screen');
-    socket.emit('get_rooms');
+// ===== AUTH RENDSZER =====
+
+// Tab váltás
+document.querySelectorAll('.auth-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+        document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.auth-tab-content').forEach(c => c.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+    });
 });
 
-document.getElementById('player-name').addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') document.getElementById('btn-set-name').click();
+// --- Bejelentkezés ---
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('login-password').value;
+    const errorEl = document.getElementById('login-error');
+    errorEl.classList.add('hidden');
+
+    if (!email || !password) {
+        showAuthError(errorEl, 'Minden mező kitöltése kötelező.');
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password }),
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            currentUser = data.user;
+            isGuest = false;
+            enterLobby(data.user.display_name);
+        } else {
+            showAuthError(errorEl, data.message);
+        }
+    } catch {
+        showAuthError(errorEl, 'Hálózati hiba. Próbáld újra.');
+    }
 });
+
+// --- Regisztráció ---
+let regEmail = '';
+
+document.getElementById('btn-reg-send-code').addEventListener('click', async () => {
+    const email = document.getElementById('reg-email').value.trim();
+    const errorEl = document.getElementById('reg-error');
+    errorEl.classList.add('hidden');
+
+    if (!email) {
+        showAuthError(errorEl, 'Email cím megadása kötelező.');
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/auth/request-code', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email }),
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            regEmail = email;
+            document.getElementById('reg-step-1').classList.add('hidden');
+            document.getElementById('reg-step-2').classList.remove('hidden');
+        } else {
+            showAuthError(errorEl, data.message);
+        }
+    } catch {
+        showAuthError(errorEl, 'Hálózati hiba. Próbáld újra.');
+    }
+});
+
+document.getElementById('btn-reg-resend').addEventListener('click', async () => {
+    const errorEl = document.getElementById('reg-error');
+    errorEl.classList.add('hidden');
+
+    try {
+        const res = await fetch('/api/auth/request-code', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: regEmail }),
+        });
+        const data = await res.json();
+        if (data.success) {
+            showAuthError(errorEl, 'Új kód elküldve!');
+            errorEl.classList.remove('hidden');
+            errorEl.style.color = '#4CAF50';
+            setTimeout(() => { errorEl.style.color = ''; }, 3000);
+        } else {
+            showAuthError(errorEl, data.message);
+        }
+    } catch {
+        showAuthError(errorEl, 'Hálózati hiba.');
+    }
+});
+
+document.getElementById('btn-reg-verify-code').addEventListener('click', async () => {
+    const code = document.getElementById('reg-code').value.trim();
+    const errorEl = document.getElementById('reg-error');
+    errorEl.classList.add('hidden');
+
+    if (!code || code.length !== 6) {
+        showAuthError(errorEl, 'A kód 6 számjegyből áll.');
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/auth/verify-code', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: regEmail, code }),
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            document.getElementById('reg-step-2').classList.add('hidden');
+            document.getElementById('reg-step-3').classList.remove('hidden');
+        } else {
+            showAuthError(errorEl, data.message);
+        }
+    } catch {
+        showAuthError(errorEl, 'Hálózati hiba. Próbáld újra.');
+    }
+});
+
+document.getElementById('btn-reg-finish').addEventListener('click', async () => {
+    const displayName = document.getElementById('reg-display-name').value.trim();
+    const password = document.getElementById('reg-password').value;
+    const password2 = document.getElementById('reg-password2').value;
+    const errorEl = document.getElementById('reg-error');
+    errorEl.classList.add('hidden');
+
+    if (!displayName || !password || !password2) {
+        showAuthError(errorEl, 'Minden mező kitöltése kötelező.');
+        return;
+    }
+    if (password.length < 6) {
+        showAuthError(errorEl, 'A jelszó legalább 6 karakter legyen.');
+        return;
+    }
+    if (password !== password2) {
+        showAuthError(errorEl, 'A két jelszó nem egyezik.');
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: regEmail, password, display_name: displayName }),
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            currentUser = data.user;
+            isGuest = false;
+            enterLobby(data.user.display_name);
+        } else {
+            showAuthError(errorEl, data.message);
+        }
+    } catch {
+        showAuthError(errorEl, 'Hálózati hiba. Próbáld újra.');
+    }
+});
+
+// --- Vendég belépés ---
+document.getElementById('btn-guest-enter').addEventListener('click', () => {
+    const name = document.getElementById('guest-name').value.trim();
+    if (!name) return;
+    currentUser = null;
+    isGuest = true;
+    enterLobby(name);
+});
+
+document.getElementById('guest-name').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') document.getElementById('btn-guest-enter').click();
+});
+
+// --- Közös belépés a lobbyba ---
+function enterLobby(displayName) {
+    socket.emit('set_name', {
+        name: displayName,
+        is_guest: isGuest,
+        user_id: currentUser ? currentUser.id : null,
+    });
+    myPlayerId = socket.id;
+
+    // Lobby UI beállítás
+    document.getElementById('lobby-user-name').textContent = displayName + (isGuest ? ' (vendég)' : '');
+
+    // Szoba létrehozás szekció: csak regisztrált felhasználóknak
+    const createSection = document.getElementById('create-room-section');
+    if (isGuest) {
+        createSection.classList.add('hidden');
+    } else {
+        createSection.classList.remove('hidden');
+    }
+
+    showScreen('lobby-screen');
+    socket.emit('get_rooms');
+}
+
+// --- Kijelentkezés ---
+document.getElementById('btn-logout').addEventListener('click', async () => {
+    if (!isGuest) {
+        try {
+            await fetch('/api/auth/logout', { method: 'POST' });
+        } catch { /* ignore */ }
+    }
+    currentUser = null;
+    isGuest = true;
+    currentRoomCode = null;
+    // Reset regisztráció lépések
+    document.getElementById('reg-step-1').classList.remove('hidden');
+    document.getElementById('reg-step-2').classList.add('hidden');
+    document.getElementById('reg-step-3').classList.add('hidden');
+    document.getElementById('reg-email').value = '';
+    document.getElementById('reg-code').value = '';
+    document.getElementById('reg-display-name').value = '';
+    document.getElementById('reg-password').value = '';
+    document.getElementById('reg-password2').value = '';
+    showScreen('auth-screen');
+});
+
+// --- Auto-login (oldal betöltéskor) ---
+async function checkSession() {
+    try {
+        const res = await fetch('/api/auth/me');
+        const data = await res.json();
+        if (data.success) {
+            currentUser = data.user;
+            isGuest = false;
+            enterLobby(data.user.display_name);
+        }
+    } catch { /* no session */ }
+}
+
+function showAuthError(el, msg) {
+    el.textContent = msg;
+    el.classList.remove('hidden');
+}
 
 // ===== Lobby =====
 document.getElementById('btn-create-room').addEventListener('click', () => {
     const name = document.getElementById('room-name').value.trim() || 'Szoba';
     const maxPlayers = document.getElementById('room-max-players').value;
     socket.emit('create_room', { name, max_players: maxPlayers });
+});
+
+// Csatlakozás kóddal
+document.getElementById('btn-join-by-code').addEventListener('click', () => {
+    const code = document.getElementById('join-code-input').value.trim();
+    if (!code || code.length !== 6) {
+        showMessage('6 számjegyű kódot adj meg.');
+        return;
+    }
+    socket.emit('join_room', { code });
+});
+
+document.getElementById('join-code-input').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') document.getElementById('btn-join-by-code').click();
 });
 
 socket.on('rooms_list', (rooms) => {
@@ -121,11 +372,43 @@ socket.on('rooms_list', (rooms) => {
 socket.on('room_joined', (data) => {
     isOwner = data.is_owner;
     document.getElementById('waiting-room-name').textContent = data.room_name;
+
+    // Kód megjelenítés reset
+    const codeSection = document.getElementById('room-code-display');
+    if (isOwner) {
+        // A kódot a 'room_code' event-ben kapjuk
+        codeSection.classList.remove('hidden');
+    } else {
+        codeSection.classList.add('hidden');
+    }
+
     showScreen('waiting-screen');
     updateWaitingRoom();
 });
 
+// Csatlakozási kód fogadása (csak tulajdonos kapja)
+socket.on('room_code', (data) => {
+    currentRoomCode = data.code;
+    const codeEl = document.getElementById('room-code-value');
+    codeEl.textContent = data.code;
+    document.getElementById('room-code-display').classList.remove('hidden');
+});
+
+// Kód másolása
+document.getElementById('btn-copy-code').addEventListener('click', () => {
+    if (currentRoomCode) {
+        navigator.clipboard.writeText(currentRoomCode).then(() => {
+            const btn = document.getElementById('btn-copy-code');
+            btn.textContent = 'Másolva!';
+            setTimeout(() => { btn.textContent = 'Másolás'; }, 2000);
+        }).catch(() => {
+            showMessage('Másolás sikertelen.');
+        });
+    }
+});
+
 socket.on('room_left', () => {
+    currentRoomCode = null;
     showScreen('lobby-screen');
     socket.emit('get_rooms');
 });
@@ -203,7 +486,6 @@ socket.on('error', (data) => {
 });
 
 function showMessage(msg) {
-    // Egyszerű alert - lehetne szebb is
     alert(msg);
 }
 
@@ -488,7 +770,7 @@ function showGameOver() {
     const sorted = [...gameState.players].sort((a, b) => b.score - a.score);
     scoresContainer.innerHTML = sorted.map((p, i) => `
         <div class="score-final ${i === 0 ? 'winner' : ''}">
-            <span>${i === 0 ? '🏆 ' : ''}${escapeHtml(p.name)}</span>
+            <span>${i === 0 ? '&#x1F3C6; ' : ''}${escapeHtml(p.name)}</span>
             <span>${p.score} pont</span>
         </div>
     `).join('');
@@ -498,6 +780,7 @@ function showGameOver() {
 
 document.getElementById('btn-back-lobby').addEventListener('click', () => {
     document.getElementById('game-over-dialog').classList.add('hidden');
+    currentRoomCode = null;
     socket.emit('leave_room');
     showScreen('lobby-screen');
     socket.emit('get_rooms');
@@ -509,3 +792,6 @@ function escapeHtml(str) {
     div.textContent = str;
     return div.innerHTML;
 }
+
+// Oldal betöltéskor: session ellenőrzés
+checkSession();

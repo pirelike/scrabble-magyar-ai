@@ -7,20 +7,80 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <!-- Név bekérés -->
-    <div id="name-screen" class="screen">
-        <div class="center-box">
+    <!-- Auth képernyő -->
+    <div id="auth-screen" class="screen">
+        <div class="center-box auth-box">
             <h1>Magyar Scrabble</h1>
-            <input type="text" id="player-name" placeholder="A neved..." maxlength="20" autofocus>
-            <button id="btn-set-name">Belépés</button>
+
+            <!-- Tab gombok -->
+            <div class="auth-tabs">
+                <button class="auth-tab active" data-tab="login">Bejelentkezés</button>
+                <button class="auth-tab" data-tab="register">Regisztráció</button>
+                <button class="auth-tab" data-tab="guest">Vendég</button>
+            </div>
+
+            <!-- Bejelentkezés tab -->
+            <div id="tab-login" class="auth-tab-content active">
+                <form id="login-form" autocomplete="on">
+                    <input type="email" id="login-email" placeholder="Email cím..." autocomplete="email" required>
+                    <input type="password" id="login-password" placeholder="Jelszó..." autocomplete="current-password" required>
+                    <button type="submit" id="btn-login">Bejelentkezés</button>
+                </form>
+                <div id="login-error" class="auth-error hidden"></div>
+            </div>
+
+            <!-- Regisztráció tab -->
+            <div id="tab-register" class="auth-tab-content">
+                <!-- 1. lépés: Email -->
+                <div id="reg-step-1" class="reg-step">
+                    <p class="step-label">1/3 - Email cím megadása</p>
+                    <input type="email" id="reg-email" placeholder="Email cím..." autocomplete="email">
+                    <button id="btn-reg-send-code">Kód küldése</button>
+                </div>
+
+                <!-- 2. lépés: Kód beírása -->
+                <div id="reg-step-2" class="reg-step hidden">
+                    <p class="step-label">2/3 - Verifikációs kód beírása</p>
+                    <p class="step-info">A kódot elküldtük a megadott email címre.</p>
+                    <input type="text" id="reg-code" placeholder="6 számjegyű kód..." maxlength="6" inputmode="numeric" pattern="[0-9]{6}">
+                    <button id="btn-reg-verify-code">Kód ellenőrzése</button>
+                    <button class="link-btn" id="btn-reg-resend">Új kód küldése</button>
+                </div>
+
+                <!-- 3. lépés: Jelszó + név -->
+                <div id="reg-step-3" class="reg-step hidden">
+                    <p class="step-label">3/3 - Fiók beállítása</p>
+                    <input type="text" id="reg-display-name" placeholder="Megjelenítési név..." maxlength="20" autocomplete="username">
+                    <input type="password" id="reg-password" placeholder="Jelszó (min. 6 karakter)..." autocomplete="new-password">
+                    <input type="password" id="reg-password2" placeholder="Jelszó újra..." autocomplete="new-password">
+                    <button id="btn-reg-finish">Fiók létrehozása</button>
+                </div>
+
+                <div id="reg-error" class="auth-error hidden"></div>
+            </div>
+
+            <!-- Vendég tab -->
+            <div id="tab-guest" class="auth-tab-content">
+                <p class="step-info">Játssz vendégként - szobát nem hozhatsz létre, de csatlakozhatsz kóddal.</p>
+                <input type="text" id="guest-name" placeholder="A neved..." maxlength="20" autofocus>
+                <button id="btn-guest-enter">Belépés vendégként</button>
+            </div>
         </div>
     </div>
 
     <!-- Lobby -->
     <div id="lobby-screen" class="screen hidden">
         <div class="lobby-container">
-            <h1>Magyar Scrabble <span class="subtitle">Lobby</span></h1>
-            <div class="lobby-actions">
+            <div class="lobby-header">
+                <h1>Magyar Scrabble <span class="subtitle">Lobby</span></h1>
+                <div class="lobby-user-info">
+                    <span id="lobby-user-name"></span>
+                    <button id="btn-logout" class="small-btn danger">Kijelentkezés</button>
+                </div>
+            </div>
+
+            <!-- Szoba létrehozás (csak regisztrált felhasználóknak) -->
+            <div id="create-room-section" class="lobby-actions hidden">
                 <div class="create-room">
                     <h3>Új szoba</h3>
                     <input type="text" id="room-name" placeholder="Szoba neve..." maxlength="30">
@@ -32,6 +92,18 @@
                     <button id="btn-create-room">Létrehozás</button>
                 </div>
             </div>
+
+            <!-- Csatlakozás kóddal -->
+            <div class="lobby-actions">
+                <div class="join-by-code">
+                    <h3>Csatlakozás kóddal</h3>
+                    <div class="code-input-row">
+                        <input type="text" id="join-code-input" placeholder="6 számjegyű kód..." maxlength="6" inputmode="numeric" pattern="[0-9]{6}">
+                        <button id="btn-join-by-code">Csatlakozás</button>
+                    </div>
+                </div>
+            </div>
+
             <div class="rooms-list">
                 <h3>Szobák</h3>
                 <div id="rooms-container">
@@ -45,6 +117,11 @@
     <div id="waiting-screen" class="screen hidden">
         <div class="center-box">
             <h2 id="waiting-room-name">Szoba</h2>
+            <div id="room-code-display" class="room-code-section hidden">
+                <p class="code-label">Csatlakozási kód:</p>
+                <div class="code-value" id="room-code-value"></div>
+                <button id="btn-copy-code" class="small-btn">Másolás</button>
+            </div>
             <div id="waiting-players"></div>
             <button id="btn-start-game" class="hidden">Játék indítása</button>
             <button id="btn-leave-room" class="danger">Kilépés</button>

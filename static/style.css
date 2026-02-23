@@ -38,7 +38,7 @@ body {
     color: #e8b930;
 }
 
-input[type="text"], select {
+input[type="text"], input[type="email"], input[type="password"], select {
     padding: 10px 16px;
     border: 2px solid #0f3460;
     border-radius: 6px;
@@ -49,7 +49,7 @@ input[type="text"], select {
     margin-bottom: 12px;
 }
 
-input[type="text"]:focus {
+input[type="text"]:focus, input[type="email"]:focus, input[type="password"]:focus {
     border-color: #e8b930;
     outline: none;
 }
@@ -86,6 +86,102 @@ button.danger:hover {
     background: #e74c3c;
 }
 
+button.small-btn {
+    padding: 6px 14px;
+    font-size: 13px;
+}
+
+button.link-btn {
+    background: none;
+    color: #7ec8e3;
+    font-weight: normal;
+    font-size: 14px;
+    text-decoration: underline;
+    padding: 4px 0;
+    margin-top: 8px;
+}
+
+button.link-btn:hover {
+    color: #a0d8ef;
+    background: none;
+}
+
+/* Auth képernyő */
+.auth-box {
+    min-width: 400px;
+    max-width: 440px;
+}
+
+.auth-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 24px;
+    border-bottom: 2px solid #0f3460;
+}
+
+.auth-tab {
+    flex: 1;
+    padding: 10px 8px;
+    background: transparent;
+    color: #aaa;
+    border: none;
+    border-bottom: 3px solid transparent;
+    border-radius: 0;
+    font-size: 15px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s;
+}
+
+.auth-tab:hover {
+    color: #eee;
+    background: transparent;
+}
+
+.auth-tab.active {
+    color: #e8b930;
+    border-bottom-color: #e8b930;
+    background: transparent;
+}
+
+.auth-tab-content {
+    display: none;
+}
+
+.auth-tab-content.active {
+    display: block;
+}
+
+.auth-tab-content button:not(.auth-tab):not(.link-btn) {
+    width: 100%;
+    margin-top: 4px;
+}
+
+.auth-error {
+    color: #e74c3c;
+    font-size: 14px;
+    margin-top: 12px;
+    text-align: center;
+}
+
+.step-label {
+    color: #e8b930;
+    font-weight: bold;
+    font-size: 14px;
+    margin-bottom: 12px;
+}
+
+.step-info {
+    color: #aaa;
+    font-size: 14px;
+    margin-bottom: 16px;
+    line-height: 1.4;
+}
+
+.reg-step {
+    text-align: center;
+}
+
 /* Lobby */
 .lobby-container {
     max-width: 700px;
@@ -93,9 +189,25 @@ button.danger:hover {
     padding: 30px;
 }
 
-.lobby-container h1 {
-    color: #e8b930;
+.lobby-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     margin-bottom: 24px;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.lobby-header h1 {
+    color: #e8b930;
+}
+
+.lobby-user-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: #aaa;
+    font-size: 14px;
 }
 
 .subtitle {
@@ -104,22 +216,37 @@ button.danger:hover {
 }
 
 .lobby-actions {
-    margin-bottom: 24px;
+    margin-bottom: 16px;
 }
 
-.create-room {
+.create-room, .join-by-code {
     background: #16213e;
     padding: 20px;
     border-radius: 8px;
 }
 
-.create-room h3 {
+.create-room h3, .join-by-code h3 {
     margin-bottom: 12px;
     color: #e8b930;
 }
 
 .create-room select {
     margin-bottom: 12px;
+}
+
+.code-input-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+}
+
+.code-input-row input {
+    flex: 1;
+    margin-bottom: 0;
+}
+
+.code-input-row button {
+    white-space: nowrap;
 }
 
 .rooms-list h3 {
@@ -173,6 +300,30 @@ button.danger:hover {
     content: ' (tulajdonos)';
     color: #e8b930;
     font-size: 0.85em;
+}
+
+/* Lobby kód megjelenítés */
+.room-code-section {
+    margin: 16px 0;
+    padding: 16px;
+    background: #1a1a2e;
+    border-radius: 8px;
+    border: 1px solid #0f3460;
+}
+
+.code-label {
+    color: #aaa;
+    font-size: 14px;
+    margin-bottom: 8px;
+}
+
+.code-value {
+    font-size: 32px;
+    font-weight: bold;
+    letter-spacing: 8px;
+    color: #e8b930;
+    font-family: 'Courier New', monospace;
+    margin-bottom: 8px;
 }
 
 /* Játék layout */
@@ -477,5 +628,16 @@ button.danger:hover {
         width: 40px;
         height: 40px;
         font-size: 16px;
+    }
+
+    .auth-box {
+        min-width: 320px;
+        max-width: 95vw;
+        padding: 24px;
+    }
+
+    .lobby-header {
+        flex-direction: column;
+        align-items: flex-start;
     }
 }
