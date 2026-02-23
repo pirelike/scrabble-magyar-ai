@@ -6,6 +6,7 @@ Webes magyar Scrabble játék online multiplayer támogatással. Flask + Socket.
 
 - **1-4 játékos** — egyedül is játszható
 - **Online multiplayer** — lobby rendszer, szobák létrehozása/csatlakozás, automatikus Cloudflare tunnel publikus URL-lel
+- **Felhasználói fiókok** — regisztráció email verifikációval, bejelentkezés, vendég mód
 - **Teljes magyar betűkészlet** — 100 zseton, beleértve a többkarakteres betűket (SZ, CS, GY, LY, NY, ZS, TY)
 - **Standard Scrabble pontozás** — DL, TL, DW, TW premium mezők, 50 pont bónusz mind a 7 zseton kirakásakor
 - **Szótár-ellenőrzés** — hunspell hu_HU szótár alapján, ragozott alakokat is felismeri
@@ -127,17 +128,21 @@ A tunnel a `--no-tunnel` kapcsolóval kikapcsolható. Regisztráció vagy Cloudf
 ## Projekt struktúra
 
 ```
-server.py          — Flask + Socket.IO szerver, lobby/szoba kezelés, Cloudflare tunnel
+server.py          — Flask + Socket.IO szerver, lobby/szoba kezelés, auth route-ok, Cloudflare tunnel
 game.py            — Játéklogika (Game, Player osztályok), körök, pontozás
 board.py           — 15×15 tábla, premium mezők, szóelhelyezés validáció és pontozás
 dictionary.py      — Magyar szótár-ellenőrzés (pyenchant / hunspell)
 tiles.py           — Magyar betűkészlet (100 zseton), TileBag osztály
+config.py          — SMTP, auth, DB konfigurációs konstansok
+auth.py            — SQLite DB, regisztráció, login, session, jelszó hash (PBKDF2)
+email_service.py   — Email verifikációs kód küldés (SMTP / konzol fallback)
 dict/              — Beágyazott hu_HU hunspell szótár fájlok
 templates/
-  index.html       — Egyoldalas UI
+  index.html       — Egyoldalas UI (auth, lobby, játék)
 static/
-  app.js           — Kliens logika, drag & drop, Socket.IO kommunikáció
+  app.js           — Kliens logika, drag & drop, Socket.IO, auth flow
   style.css        — Stílusok
+tests/             — Tesztek (pytest, 134 teszt)
 ```
 
 ## Játékszabályok
@@ -151,9 +156,16 @@ static/
 - Ha valaki mind a 7 zsetonját lerakja, 50 pont bónuszt kap
 - A játék véget ér, ha valaki elfogyasztja az összes zsetonját (és a zsák üres), vagy ha mindenki 2× egymás után passzol
 
+## Tesztek
+
+```bash
+.venv/bin/python -m pytest tests/ -v
+```
+
+134 teszt: auth (33), játéklogika (49), szerver auth route-ok (28), Socket.IO eventek (24).
+
 ## TODO
 
 - Challenge rendszer (szó megkérdőjelezése)
 - Chat
 - Spectator mód
-- Felhasználói fiókok / adatbázis

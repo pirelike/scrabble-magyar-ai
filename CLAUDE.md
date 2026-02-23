@@ -12,21 +12,26 @@ cd ~/Documents/Scripts/scrabble
 Böngészőben: http://localhost:5000
 
 ## Fájlstruktúra
-- `server.py` — Flask + SocketIO szerver, lobby/szoba kezelés, Cloudflare tunnel integráció
+- `server.py` — Flask + SocketIO szerver, lobby/szoba kezelés, Cloudflare tunnel integráció, auth HTTP route-ok
 - `game.py` — Játéklogika (Game, Player osztályok), körök, pontozás, játék vége
 - `board.py` — 15×15 tábla, premium mezők, szó elhelyezés validáció és pontozás, szótár-ellenőrzés
 - `dictionary.py` — Magyar szótár-ellenőrzés (pyenchant / hunspell CLI fallback)
 - `tiles.py` — Magyar betűkészlet (100 zseton), TileBag osztály
+- `config.py` — SMTP, auth, DB konfigurációs konstansok (`os.environ`-ból)
+- `auth.py` — SQLite DB kezelés, regisztráció, login, session, jelszó hash (PBKDF2)
+- `email_service.py` — 6 számjegyű kód generálás, SMTP küldés (háttérszálon)
 - `dict/` — Beágyazott hu_HU hunspell szótár fájlok (hu_HU.dic, hu_HU.aff)
-- `templates/index.html` — Egyoldalas UI: név, lobby, várakozó szoba, játék
-- `static/app.js` — Kliens logika, drag & drop, Socket.IO kommunikáció
+- `templates/index.html` — Egyoldalas UI: auth (3 tab), lobby, várakozó szoba, játék
+- `static/app.js` — Kliens logika, drag & drop, Socket.IO kommunikáció, auth flow
 - `static/style.css` — Stílusok
+- `tests/` — Tesztek (pytest)
 - `requirements.txt` — Python függőségek (flask, flask-socketio, pyenchant)
 - `.venv/` — Virtual environment
 
 ## Funkciók
 - 1-4 játékos (egyedül is játszható)
 - Online multiplayer: lobby, szobák, Cloudflare tunnel automatikus publikus URL
+- Felhasználói fiók rendszer: regisztráció (email verifikáció), bejelentkezés, vendég mód
 - Teljes magyar betűkészlet (SZ, CS, GY, LY, NY, ZS, TY többkarakteres betűk)
 - Standard Scrabble pontozás: DL, TL, DW, TW premium mezők
 - 50 pont bónusz mind a 7 zseton kirakásakor
@@ -38,14 +43,17 @@ Böngészőben: http://localhost:5000
 ## Biztonság
 - `SECRET_KEY`: környezeti változóból (`SECRET_KEY`) vagy futásidőben generált véletlenszerű kulcs
 - CORS: `cors_allowed_origins=[]` — csak same-origin kérések engedélyezve
-- Rate limiting: minden Socket.IO event-re (konfigurálható küszöbök `_RATE_LIMITS` dict-ben)
-- Input validáció: játékos nevek, szoba nevek, tile placement adatok szerver oldali validálás
+- Rate limiting: minden Socket.IO event-re + IP-alapú HTTP auth endpointokra
+- Input validáció: játékos nevek, szoba nevek, tile placement, email, jelszó szerver oldali validálás
 - Board bounds check: a `board.py` és `server.py` is ellenőrzi a pozíciók érvényességét
 - Dictionary sanitizálás: szavak regex-szel validálva hunspell hívás előtt
 - Debug mód kikapcsolva, `allow_unsafe_werkzeug` eltávolítva
 - XSS védelem: frontend innerHTML helyett DOM API (textContent, createElement, addEventListener)
+- Jelszó: `werkzeug.security` PBKDF2-SHA256, 260k iteráció, random salt
+- Verifikációs kód: 6 számjegy, 10 perc lejárat, max 5 próbálkozás/kód
+- Session: `secrets.token_urlsafe(48)`, HttpOnly cookie, 30 nap lejárat
 
-## Következő lépés: Felhasználói fiók rendszer
+## Felhasználói fiók rendszer
 
 ### Regisztrációs flow
 ```
@@ -59,20 +67,12 @@ Böngészőben: http://localhost:5000
 
 Vendég mód: a régi név-megadós flow megmarad (statisztikák nem mentődnek).
 
-### Új fájlok
-| Fájl | Tartalom |
-|---|---|
-| `config.py` | SMTP, auth, DB konfigurációs konstansok (`os.environ`-ból) |
-| `auth.py` | SQLite DB kezelés, regisztráció, login, session, jelszó hash (`werkzeug.security` PBKDF2) |
-| `email_service.py` | 6 számjegyű kód generálás, SMTP küldés (`smtplib`, háttérszálon) |
-
 ### Adatbázis: SQLite (`scrabble.db`)
 - **`users`**: id, email, email_lower, display_name, password_hash, created_at, games_played, games_won, total_score
 - **`verification_codes`**: email, code, created_at, expires_at (10 perc), attempts (max 5), used
 - **`sessions`**: user_id, token (64 char, `secrets.token_urlsafe`), created_at, expires_at (30 nap)
 
-### Szerver változások (`server.py`)
-Új HTTP POST route-ok (auth a WebSocket előtt történik):
+### Auth HTTP route-ok (`server.py`)
 - `POST /api/auth/request-code` — email validálás, kód küldés
 - `POST /api/auth/verify-code` — 6 számjegyű kód ellenőrzés
 - `POST /api/auth/register` — jelszó + név, fiók létrehozás, auto-login
@@ -81,10 +81,10 @@ Vendég mód: a régi név-megadós flow megmarad (statisztikák nem mentődnek)
 - `GET /api/auth/me` — session cookie ellenőrzés
 
 Session cookie: `HttpOnly` + `SameSite=Lax` + `Secure` (Cloudflare tunnel HTTPS).
-IP-alapú rate limiting az auth endpointokra (kód küldés 3/5perc, login 10/5perc, regisztráció 3/óra).
+IP-alapú rate limiting (kód küldés 3/5perc, login 10/5perc, regisztráció 3/óra).
 
-### Frontend (`index.html` + `app.js`)
-A `name-screen` helyett `auth-screen` 3 tabbal:
+### Frontend auth (`index.html` + `app.js`)
+Az `auth-screen` 3 tabbal:
 - **Bejelentkezés** tab: email + jelszó form
 - **Regisztráció** tab: 3 lépéses wizard (email → kód → jelszó 2x + név)
 - **Vendég** tab: régi név-megadós flow
@@ -101,20 +101,18 @@ SMTP_FROM=yourscrabble@gmail.com
 ```
 Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztéshez).
 
-### Biztonság
-- Jelszó: `werkzeug.security` PBKDF2-SHA256, 260k iteráció, random salt (zero extra dependency)
-- Verifikációs kód: 6 számjegy, 10 perc lejárat, max 5 próbálkozás/kód
-- Session: `secrets.token_urlsafe(48)`, HttpOnly cookie, 30 nap lejárat
-- Nincs új dependency (sqlite3, smtplib, hashlib, secrets mind standard library)
+## Tesztek
 
-### Implementáció sorrendje
-1. `config.py` — konfigurációs konstansok
-2. `auth.py` — DB séma + init_db() + jelszó hash + user CRUD + session kezelés
-3. `email_service.py` — email küldés + kód generálás
-4. `server.py` — HTTP auth route-ok + IP rate limiting + connect módosítás
-5. `templates/index.html` — auth UI (3 tab, 3 lépéses regisztráció)
-6. `static/app.js` — auth flow kliens logika (fetch API)
-7. `static/style.css` — auth form stílusok, input selector kibővítés email/password típusokra
+```bash
+.venv/bin/python -m pytest tests/ -v
+```
+
+| Fájl | Tesztek | Lefedettség |
+|---|---|---|
+| `tests/test_auth.py` | 33 | DB, user CRUD, jelszó hash, verifikációs kódok, session kezelés |
+| `tests/test_game_logic.py` | 49 | TileBag, Board, Player, Game |
+| `tests/test_server_auth.py` | 28 | HTTP auth route-ok, cookie flow |
+| `tests/test_server_socket.py` | 24 | Socket.IO eventek, lobby, szobák |
 
 ## Ismert problémák / TODO
 - Nincs challenge rendszer (szó megkérdőjelezése más játékos által)
