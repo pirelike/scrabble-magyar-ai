@@ -114,7 +114,41 @@ Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztésh
 | `tests/test_server_auth.py` | 28 | HTTP auth route-ok, cookie flow |
 | `tests/test_server_socket.py` | 24 | Socket.IO eventek, lobby, szobák |
 
+## Legutóbbi javítások
+
+### Drag & drop premium mezőkön (2026-02-24)
+- **Probléma:** Drag & drop nem működött megbízhatóan a speciális (DL, TL, DW, TW, ★) mezőkön, mert a premium label `<span>` elkapta a drag eventeket egyes böngészőkben a `pointer-events: none` ellenére.
+- **Megoldás:** Per-cell drag handlerek helyett board-level event delegation (`e.target.closest('.cell')`). A `dragleave` most csak akkor törli a highlight-ot, ha tényleg elhagyja a táblát.
+
+### UI méretezés játék indításakor (2026-02-24)
+- **Probléma:** A `.game-layout` `min-height: 100vh`-ja feleslegesen megnövelte az oldal magasságát, scrollbar jelent meg.
+- **Megoldás:** Eltávolítva a `min-height: 100vh` a `.game-layout`-ról, `#game-screen.screen` `align-items: flex-start`. A tábla mérete most figyelembe veszi a viewport magasságát is: `min(70vw, 600px, calc(100vh - 180px))`.
+
+### Premium label túlcsordulás (2026-02-24)
+- **Probléma:** A premium labelek (pl. "DUPLA BETŰ") egy sorban renderelődtek és túlcsordultak a szomszéd cellákba, mert a HTML a `\n`-t whitespace-ként kezelte.
+- **Megoldás:** `white-space: pre-line` a `.premium-label`-re (kétsoros megjelenítés), `overflow: hidden` a `.cell`-re.
+
 ## Ismert problémák / TODO
-- Nincs challenge rendszer (szó megkérdőjelezése más játékos által)
-- Nincs chat
-- Nincs spectator mód
+
+### Játékmenet
+- [ ] Challenge rendszer — szó megkérdőjelezése más játékos által (hivatalos Scrabble szabály)
+- [ ] Időlimit a körökre — opcionális időzítő (pl. 2 perc/kör), lejáratkor automatikus passz
+- [ ] AI ellenfél — egyjátékos mód számítógépes ellenfél(ek)kel, nehézségi szintek
+- [ ] Játék mentés / visszatöltés — félbehagyott játék folytatása (szerver újraindítás után is)
+- [ ] Visszajátszás — befejezett játék lépéseinek visszanézése
+
+### Közösségi funkciók
+- [ ] Chat — játék közbeni szöveges üzenetküldés a játékosok között
+- [ ] Spectator mód — folyamatban lévő játék megfigyelése játékos nélkül
+- [ ] Ranglista / leaderboard — regisztrált játékosok összesített statisztikái
+- [ ] Játékos profil oldal — saját statisztikák, játékelőzmények megtekintése
+- [ ] Barátlista / meghívó rendszer — közvetlen meghívás barátoknak
+
+### UI / UX
+- [ ] Hang effektek — betű lerakás, érvénytelen lépés, játék vége hangok
+- [ ] Animációk — betű lerakás, pontszám felugró, kör váltás animáció
+- [ ] Sötét / világos téma váltás
+- [ ] Szótár-böngésző — szavak keresése és validálása játékon kívül
+- [ ] PWA támogatás — offline mód, alkalmazásként telepíthető
+- [ ] Többnyelvű felület — angol és egyéb nyelvű UI (a szótár marad magyar)
+- [ ] Drag & drop vizuális visszajelzés javítása — foglalt cellák jelölése drop közben

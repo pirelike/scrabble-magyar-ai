@@ -168,6 +168,24 @@ tests/             — Tesztek (pytest, 134 teszt)
 
 ## TODO
 
-- Challenge rendszer (szó megkérdőjelezése)
-- Chat
-- Spectator mód
+### Játékmenet
+- [ ] Challenge rendszer — szó megkérdőjelezése más játékos által
+- [ ] Időlimit a körökre — opcionális időzítő, lejáratkor automatikus passz
+- [ ] AI ellenfél — egyjátékos mód számítógépes ellenfél(ek)kel
+- [ ] Játék mentés / visszatöltés — félbehagyott játék folytatása
+- [ ] Visszajátszás — befejezett játék lépéseinek visszanézése
+
+### Közösségi funkciók
+- [ ] Chat — játék közbeni üzenetküldés
+- [ ] Spectator mód — játék megfigyelése
+- [ ] Ranglista / leaderboard
+- [ ] Játékos profil oldal — statisztikák, játékelőzmények
+- [ ] Barátlista / meghívó rendszer
+
+### UI / UX
+- [ ] Hang effektek
+- [ ] Animációk (betű lerakás, pontszám, kör váltás)
+- [ ] Sötét / világos téma váltás
+- [ ] Szótár-böngésző
+- [ ] PWA támogatás (offline, telepíthető)
+- [ ] Többnyelvű felület
