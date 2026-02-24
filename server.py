@@ -379,7 +379,8 @@ def handle_disconnect():
                 room['owner_name'] = game.players[0].name
                 # Új tulajdonosnak elküldjük a kódot
                 emit('room_code', {'code': room['join_code']}, room=game.players[0].id)
-            emit('game_state', game.get_state(), room=room_id)
+            for player in game.players:
+                emit('game_state', game.get_state(for_player_id=player.id), room=player.id)
             emit('player_left', {'name': player_names.get(sid, '?')}, room=room_id)
 
         del player_rooms[sid]
@@ -551,6 +552,8 @@ def handle_leave_room():
     leave_room(room_id)
     del player_rooms[sid]
 
+    player_name = player_names.get(sid, '?')
+
     if not game.players:
         # Szoba törlés - join_code felszabadítás
         if room.get('join_code') in join_codes:
@@ -562,7 +565,9 @@ def handle_leave_room():
             room['owner_name'] = game.players[0].name
             # Új tulajdonosnak elküldjük a kódot
             emit('room_code', {'code': room['join_code']}, room=game.players[0].id)
-        emit('game_state', game.get_state(), room=room_id)
+        for player in game.players:
+            emit('game_state', game.get_state(for_player_id=player.id), room=player.id)
+        emit('player_left', {'name': player_name}, room=room_id)
 
     emit('room_left', {})
     emit('rooms_list', get_rooms_list(), broadcast=True)
@@ -648,7 +653,7 @@ def handle_place_tiles(data):
     if success:
         for player in game.players:
             emit('game_state', game.get_state(for_player_id=player.id), room=player.id)
-        emit('action_result', {'success': True, 'message': msg, 'score': score}, room=room_id)
+        emit('action_result', {'success': True, 'message': msg, 'score': score})
     else:
         emit('action_result', {'success': False, 'message': msg})
 
@@ -682,7 +687,7 @@ def handle_exchange_tiles(data):
     if success:
         for player in game.players:
             emit('game_state', game.get_state(for_player_id=player.id), room=player.id)
-        emit('action_result', {'success': True, 'message': msg}, room=room_id)
+        emit('action_result', {'success': True, 'message': msg})
     else:
         emit('action_result', {'success': False, 'message': msg})
 
@@ -703,7 +708,7 @@ def handle_pass_turn():
     if success:
         for player in game.players:
             emit('game_state', game.get_state(for_player_id=player.id), room=player.id)
-        emit('action_result', {'success': True, 'message': msg}, room=room_id)
+        emit('action_result', {'success': True, 'message': msg})
     else:
         emit('action_result', {'success': False, 'message': msg})
 

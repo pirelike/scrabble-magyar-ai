@@ -455,11 +455,6 @@ socket.on('game_state', (state) => {
     gameState = state;
     myPlayerId = socket.id;
 
-    if (state.started && !document.getElementById('game-screen').classList.contains('hidden') === false) {
-        showScreen('game-screen');
-        buildBoard();
-    }
-
     if (state.started) {
         if (document.getElementById('game-screen').classList.contains('hidden')) {
             showScreen('game-screen');

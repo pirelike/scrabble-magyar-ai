@@ -52,7 +52,30 @@ class Game:
         return True, "Csatlakozás sikeres."
 
     def remove_player(self, player_id):
-        self.players = [p for p in self.players if p.id != player_id]
+        # Megkeressük az eltávolítandó játékos indexét
+        removed_idx = None
+        for i, p in enumerate(self.players):
+            if p.id == player_id:
+                removed_idx = i
+                break
+        if removed_idx is None:
+            return
+
+        self.players.pop(removed_idx)
+
+        # current_player_idx kiigazítása
+        if self.players:
+            if removed_idx < self.current_player_idx:
+                # Az eltávolított játékos a jelenlegi előtt volt
+                self.current_player_idx -= 1
+            elif removed_idx == self.current_player_idx:
+                # Az aktuális játékos lett eltávolítva
+                # Az index maradhat, de ha túlmutat a lista végén, visszaállítjuk
+                if self.current_player_idx >= len(self.players):
+                    self.current_player_idx = 0
+            # Ha removed_idx > current_player_idx, nem kell módosítani
+        else:
+            self.current_player_idx = 0
 
     def start(self):
         if len(self.players) < 1:
@@ -129,9 +152,6 @@ class Game:
 
         # Passz számláló reset
         player.consecutive_passes = 0
-        for p in self.players:
-            if p.id != player_id:
-                pass  # Más játékosok passz számlálóját nem reseteljük
 
         word_strs = [w for w, _, _ in formed_words]
         self.last_action = f"{player.name}: {', '.join(word_strs)} ({total_score} pont)"
@@ -158,6 +178,10 @@ class Game:
 
         if not tile_indices:
             return False, "Legalább egy zsetont ki kell választani."
+
+        # Duplikált indexek ellenőrzése
+        if len(tile_indices) != len(set(tile_indices)):
+            return False, "Duplikált zseton index."
 
         # Ellenőrizzük az indexeket
         for idx in tile_indices:

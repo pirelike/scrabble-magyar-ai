@@ -21,7 +21,7 @@ def _send_email(to_email, code):
     """SMTP email küldés."""
     try:
         msg = MIMEMultipart('alternative')
-        msg['Subject'] = f'Magyar Scrabble - Verifikációs kód: {code}'
+        msg['Subject'] = 'Magyar Scrabble - Verifikációs kód'
         msg['From'] = SMTP_FROM
         msg['To'] = to_email
 
