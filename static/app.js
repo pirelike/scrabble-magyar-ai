@@ -482,6 +482,12 @@ socket.on('action_result', (data) => {
         selectedTileIdx = null;
         exchangeMode = false;
         exchangeIndices.clear();
+        // Újra renderelünk, mert a game_state előbb érkezik mint az action_result,
+        // így a renderHand() a régi placedTiles indexekkel szűrt — most hogy töröltük,
+        // az új kéz helyesen jelenik meg az összes újonnan húzott zsetonnal.
+        renderBoard();
+        renderHand();
+        updateButtons();
     }
 });
 
