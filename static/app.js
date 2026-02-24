@@ -53,6 +53,7 @@ let exchangeMode = false;
 let exchangeIndices = new Set();
 let placedTiles = []; // [{row, col, letter, is_blank, handIdx}]
 let currentRoomCode = null;
+let boardDragInitialized = false;
 
 // Képernyő váltás
 function showScreen(screenId) {
@@ -555,22 +556,43 @@ function buildBoard() {
             }
 
             cell.addEventListener('click', () => onCellClick(r, c));
-            cell.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                cell.classList.add('drop-target');
-            });
-            cell.addEventListener('dragleave', () => {
-                cell.classList.remove('drop-target');
-            });
-            cell.addEventListener('drop', (e) => {
-                e.preventDefault();
-                cell.classList.remove('drop-target');
-                const handIdx = parseInt(e.dataTransfer.getData('text/plain'));
-                placeTileOnBoard(handIdx, r, c);
-            });
-
             board.appendChild(cell);
         }
+    }
+
+    // Board-level drag event delegation (robust against child elements like premium labels)
+    if (!boardDragInitialized) {
+        boardDragInitialized = true;
+
+        board.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            document.querySelectorAll('.cell.drop-target').forEach(c => c.classList.remove('drop-target'));
+            const cell = e.target.closest('.cell');
+            if (cell) {
+                cell.classList.add('drop-target');
+            }
+        });
+
+        board.addEventListener('dragleave', (e) => {
+            if (!board.contains(e.relatedTarget)) {
+                document.querySelectorAll('.cell.drop-target').forEach(c => c.classList.remove('drop-target'));
+            }
+        });
+
+        board.addEventListener('drop', (e) => {
+            e.preventDefault();
+            document.querySelectorAll('.cell.drop-target').forEach(c => c.classList.remove('drop-target'));
+            const cell = e.target.closest('.cell');
+            if (cell) {
+                const r = parseInt(cell.dataset.row);
+                const c = parseInt(cell.dataset.col);
+                const handIdx = parseInt(e.dataTransfer.getData('text/plain'));
+                if (!isNaN(handIdx)) {
+                    placeTileOnBoard(handIdx, r, c);
+                }
+            }
+        });
     }
 }
 
