@@ -423,6 +423,34 @@ class TestChallengeMode:
         assert len(action_events) >= 1
         assert action_events[0]['args'][0]['success'] is False
 
+    def test_cast_vote_no_pending(self, registered_client):
+        registered_client.emit('create_room', {
+            'name': 'VoteTest', 'max_players': 4, 'challenge_mode': True
+        })
+        registered_client.get_received()
+        registered_client.emit('start_game')
+        registered_client.get_received()
+
+        registered_client.emit('cast_vote', {'vote': 'accept'})
+        received = registered_client.get_received()
+        action_events = [r for r in received if r['name'] == 'action_result']
+        assert len(action_events) >= 1
+        assert action_events[0]['args'][0]['success'] is False
+
+    def test_cast_vote_invalid_vote(self, registered_client):
+        registered_client.emit('create_room', {
+            'name': 'VoteBad', 'max_players': 4, 'challenge_mode': True
+        })
+        registered_client.get_received()
+        registered_client.emit('start_game')
+        registered_client.get_received()
+
+        registered_client.emit('cast_vote', {'vote': 'invalid'})
+        received = registered_client.get_received()
+        action_events = [r for r in received if r['name'] == 'action_result']
+        assert len(action_events) >= 1
+        assert action_events[0]['args'][0]['success'] is False
+
 
 class TestChat:
     def test_send_chat_in_room(self, app, socketio_app, registered_client):

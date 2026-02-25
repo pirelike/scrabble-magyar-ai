@@ -1,6 +1,5 @@
 from tiles import TileBag, TILE_VALUES
 from board import Board
-from dictionary import check_words
 
 HAND_SIZE = 7
 BONUS_ALL_TILES = 50
@@ -171,7 +170,7 @@ class Game:
         word_strs = [w for w, _, _ in formed_words]
 
         if self.challenge_mode and len(self.players) > 1:
-            # Challenge mód: lerakás függőben, megtámadható
+            # Challenge mód: lerakás függőben, megtámadható/elfogadható
             # Eltávolítjuk a betűket a kézből
             removed = []
             for r, c, letter, is_blank in tiles_placed:
@@ -189,6 +188,10 @@ class Game:
                 'score': total_score,
                 'player_idx': self.current_player_idx,
                 'removed_from_hand': removed,
+                'accepted_players': set(),
+                'voting_phase': False,
+                'challenger_id': None,
+                'votes': {},
             }
 
             self.last_action = f"{player.name}: {', '.join(word_strs)} ({total_score} pont) — megtámadható!"
@@ -224,87 +227,203 @@ class Game:
 
     def challenge(self, challenger_id):
         """
-        Megtámadás: ellenőrzi a szótárban a függő szavakat.
-        Visszatér: (success, challenge_won, message)
-          - success: True ha a challenge érvényes volt
-          - challenge_won: True ha a szavak érvénytelenek (megtámadó nyert)
+        Megtámadás: szavazás indítása (csak 3+ játékos).
+        2 játékos módban nincs megtámadás.
+        Visszatér: (success, result, message)
+          - result: 'voting' | 'vote_accepted' | 'vote_rejected' | None
         """
         if not self.pending_challenge:
-            return False, False, "Nincs megtámadható lerakás."
+            return False, None, "Nincs megtámadható lerakás."
 
         pending = self.pending_challenge
-        player = self.players[pending['player_idx']]
+        placer = self.players[pending['player_idx']]
 
-        # Saját lerakást nem lehet megtámadni
-        if player.id == challenger_id:
-            return False, False, "Saját lerakásodat nem támadhatod meg."
+        if placer.id == challenger_id:
+            return False, None, "Saját lerakásodat nem támadhatod meg."
 
-        # Megkeressük a megtámadót
+        if len(self.players) <= 2:
+            return False, None, "Két játékos módban nincs megtámadás."
+
+        if pending.get('voting_phase'):
+            return False, None, "Már folyamatban van a szavazás."
+
         challenger = None
         for p in self.players:
             if p.id == challenger_id:
                 challenger = p
                 break
         if not challenger:
-            return False, False, "Nem vagy a játék résztvevője."
+            return False, None, "Nem vagy a játék résztvevője."
 
-        # Szótár-ellenőrzés
-        word_strings = pending['word_strs']
-        all_valid, invalid = check_words(word_strings)
+        # Szavazási fázis indítása
+        pending['voting_phase'] = True
+        pending['challenger_id'] = challenger_id
 
-        self.pending_challenge = None
+        # Korábbi elfogadások szavazatként átvezetése
+        votes = {}
+        for pid in pending.get('accepted_players', set()):
+            votes[pid] = 'accept'
+        pending['votes'] = votes
 
-        if not all_valid:
-            # Megtámadás sikeres — szavak érvénytelenek
-            # Betűk visszakerülnek a lerakó kezébe
-            player.hand.extend(pending['removed_from_hand'])
-            # Lerakó elveszti a körét (már sorra került, kör továbbmegy)
-            player.consecutive_passes = 0
-            inv_str = ', '.join(invalid)
-            self.last_action = (
-                f"{challenger.name} megtámadta {player.name} szavait — "
-                f"érvénytelen: {inv_str}! Betűk visszavéve."
-            )
-            self._next_turn()
-            return True, True, f"Sikeres megtámadás! Érvénytelen szó(k): {inv_str}"
-        else:
-            # Megtámadás sikertelen — szavak érvényesek
-            # Lerakás véglegesítése
-            self.board.apply_placement(pending['tiles_placed'])
-            player.score += pending['score']
-            new_tiles = self.bag.draw(HAND_SIZE - len(player.hand))
-            player.hand.extend(new_tiles)
-            player.consecutive_passes = 0
+        # Ha már minden szavazó szavazott, azonnal kiértékeljük
+        voter_ids = self._get_voter_ids()
+        if voter_ids <= set(pending['votes'].keys()):
+            result = self._resolve_votes()
+            return True, result, self._make_vote_message(result)
 
-            # Megtámadó büntetése: következő kör kihagyása
-            challenger.skip_next_turn = True
+        self.last_action = (
+            f"{challenger.name} megtámadta {placer.name} szavait — szavazás!"
+        )
+        return True, 'voting', "Szavazás indult!"
 
-            self.last_action = (
-                f"{challenger.name} megtámadta {player.name} szavait — "
-                f"érvényes! {challenger.name} kihagy egy kört."
-            )
+    def cast_vote(self, player_id, vote):
+        """
+        Szavazat leadása a szavazási fázisban.
+        vote: 'accept' | 'reject'
+        Visszatér: (success, result, message)
+        """
+        if not self.pending_challenge:
+            return False, None, "Nincs függő lerakás."
 
-            # Játék vége ellenőrzés
-            if len(player.hand) == 0 and self.bag.is_empty():
-                self._end_game(player)
-            else:
-                self._next_turn()
+        pending = self.pending_challenge
+        if not pending.get('voting_phase'):
+            return False, None, "Nincs szavazás folyamatban."
 
-            return True, False, f"Sikertelen megtámadás! A szavak érvényesek."
+        placer = self.players[pending['player_idx']]
+        if placer.id == player_id:
+            return False, None, "A lerakó nem szavazhat."
+
+        if pending.get('challenger_id') == player_id:
+            return False, None, "A megtámadó nem szavazhat."
+
+        voter_ids = self._get_voter_ids()
+        if player_id not in voter_ids:
+            return False, None, "Nem szavazhatsz."
+
+        if player_id in pending['votes']:
+            return False, None, "Már szavaztál."
+
+        voter = None
+        for p in self.players:
+            if p.id == player_id:
+                voter = p
+                break
+        if not voter:
+            return False, None, "Nem vagy a játék résztvevője."
+
+        pending['votes'][player_id] = vote
+
+        # Ha mindenki szavazott, kiértékelés
+        if voter_ids <= set(pending['votes'].keys()):
+            result = self._resolve_votes()
+            return True, result, self._make_vote_message(result)
+
+        self.last_action = f"{voter.name} szavazott."
+        return True, 'vote_recorded', f"{voter.name} szavazott."
+
+    def accept_pending_by_player(self, player_id):
+        """
+        Játékos elfogadja a függő lerakást.
+        2 játékosnál azonnali elfogadás, 3+-nál elfogadás rögzítése vagy szavazat.
+        Visszatér: (success, result, message)
+        """
+        if not self.pending_challenge:
+            return False, None, "Nincs függő lerakás."
+
+        pending = self.pending_challenge
+        placer = self.players[pending['player_idx']]
+
+        if placer.id == player_id:
+            return False, None, "Saját lerakásodat nem fogadhatod el."
+
+        # Szavazási fázisban: elfogadó szavazat
+        if pending.get('voting_phase'):
+            return self.cast_vote(player_id, 'accept')
+
+        # 2 játékos: azonnali elfogadás
+        if len(self.players) <= 2:
+            self._finalize_accept()
+            return True, 'accepted', "Lerakás elfogadva."
+
+        # 3+ játékos: elfogadás rögzítése
+        if player_id in pending.get('accepted_players', set()):
+            return False, None, "Már elfogadtad."
+
+        pending['accepted_players'].add(player_id)
+
+        # Mindenki elfogadta?
+        non_placer_ids = {p.id for p in self.players if p.id != placer.id}
+        if pending['accepted_players'] >= non_placer_ids:
+            self._finalize_accept()
+            return True, 'accepted', "Lerakás elfogadva."
+
+        return True, 'recorded', "Elfogadva, várakozás a többi játékosra."
 
     def accept_pending(self):
         """
-        Függő lerakás elfogadása (timeout vagy explicit).
-        Visszatér: (success, message)
+        Függő lerakás elfogadása (timeout).
+        Visszatér: (success, result, message)
         """
         if not self.pending_challenge:
-            return False, "Nincs függő lerakás."
+            return False, None, "Nincs függő lerakás."
 
+        pending = self.pending_challenge
+
+        if pending.get('voting_phase'):
+            # Szavazási idő lejárt: kiértékelés (nem szavazók = elfogadás)
+            result = self._resolve_votes()
+            if result == 'vote_accepted':
+                return True, result, "Szavak elfogadva (szavazás lejárt)."
+            else:
+                return True, result, "Szavak elutasítva (szavazás lejárt)."
+        else:
+            # Megtámadási ablak lejárt: automatikus elfogadás
+            self._finalize_accept()
+            return True, 'accepted', "Lerakás elfogadva."
+
+    def _get_voter_ids(self):
+        """Szavazásra jogosult játékosok (nem lerakó, nem megtámadó)."""
+        if not self.pending_challenge:
+            return set()
+        pending = self.pending_challenge
+        placer_id = self.players[pending['player_idx']].id
+        challenger_id = pending.get('challenger_id')
+        return {
+            p.id for p in self.players
+            if p.id != placer_id and p.id != challenger_id
+        }
+
+    def _resolve_votes(self):
+        """Szavazás kiértékelése. Visszatér: 'vote_accepted' | 'vote_rejected'."""
+        pending = self.pending_challenge
+        voter_ids = self._get_voter_ids()
+        total_voters = len(voter_ids)
+
+        if total_voters == 0:
+            self._finalize_accept()
+            return 'vote_accepted'
+
+        # Szavazatok összesítése (nem szavazó = elfogadás)
+        accept_count = 0
+        for vid in voter_ids:
+            vote = pending['votes'].get(vid)
+            if vote != 'reject':
+                accept_count += 1
+
+        # 50% vagy több elfogadás → szó marad
+        if accept_count * 2 >= total_voters:
+            self._finalize_accept()
+            return 'vote_accepted'
+        else:
+            self._finalize_reject()
+            return 'vote_rejected'
+
+    def _finalize_accept(self):
+        """Lerakás véglegesítése (elfogadva)."""
         pending = self.pending_challenge
         player = self.players[pending['player_idx']]
         self.pending_challenge = None
 
-        # Lerakás véglegesítése
         self.board.apply_placement(pending['tiles_placed'])
         player.score += pending['score']
         new_tiles = self.bag.draw(HAND_SIZE - len(player.hand))
@@ -314,13 +433,33 @@ class Game:
         word_strs = pending['word_strs']
         self.last_action = f"{player.name}: {', '.join(word_strs)} ({pending['score']} pont)"
 
-        # Játék vége ellenőrzés
         if len(player.hand) == 0 and self.bag.is_empty():
             self._end_game(player)
         else:
             self._next_turn()
 
-        return True, "Lerakás elfogadva."
+    def _finalize_reject(self):
+        """Lerakás elutasítása szavazással. Betűk visszakerülnek."""
+        pending = self.pending_challenge
+        player = self.players[pending['player_idx']]
+        self.pending_challenge = None
+
+        player.hand.extend(pending['removed_from_hand'])
+        player.consecutive_passes = 0
+
+        word_strs = pending['word_strs']
+        self.last_action = (
+            f"{player.name} szavai elutasítva szavazással: "
+            f"{', '.join(word_strs)}. Betűk visszavéve."
+        )
+        self._next_turn()
+
+    def _make_vote_message(self, result):
+        """Szavazás eredmény üzenet."""
+        if result == 'vote_accepted':
+            return "A szavak elfogadva szavazással."
+        else:
+            return "A szavak elutasítva szavazással!"
 
     def exchange_tiles(self, player_id, tile_indices):
         """Betűcsere. tile_indices: a cserélendő betűk indexei a kézben."""
@@ -434,7 +573,7 @@ class Game:
         if self.pending_challenge:
             pending = self.pending_challenge
             placer = self.players[pending['player_idx']]
-            state['pending_challenge'] = {
+            pc_state = {
                 'player_id': placer.id,
                 'player_name': placer.name,
                 'words': pending['word_strs'],
@@ -443,7 +582,18 @@ class Game:
                     {'row': r, 'col': c, 'letter': l, 'is_blank': b}
                     for r, c, l, b in pending['tiles_placed']
                 ],
+                'voting_phase': pending.get('voting_phase', False),
+                'votes': dict(pending.get('votes', {})),
+                'accepted_players': list(pending.get('accepted_players', set())),
+                'challenger_id': pending.get('challenger_id'),
+                'player_count': len(self.players),
             }
+            if pending.get('challenger_id'):
+                for p in self.players:
+                    if p.id == pending['challenger_id']:
+                        pc_state['challenger_name'] = p.name
+                        break
+            state['pending_challenge'] = pc_state
 
         for player in self.players:
             reveal = (player.id == for_player_id)

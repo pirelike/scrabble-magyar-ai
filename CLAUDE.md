@@ -38,7 +38,7 @@ Böngészőben: http://localhost:5000
 - Drag & drop és kattintásos betű elhelyezés
 - Joker (üres zseton) bármely betűként használható
 - Betűcsere és passz
-- Challenge (megtámadás) mód: szavak megkérdőjelezése más játékos által, 30 mp visszaszámlálás
+- Challenge (megtámadás) mód: 2 játékosnál kötelező elfogadás, 3+ játékosnál szavazásos rendszer (nincs szótár)
 - Játék közbeni chat: szöveges üzenetküldés a szobában
 - Szótár-ellenőrzés: pyenchant + beágyazott hu_HU szótár (cross-platform, Windows-kompatibilis)
 
@@ -112,33 +112,52 @@ Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztésh
 | Fájl | Tesztek | Lefedettség |
 |---|---|---|
 | `tests/test_auth.py` | 33 | DB, user CRUD, jelszó hash, verifikációs kódok, session kezelés |
-| `tests/test_game_logic.py` | 62 | TileBag, Board, Player, Game, Challenge mód |
+| `tests/test_game_logic.py` | 79 | TileBag, Board, Player, Game, Challenge szavazásos rendszer |
 | `tests/test_server_auth.py` | 28 | HTTP auth route-ok, cookie flow |
-| `tests/test_server_socket.py` | 40 | Socket.IO eventek, lobby, szobák, challenge mód, chat |
+| `tests/test_server_socket.py` | 42 | Socket.IO eventek, lobby, szobák, challenge szavazás, chat |
 
-## Challenge (megtámadás) rendszer
+## Challenge (megtámadás) rendszer — szavazásos
 
 ### Működés
-Szoba létrehozásakor bekapcsolható a "Megtámadás mód" (checkbox). Ilyenkor:
-1. Amikor egy játékos lerak szavakat, 30 másodperces ablak nyílik
-2. A többi játékos "Megtámad" gombbal ellenőrizheti a szavakat a szótárban
-3. Vagy "Elfogad" gombbal átugorhatja a várakozást
-4. Ha senki nem támad meg 30 mp-en belül, a lerakás automatikusan elfogadódik
+Szoba létrehozásakor bekapcsolható a "Megtámadás mód" (checkbox). A rendszer játékosszám-függő:
 
-### Challenge eredmények
-- **Sikeres megtámadás** (szó érvénytelen): betűk visszakerülnek a lerakó kezébe
-- **Sikertelen megtámadás** (szó érvényes): lerakás véglegesítődik, megtámadó kihagyja a következő körét
+#### 2 játékos
+1. Amikor egy játékos lerak szavakat, a másik játékos látja a lerakott szavakat
+2. A másik játékos "Elfogad" gombbal elfogadhatja (nincs "Megtámad" gomb)
+3. Ha 30 mp-en belül nem nyom Elfogad-ot, automatikusan elfogadódik
+4. **Nincs szótár-ellenőrzés**, a szó mindig elfogadásra kerül
+
+#### 3+ játékos
+1. Amikor egy játékos lerak szavakat, 30 másodperces ablak nyílik
+2. A többi játékos "Megtámad" vagy "Elfogad" gombbal reagálhat
+3. Ha valaki megnyomja a "Megtámad" gombot, **szavazási fázis** indul (újabb 30 mp)
+4. Ha mindenki elfogad (vagy lejár az idő), a lerakás véglegesítődik
+5. **Nincs szótár-ellenőrzés** — kizárólag a játékosok szavazata dönt
+
+#### Szavazási fázis (3+ játékos)
+- A **lerakó** nem szavaz (ő rakta le)
+- A **megtámadó** nem szavaz (ő indította a szavazást)
+- A **többi játékos** szavaz: "Elfogad" vagy "Elutasít"
+- **50% vagy több elfogadás → szó marad** (döntetlen = elfogadva)
+- **Kevesebb mint 50% → szó elutasítva**, betűk visszakerülnek a lerakó kezébe
+- Nem szavazók (timeout) elfogadásnak számítanak
+- **Nincs kör kihagyás büntetés** a megtámadónak
+
+#### Példák
+- **4 játékos**: 2 szavazó (lerakó és megtámadó kizárva). 1 elfogad + 1 elutasít = 50% → elfogadva
+- **3 játékos**: 1 szavazó. Ő egyedül dönti el
 
 ### Technikai részletek
-- `game.py`: `challenge_mode`, `pending_challenge`, `challenge()`, `accept_pending()` metódusok
-- `server.py`: `challenge` és `accept_words` Socket.IO eventek, `_start_challenge_timer()` háttérfolyamat
+- `game.py`: `challenge()` szavazást indít, `cast_vote()` szavazat leadás, `accept_pending_by_player()` játékos elfogadás, `_resolve_votes()` kiértékelés
+- `server.py`: `challenge`, `accept_words`, `cast_vote` Socket.IO eventek, `_start_challenge_timer()` háttérfolyamat
 - Egyjátékos módban a challenge mód nincs hatással (nincs ki megtámadja)
-- Szótár-ellenőrzés (`board.validate_placement`) kihagyva lerakáskor, csak challenge-nél fut
+- Szótár-ellenőrzés teljesen kikapcsolva challenge módban (lerakáskor és szavazásnál is)
 
 ### Socket.IO eventek
-- `challenge` (kliens→szerver): megtámadás indítása
-- `accept_words` (kliens→szerver): lerakás elfogadása (timer átugrása)
-- `challenge_result` (szerver→szoba): `{challenge_won, message}` — megtámadás eredménye
+- `challenge` (kliens→szerver): szavazás indítása (3+ játékos)
+- `accept_words` (kliens→szerver): lerakás elfogadása (vagy elfogadó szavazat)
+- `cast_vote` (kliens→szerver): `{vote: 'accept'|'reject'}` — szavazat leadás
+- `challenge_result` (szerver→szoba): `{challenge_won, message}` — szavazás eredménye
 
 ## In-game Chat
 

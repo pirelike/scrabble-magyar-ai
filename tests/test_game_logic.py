@@ -458,7 +458,7 @@ class TestGame:
 
 
 class TestChallengeMode:
-    """Challenge mód tesztek."""
+    """Challenge mód tesztek — szavazásos rendszer."""
 
     def test_create_game_with_challenge_mode(self):
         from game import Game
@@ -487,13 +487,12 @@ class TestChallengeMode:
         g = Game('test', challenge_mode=True)
         g.add_player('p1', 'Alice')
         g.start()
-        # Kézi kézbeadás
         g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
         success, msg, score = g.place_tiles('p1', [
             (7, 6, 'A', False), (7, 7, 'B', False)
         ])
         assert success is True
-        assert g.pending_challenge is None  # Egyjátékos: nincs pending
+        assert g.pending_challenge is None
 
     @patch('board.check_words', return_value=(True, []))
     def test_multiplayer_challenge_mode_creates_pending(self, mock_check):
@@ -510,13 +509,15 @@ class TestChallengeMode:
         assert success is True
         assert g.pending_challenge is not None
         assert 'megtámadható' in msg
-        # Betűk elvéve a kézből
         assert 'A' not in g.players[0].hand
         assert 'B' not in g.players[0].hand
+        # Új szavazásos mezők
+        assert g.pending_challenge['voting_phase'] is False
+        assert g.pending_challenge['votes'] == {}
 
     @patch('board.check_words', return_value=(True, []))
     def test_pending_challenge_in_state(self, mock_check):
-        """A pending challenge megjelenik a game state-ben."""
+        """A pending challenge megjelenik a game state-ben szavazás infóval."""
         from game import Game
         g = Game('test', challenge_mode=True)
         g.add_player('p1', 'Alice')
@@ -525,9 +526,12 @@ class TestChallengeMode:
         g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
         g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
         state = g.get_state()
-        assert state['pending_challenge'] is not None
-        assert state['pending_challenge']['player_name'] == 'Alice'
-        assert len(state['pending_challenge']['tiles']) == 2
+        pc = state['pending_challenge']
+        assert pc is not None
+        assert pc['player_name'] == 'Alice'
+        assert len(pc['tiles']) == 2
+        assert pc['voting_phase'] is False
+        assert pc['player_count'] == 2
 
     @patch('board.check_words', return_value=(True, []))
     def test_cannot_place_during_pending(self, mock_check):
@@ -539,7 +543,6 @@ class TestChallengeMode:
         g.start()
         g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
         g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
-        # P2 próbál lerakni
         g.players[1].hand = ['C', 'D', 'E', 'F', 'G', 'H', 'I']
         success, msg, score = g.place_tiles('p2', [(8, 7, 'C', False), (9, 7, 'D', False)])
         assert success is False
@@ -558,9 +561,25 @@ class TestChallengeMode:
         success, msg = g.pass_turn('p2')
         assert success is False
 
+    # --- 2 játékos: nincs megtámadás, kötelező elfogadás ---
+
     @patch('board.check_words', return_value=(True, []))
-    def test_accept_pending(self, mock_check):
-        """Pending elfogadása véglegesíti a lerakást."""
+    def test_2_player_no_challenge(self, mock_check):
+        """2 játékosnál a challenge nem engedélyezett."""
+        from game import Game
+        g = Game('test', challenge_mode=True)
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.start()
+        g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
+        success, result, msg = g.challenge('p2')
+        assert success is False
+        assert 'Két játékos' in msg
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_2_player_accept_immediate(self, mock_check):
+        """2 játékosnál az elfogadás azonnali."""
         from game import Game
         g = Game('test', challenge_mode=True)
         g.add_player('p1', 'Alice')
@@ -569,12 +588,44 @@ class TestChallengeMode:
         g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
         g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
         old_score = g.players[0].score
-        success, msg = g.accept_pending()
+        success, result, msg = g.accept_pending_by_player('p2')
         assert success is True
+        assert result == 'accepted'
         assert g.pending_challenge is None
         assert g.players[0].score > old_score
         assert g.board.get(7, 6) == ('A', False)
-        assert g.board.get(7, 7) == ('B', False)
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_2_player_cannot_accept_own(self, mock_check):
+        """2 játékosnál a lerakó nem fogadhatja el saját lerakását."""
+        from game import Game
+        g = Game('test', challenge_mode=True)
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.start()
+        g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
+        success, result, msg = g.accept_pending_by_player('p1')
+        assert success is False
+
+    # --- accept_pending (timeout) ---
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_accept_pending_timeout(self, mock_check):
+        """Timeout elfogadás véglegesíti a lerakást."""
+        from game import Game
+        g = Game('test', challenge_mode=True)
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.start()
+        g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
+        old_score = g.players[0].score
+        success, result, msg = g.accept_pending()
+        assert success is True
+        assert result == 'accepted'
+        assert g.pending_challenge is None
+        assert g.players[0].score > old_score
 
     @patch('board.check_words', return_value=(True, []))
     def test_accept_pending_no_pending(self, mock_check):
@@ -583,8 +634,10 @@ class TestChallengeMode:
         g = Game('test', challenge_mode=True)
         g.add_player('p1', 'Alice')
         g.start()
-        success, msg = g.accept_pending()
+        success, result, msg = g.accept_pending()
         assert success is False
+
+    # --- Saját lerakás megtámadása ---
 
     @patch('board.check_words', return_value=(True, []))
     def test_challenge_own_placement(self, mock_check):
@@ -593,55 +646,12 @@ class TestChallengeMode:
         g = Game('test', challenge_mode=True)
         g.add_player('p1', 'Alice')
         g.add_player('p2', 'Bob')
+        g.add_player('p3', 'Charlie')
         g.start()
         g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
         g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
-        success, won, msg = g.challenge('p1')
+        success, result, msg = g.challenge('p1')
         assert success is False
-
-    def test_challenge_valid_words(self):
-        """Sikertelen megtámadás: szavak érvényesek, megtámadó kihagyja a köre."""
-        from game import Game
-        g = Game('test', challenge_mode=True)
-        g.add_player('p1', 'Alice')
-        g.add_player('p2', 'Bob')
-        g.start()
-        g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
-        with patch('board.check_words', return_value=(True, [])):
-            g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
-        # challenge() calls game.check_words (not board.check_words)
-        with patch('game.check_words', return_value=(True, [])):
-            success, won, msg = g.challenge('p2')
-        assert success is True
-        assert won is False  # Challenge sikertelen
-        assert g.pending_challenge is None
-        # Lerakás véglegesítve
-        assert g.board.get(7, 6) == ('A', False)
-        # Megtámadó kihagyja a körét: _next_turn() feldolgozta, p1 következik újra
-        assert g.current_player().id == 'p1'
-        assert 'kihagy' in g.last_action
-
-    def test_challenge_invalid_words(self):
-        """Sikeres megtámadás: szavak érvénytelenek, betűk visszavéve."""
-        from game import Game
-        g = Game('test', challenge_mode=True)
-        g.add_player('p1', 'Alice')
-        g.add_player('p2', 'Bob')
-        g.start()
-        g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
-        # skip_dictionary=True in challenge mode, so validate passes
-        with patch('board.check_words', return_value=(True, [])):
-            g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
-        # Now challenge - mock check_words to say invalid
-        with patch('game.check_words', return_value=(False, ['AB'])):
-            success, won, msg = g.challenge('p2')
-        assert success is True
-        assert won is True  # Challenge sikeres
-        # Betűk visszakerültek
-        assert 'A' in g.players[0].hand
-        assert 'B' in g.players[0].hand
-        # Tábla üres marad
-        assert g.board.get(7, 6) is None
 
     def test_challenge_no_pending(self):
         """Megtámadás pending nélkül sikertelen."""
@@ -649,9 +659,261 @@ class TestChallengeMode:
         g = Game('test', challenge_mode=True)
         g.add_player('p1', 'Alice')
         g.add_player('p2', 'Bob')
+        g.add_player('p3', 'Charlie')
         g.start()
-        success, won, msg = g.challenge('p2')
+        success, result, msg = g.challenge('p2')
         assert success is False
+
+    # --- 3+ játékos szavazás ---
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_3_player_challenge_starts_voting(self, mock_check):
+        """3 játékosnál a challenge szavazást indít."""
+        from game import Game
+        g = Game('test', challenge_mode=True)
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.add_player('p3', 'Charlie')
+        g.start()
+        g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
+        success, result, msg = g.challenge('p2')
+        assert success is True
+        assert result == 'voting'
+        assert g.pending_challenge is not None
+        assert g.pending_challenge['voting_phase'] is True
+        assert g.pending_challenge['challenger_id'] == 'p2'
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_3_player_vote_accept(self, mock_check):
+        """3 játékos: szavazó elfogadja → szó marad."""
+        from game import Game
+        g = Game('test', challenge_mode=True)
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.add_player('p3', 'Charlie')
+        g.start()
+        g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
+        g.challenge('p2')
+        success, result, msg = g.cast_vote('p3', 'accept')
+        assert success is True
+        assert result == 'vote_accepted'
+        assert g.pending_challenge is None
+        assert g.board.get(7, 6) == ('A', False)
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_3_player_vote_reject(self, mock_check):
+        """3 játékos: szavazó elutasítja → betűk visszavéve."""
+        from game import Game
+        g = Game('test', challenge_mode=True)
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.add_player('p3', 'Charlie')
+        g.start()
+        g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
+        g.challenge('p2')
+        success, result, msg = g.cast_vote('p3', 'reject')
+        assert success is True
+        assert result == 'vote_rejected'
+        assert g.pending_challenge is None
+        assert g.board.get(7, 6) is None
+        assert 'A' in g.players[0].hand
+        assert 'B' in g.players[0].hand
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_4_player_50_percent_is_yes(self, mock_check):
+        """4 játékos: 50% szavazat (1 elfogad, 1 elutasít) → elfogadva."""
+        from game import Game
+        g = Game('test', challenge_mode=True)
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.add_player('p3', 'Charlie')
+        g.add_player('p4', 'Diana')
+        g.start()
+        g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
+        g.challenge('p2')  # p2 megtámad (nem szavaz)
+        # Szavazók: p3, p4 (p1=lerakó, p2=megtámadó kizárva)
+        g.cast_vote('p3', 'accept')
+        success, result, msg = g.cast_vote('p4', 'reject')
+        assert success is True
+        assert result == 'vote_accepted'  # 50% = elfogadva
+        assert g.board.get(7, 6) == ('A', False)
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_4_player_all_reject(self, mock_check):
+        """4 játékos: mindkét szavazó elutasít → elutasítva."""
+        from game import Game
+        g = Game('test', challenge_mode=True)
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.add_player('p3', 'Charlie')
+        g.add_player('p4', 'Diana')
+        g.start()
+        g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
+        g.challenge('p2')
+        g.cast_vote('p3', 'reject')
+        success, result, msg = g.cast_vote('p4', 'reject')
+        assert success is True
+        assert result == 'vote_rejected'
+        assert g.board.get(7, 6) is None
+        assert 'A' in g.players[0].hand
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_voting_timeout_non_voters_accept(self, mock_check):
+        """Szavazási timeout: nem szavazók elfogadásnak számítanak."""
+        from game import Game
+        g = Game('test', challenge_mode=True)
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.add_player('p3', 'Charlie')
+        g.start()
+        g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
+        g.challenge('p2')
+        # p3 nem szavaz, timer lejár
+        success, result, msg = g.accept_pending()
+        assert success is True
+        assert result == 'vote_accepted'  # Nem szavazó = elfogadás
+        assert g.board.get(7, 6) == ('A', False)
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_cast_vote_not_in_voting_phase(self, mock_check):
+        """Szavazás nem szavazási fázisban sikertelen."""
+        from game import Game
+        g = Game('test', challenge_mode=True)
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.add_player('p3', 'Charlie')
+        g.start()
+        g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
+        # Szavazási fázis még nem indult
+        success, result, msg = g.cast_vote('p3', 'accept')
+        assert success is False
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_cast_vote_duplicate(self, mock_check):
+        """Duplikált szavazat sikertelen."""
+        from game import Game
+        g = Game('test', challenge_mode=True)
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.add_player('p3', 'Charlie')
+        g.add_player('p4', 'Diana')
+        g.start()
+        g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
+        g.challenge('p2')
+        g.cast_vote('p3', 'accept')
+        success, result, msg = g.cast_vote('p3', 'reject')
+        assert success is False
+        assert 'Már szavaztál' in msg
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_challenger_cannot_vote(self, mock_check):
+        """A megtámadó nem szavazhat."""
+        from game import Game
+        g = Game('test', challenge_mode=True)
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.add_player('p3', 'Charlie')
+        g.start()
+        g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
+        g.challenge('p2')
+        success, result, msg = g.cast_vote('p2', 'reject')
+        assert success is False
+        assert 'megtámadó' in msg
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_placer_cannot_vote(self, mock_check):
+        """A lerakó nem szavazhat."""
+        from game import Game
+        g = Game('test', challenge_mode=True)
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.add_player('p3', 'Charlie')
+        g.start()
+        g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
+        g.challenge('p2')
+        success, result, msg = g.cast_vote('p1', 'accept')
+        assert success is False
+        assert 'lerakó' in msg
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_already_in_voting_cannot_challenge_again(self, mock_check):
+        """Már szavazási fázisban nem lehet újra megtámadni."""
+        from game import Game
+        g = Game('test', challenge_mode=True)
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.add_player('p3', 'Charlie')
+        g.start()
+        g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
+        g.challenge('p2')
+        success, result, msg = g.challenge('p3')
+        assert success is False
+        assert 'Már folyamatban' in msg
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_3_player_all_accept_no_challenge(self, mock_check):
+        """3 játékos: mindenki elfogadja (challenge nélkül) → lerakás végleges."""
+        from game import Game
+        g = Game('test', challenge_mode=True)
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.add_player('p3', 'Charlie')
+        g.start()
+        g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
+        g.accept_pending_by_player('p2')
+        success, result, msg = g.accept_pending_by_player('p3')
+        assert success is True
+        assert result == 'accepted'
+        assert g.pending_challenge is None
+        assert g.board.get(7, 6) == ('A', False)
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_3_player_partial_accept_then_challenge(self, mock_check):
+        """3 játékos: p2 elfogad, p3 megtámad → azonnali szavazás eredmény."""
+        from game import Game
+        g = Game('test', challenge_mode=True)
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.add_player('p3', 'Charlie')
+        g.start()
+        g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
+        # p2 elfogadja (phase 1)
+        g.accept_pending_by_player('p2')
+        # p3 megtámadja → szavazás, p2 elfogadása átvive
+        # Szavazók: csak p2 (p1=lerakó, p3=megtámadó), p2 már szavazott
+        success, result, msg = g.challenge('p3')
+        assert success is True
+        assert result == 'vote_accepted'  # p2 elfogadta → 100% elfogadás
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_no_skip_turn_penalty(self, mock_check):
+        """Szavazásos rendszerben nincs kör kihagyás büntetés."""
+        from game import Game
+        g = Game('test', challenge_mode=True)
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.add_player('p3', 'Charlie')
+        g.start()
+        g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
+        g.challenge('p2')
+        g.cast_vote('p3', 'accept')  # Szó elfogadva
+        # Senki nem hagyja ki a körét
+        for p in g.players:
+            assert p.skip_next_turn is False
 
     def test_remove_player_clears_pending(self):
         """Ha a pending játékos kilép, a pending törlődik."""

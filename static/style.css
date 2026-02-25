@@ -732,6 +732,41 @@ button.link-btn:hover {
     font-size: 0.9em;
 }
 
+.vote-status {
+    color: #f39c12;
+    font-size: 0.85em;
+    margin-top: 4px;
+}
+
+.vote-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+.vote-item {
+    font-size: 0.8em;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: #1a1a2e;
+}
+
+.vote-item.vote-accept {
+    color: #2ecc71;
+    border: 1px solid #27ae60;
+}
+
+.vote-item.vote-reject {
+    color: #e74c3c;
+    border: 1px solid #c0392b;
+}
+
+.vote-item.vote-pending {
+    color: #888;
+    border: 1px solid #444;
+}
+
 /* Chat */
 .chat-section {
     margin-top: 16px;

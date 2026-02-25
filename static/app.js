@@ -58,6 +58,7 @@ let challengeTimer = null;
 let challengeTimeLeft = 0;
 let chatMessages = [];
 let challengeModeEnabled = false;
+let wasVotingPhase = false;
 
 // Képernyő váltás
 function showScreen(screenId) {
@@ -952,47 +953,152 @@ function renderChallengeSection() {
     if (!gameState.pending_challenge) {
         section.classList.add('hidden');
         if (challengeTimer) stopChallengeCountdown();
+        wasVotingPhase = false;
         return;
     }
 
     section.classList.remove('hidden');
     const pc = gameState.pending_challenge;
     const isMyPlacement = pc.player_id === myPlayerId;
+    const isVotingPhase = pc.voting_phase || false;
+    const playerCount = pc.player_count || 0;
+    const myAccepted = (pc.accepted_players || []).includes(myPlayerId);
+    const myVote = (pc.votes || {})[myPlayerId];
+    const isChallenger = pc.challenger_id === myPlayerId;
 
-    // Timer indítása ha még nem fut
+    // Timer indítása ha még nem fut, vagy újraindítása ha szavazási fázis kezdődött
     if (!challengeTimer) {
         startChallengeCountdown();
+        wasVotingPhase = isVotingPhase;
+    } else if (isVotingPhase && !wasVotingPhase) {
+        // Szavazási fázis most kezdődött: timer újraindítás
+        startChallengeCountdown();
+        wasVotingPhase = true;
     }
 
+    // --- Info szekció: lerakott szavak ---
     infoEl.innerHTML = '';
     const infoText = document.createElement('div');
     infoText.textContent = `${escapeHtml(pc.player_name)}: ${pc.words.join(', ')} (${pc.score} pont)`;
     infoEl.appendChild(infoText);
 
+    // Szavazási fázisban: státusz megjelenítése
+    if (isVotingPhase) {
+        const voteStatus = document.createElement('div');
+        voteStatus.className = 'vote-status';
+        const challengerName = pc.challenger_name || '?';
+        voteStatus.textContent = `${escapeHtml(challengerName)} megtámadta — szavazás folyamatban`;
+        infoEl.appendChild(voteStatus);
+
+        // Szavazatok megjelenítése
+        const votes = pc.votes || {};
+        const voteList = document.createElement('div');
+        voteList.className = 'vote-list';
+        for (const player of gameState.players) {
+            if (player.id === pc.player_id) continue; // Lerakó nem szavaz
+            if (player.id === pc.challenger_id) continue; // Megtámadó nem szavaz
+            const vote = votes[player.id];
+            const voteItem = document.createElement('span');
+            voteItem.className = 'vote-item';
+            if (vote === 'accept') {
+                voteItem.textContent = `${escapeHtml(player.name)}: Elfogad`;
+                voteItem.classList.add('vote-accept');
+            } else if (vote === 'reject') {
+                voteItem.textContent = `${escapeHtml(player.name)}: Elutasít`;
+                voteItem.classList.add('vote-reject');
+            } else {
+                voteItem.textContent = `${escapeHtml(player.name)}: ...`;
+                voteItem.classList.add('vote-pending');
+            }
+            voteList.appendChild(voteItem);
+        }
+        infoEl.appendChild(voteList);
+    }
+
     timerEl.textContent = challengeTimeLeft > 0 ? `${challengeTimeLeft} mp` : '';
 
+    // --- Gombok ---
     buttonsEl.innerHTML = '';
-    if (!isMyPlacement) {
-        const challengeBtn = document.createElement('button');
-        challengeBtn.className = 'btn-challenge';
-        challengeBtn.textContent = 'Megtámad';
-        challengeBtn.addEventListener('click', () => {
-            socket.emit('challenge');
-        });
-        buttonsEl.appendChild(challengeBtn);
 
-        const acceptBtn = document.createElement('button');
-        acceptBtn.className = 'btn-accept';
-        acceptBtn.textContent = 'Elfogad';
-        acceptBtn.addEventListener('click', () => {
-            socket.emit('accept_words');
-        });
-        buttonsEl.appendChild(acceptBtn);
-    } else {
+    if (isMyPlacement) {
+        // Lerakó: várakozás
         const waitText = document.createElement('div');
         waitText.className = 'challenge-wait';
-        waitText.textContent = 'Várakozás megtámadásra...';
+        waitText.textContent = isVotingPhase
+            ? 'Szavazás folyamatban...'
+            : 'Várakozás elfogadásra...';
         buttonsEl.appendChild(waitText);
+    } else if (isVotingPhase) {
+        // Szavazási fázis: szavazó gombok
+        if (isChallenger) {
+            const waitText = document.createElement('div');
+            waitText.className = 'challenge-wait';
+            waitText.textContent = 'Te megtámadtad — várakozás a szavazásra...';
+            buttonsEl.appendChild(waitText);
+        } else if (myVote) {
+            const waitText = document.createElement('div');
+            waitText.className = 'challenge-wait';
+            waitText.textContent = myVote === 'accept'
+                ? 'Elfogadtad — várakozás...'
+                : 'Elutasítottad — várakozás...';
+            buttonsEl.appendChild(waitText);
+        } else {
+            const acceptBtn = document.createElement('button');
+            acceptBtn.className = 'btn-accept';
+            acceptBtn.textContent = 'Elfogad';
+            acceptBtn.addEventListener('click', () => {
+                socket.emit('cast_vote', { vote: 'accept' });
+            });
+            buttonsEl.appendChild(acceptBtn);
+
+            const rejectBtn = document.createElement('button');
+            rejectBtn.className = 'btn-challenge';
+            rejectBtn.textContent = 'Elutasít';
+            rejectBtn.addEventListener('click', () => {
+                socket.emit('cast_vote', { vote: 'reject' });
+            });
+            buttonsEl.appendChild(rejectBtn);
+        }
+    } else if (playerCount <= 2) {
+        // 2 játékos: csak Elfogad gomb (nincs Megtámad)
+        if (myAccepted) {
+            const waitText = document.createElement('div');
+            waitText.className = 'challenge-wait';
+            waitText.textContent = 'Elfogadva — várakozás...';
+            buttonsEl.appendChild(waitText);
+        } else {
+            const acceptBtn = document.createElement('button');
+            acceptBtn.className = 'btn-accept';
+            acceptBtn.textContent = 'Elfogad';
+            acceptBtn.addEventListener('click', () => {
+                socket.emit('accept_words');
+            });
+            buttonsEl.appendChild(acceptBtn);
+        }
+    } else {
+        // 3+ játékos, megtámadási ablak: Megtámad + Elfogad gombok
+        if (myAccepted) {
+            const waitText = document.createElement('div');
+            waitText.className = 'challenge-wait';
+            waitText.textContent = 'Elfogadtad — várakozás...';
+            buttonsEl.appendChild(waitText);
+        } else {
+            const challengeBtn = document.createElement('button');
+            challengeBtn.className = 'btn-challenge';
+            challengeBtn.textContent = 'Megtámad';
+            challengeBtn.addEventListener('click', () => {
+                socket.emit('challenge');
+            });
+            buttonsEl.appendChild(challengeBtn);
+
+            const acceptBtn = document.createElement('button');
+            acceptBtn.className = 'btn-accept';
+            acceptBtn.textContent = 'Elfogad';
+            acceptBtn.addEventListener('click', () => {
+                socket.emit('accept_words');
+            });
+            buttonsEl.appendChild(acceptBtn);
+        }
     }
 }
 

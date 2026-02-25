@@ -63,6 +63,7 @@ _RATE_LIMITS = {
     'get_rooms': (10, 5),
     'challenge': (5, 10),
     'accept_words': (5, 10),
+    'cast_vote': (5, 10),
     'send_chat': (10, 10),
 }
 
@@ -178,9 +179,15 @@ def _start_challenge_timer(room_id):
         if room_id in rooms and _challenge_counter.get(room_id) == current_id:
             game = rooms[room_id]['game']
             if game.pending_challenge:
-                game.accept_pending()
+                success, result, msg = game.accept_pending()
                 for player in game.players:
                     socketio.emit('game_state', game.get_state(for_player_id=player.id), room=player.id)
+                # Szavazás eredmény közlése ha volt szavazási fázis
+                if result in ('vote_accepted', 'vote_rejected'):
+                    socketio.emit('challenge_result', {
+                        'challenge_won': result == 'vote_rejected',
+                        'message': msg,
+                    }, room=room_id)
 
     socketio.start_background_task(timeout_callback)
 
@@ -767,20 +774,27 @@ def handle_challenge():
         return
 
     game = rooms[room_id]['game']
-    success, challenge_won, msg = game.challenge(sid)
+    success, result, msg = game.challenge(sid)
 
     if success:
-        # Timer érvénytelenítése (counter növelés)
+        # Timer érvénytelenítése
         if room_id not in _challenge_counter:
             _challenge_counter[room_id] = 0
         _challenge_counter[room_id] += 1
 
+        if result == 'voting':
+            # Szavazás indult: új timer
+            _start_challenge_timer(room_id)
+
         for player in game.players:
             emit('game_state', game.get_state(for_player_id=player.id), room=player.id)
-        emit('challenge_result', {
-            'challenge_won': challenge_won,
-            'message': msg,
-        }, room=room_id)
+
+        # Ha azonnal eldőlt (minden szavazó már szavazott)
+        if result in ('vote_accepted', 'vote_rejected'):
+            emit('challenge_result', {
+                'challenge_won': result == 'vote_rejected',
+                'message': msg,
+            }, room=room_id)
     else:
         emit('action_result', {'success': False, 'message': msg})
 
@@ -796,27 +810,62 @@ def handle_accept_words():
         return
 
     game = rooms[room_id]['game']
+    success, result, msg = game.accept_pending_by_player(sid)
 
-    if not game.pending_challenge:
-        emit('action_result', {'success': False, 'message': 'Nincs függő lerakás.'})
-        return
-
-    # Saját lerakást nem lehet elfogadni
-    pending = game.pending_challenge
-    placer = game.players[pending['player_idx']]
-    if placer.id == sid:
-        emit('action_result', {'success': False, 'message': 'Saját lerakásodat nem fogadhatod el.'})
-        return
-
-    success, msg = game.accept_pending()
     if success:
-        # Timer érvénytelenítése
-        if room_id not in _challenge_counter:
-            _challenge_counter[room_id] = 0
-        _challenge_counter[room_id] += 1
+        if result in ('accepted', 'vote_accepted', 'vote_rejected'):
+            # Teljesen elfogadva/eldöntve: timer törlése
+            if room_id not in _challenge_counter:
+                _challenge_counter[room_id] = 0
+            _challenge_counter[room_id] += 1
 
         for player in game.players:
             emit('game_state', game.get_state(for_player_id=player.id), room=player.id)
+
+        if result in ('vote_accepted', 'vote_rejected'):
+            emit('challenge_result', {
+                'challenge_won': result == 'vote_rejected',
+                'message': msg,
+            }, room=room_id)
+    else:
+        emit('action_result', {'success': False, 'message': msg})
+
+
+@socketio.on('cast_vote')
+def handle_cast_vote(data):
+    sid = request.sid
+    if not _check_rate_limit(sid, 'cast_vote'):
+        emit('error', {'message': 'Túl sok kérés, várj egy kicsit.'})
+        return
+    room_id = player_rooms.get(sid)
+    if not room_id or room_id not in rooms:
+        return
+    if not isinstance(data, dict):
+        return
+
+    vote = data.get('vote')
+    if vote not in ('accept', 'reject'):
+        emit('action_result', {'success': False, 'message': 'Érvénytelen szavazat.'})
+        return
+
+    game = rooms[room_id]['game']
+    success, result, msg = game.cast_vote(sid, vote)
+
+    if success:
+        if result in ('vote_accepted', 'vote_rejected'):
+            # Szavazás eldőlt: timer törlése
+            if room_id not in _challenge_counter:
+                _challenge_counter[room_id] = 0
+            _challenge_counter[room_id] += 1
+
+        for player in game.players:
+            emit('game_state', game.get_state(for_player_id=player.id), room=player.id)
+
+        if result in ('vote_accepted', 'vote_rejected'):
+            emit('challenge_result', {
+                'challenge_won': result == 'vote_rejected',
+                'message': msg,
+            }, room=room_id)
     else:
         emit('action_result', {'success': False, 'message': msg})
 
