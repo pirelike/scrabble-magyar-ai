@@ -13,6 +13,8 @@ Webes magyar Scrabble játék online multiplayer támogatással. Flask + Socket.
 - **Drag & drop és kattintásos** betűelhelyezés
 - **Joker** — üres zseton bármely betűként használható
 - **Betűcsere és passz**
+- **Megtámadás (challenge) mód** — szobánként bekapcsolható; lerakás után 30 másodperc áll rendelkezésre a szavak megkérdőjelezésére. Ha a szó érvénytelen, a lerakó visszakapja a betűket és kihagy egy kört; ha érvényes, a támadó hagy ki egy kört
+- **In-game chat** — játék közbeni szöveges üzenetküldés a szobában lévő játékosok között
 
 ## Telepítés
 
@@ -131,7 +133,7 @@ A tunnel a `--no-tunnel` kapcsolóval kikapcsolható. Regisztráció vagy Cloudf
 
 ```
 server.py          — Flask + Socket.IO szerver, lobby/szoba kezelés, auth route-ok, Cloudflare tunnel
-game.py            — Játéklogika (Game, Player osztályok), körök, pontozás
+game.py            — Játéklogika (Game, Player osztályok), körök, pontozás, challenge mód
 board.py           — 15×15 tábla, premium mezők, szóelhelyezés validáció és pontozás
 dictionary.py      — Magyar szótár-ellenőrzés (pyenchant / hunspell)
 tiles.py           — Magyar betűkészlet (100 zseton), TileBag osztály
@@ -144,7 +146,7 @@ templates/
 static/
   app.js           — Kliens logika, drag & drop, Socket.IO, auth flow
   style.css        — Stílusok
-tests/             — Tesztek (pytest, 134 teszt)
+tests/             — Tesztek (pytest, 163 teszt)
 ```
 
 ## Játékszabályok
@@ -153,7 +155,7 @@ tests/             — Tesztek (pytest, 134 teszt)
 - Az első szónak a középső (csillag) mezőt kell fednie, és legalább 2 betűből kell állnia
 - Minden további szónak csatlakoznia kell meglévő betűkhöz
 - A betűknek egy sorban vagy oszlopban, folytonosan kell elhelyezkedniük
-- A lerakott szavakat a hunspell magyar szótár ellenőrzi
+- A lerakott szavakat a hunspell magyar szótár ellenőrzi (kivéve challenge módban, ahol a szótár-ellenőrzés a megtámadáskor történik)
 - Premium mezők: dupla/tripla betű (DL/TL) és dupla/tripla szó (DW/TW)
 - Ha valaki mind a 7 zsetonját lerakja, 50 pont bónuszt kap
 - A játék véget ér, ha valaki elfogyasztja az összes zsetonját (és a zsák üres), vagy ha mindenki 2× egymás után passzol
@@ -164,19 +166,19 @@ tests/             — Tesztek (pytest, 134 teszt)
 .venv/bin/python -m pytest tests/ -v
 ```
 
-134 teszt: auth (33), játéklogika (49), szerver auth route-ok (28), Socket.IO eventek (24).
+163 teszt: auth (33), játéklogika (62), szerver auth route-ok (28), Socket.IO eventek (40).
 
 ## TODO
 
 ### Játékmenet
-- [ ] Challenge rendszer — szó megkérdőjelezése más játékos által
+- [x] Challenge rendszer — szó megkérdőjelezése más játékos által (megtámadás mód, 30 mp időablak)
 - [ ] Időlimit a körökre — opcionális időzítő, lejáratkor automatikus passz
 - [ ] AI ellenfél — egyjátékos mód számítógépes ellenfél(ek)kel
 - [ ] Játék mentés / visszatöltés — félbehagyott játék folytatása
 - [ ] Visszajátszás — befejezett játék lépéseinek visszanézése
 
 ### Közösségi funkciók
-- [ ] Chat — játék közbeni üzenetküldés
+- [x] Chat — játék közbeni üzenetküldés a szobában
 - [ ] Spectator mód — játék megfigyelése
 - [ ] Ranglista / leaderboard
 - [ ] Játékos profil oldal — statisztikák, játékelőzmények
