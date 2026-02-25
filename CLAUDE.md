@@ -38,6 +38,8 @@ Böngészőben: http://localhost:5000
 - Drag & drop és kattintásos betű elhelyezés
 - Joker (üres zseton) bármely betűként használható
 - Betűcsere és passz
+- Challenge (megtámadás) mód: szavak megkérdőjelezése más játékos által, 30 mp visszaszámlálás
+- Játék közbeni chat: szöveges üzenetküldés a szobában
 - Szótár-ellenőrzés: pyenchant + beágyazott hu_HU szótár (cross-platform, Windows-kompatibilis)
 
 ## Biztonság
@@ -110,9 +112,46 @@ Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztésh
 | Fájl | Tesztek | Lefedettség |
 |---|---|---|
 | `tests/test_auth.py` | 33 | DB, user CRUD, jelszó hash, verifikációs kódok, session kezelés |
-| `tests/test_game_logic.py` | 49 | TileBag, Board, Player, Game |
+| `tests/test_game_logic.py` | 62 | TileBag, Board, Player, Game, Challenge mód |
 | `tests/test_server_auth.py` | 28 | HTTP auth route-ok, cookie flow |
-| `tests/test_server_socket.py` | 24 | Socket.IO eventek, lobby, szobák |
+| `tests/test_server_socket.py` | 40 | Socket.IO eventek, lobby, szobák, challenge mód, chat |
+
+## Challenge (megtámadás) rendszer
+
+### Működés
+Szoba létrehozásakor bekapcsolható a "Megtámadás mód" (checkbox). Ilyenkor:
+1. Amikor egy játékos lerak szavakat, 30 másodperces ablak nyílik
+2. A többi játékos "Megtámad" gombbal ellenőrizheti a szavakat a szótárban
+3. Vagy "Elfogad" gombbal átugorhatja a várakozást
+4. Ha senki nem támad meg 30 mp-en belül, a lerakás automatikusan elfogadódik
+
+### Challenge eredmények
+- **Sikeres megtámadás** (szó érvénytelen): betűk visszakerülnek a lerakó kezébe
+- **Sikertelen megtámadás** (szó érvényes): lerakás véglegesítődik, megtámadó kihagyja a következő körét
+
+### Technikai részletek
+- `game.py`: `challenge_mode`, `pending_challenge`, `challenge()`, `accept_pending()` metódusok
+- `server.py`: `challenge` és `accept_words` Socket.IO eventek, `_start_challenge_timer()` háttérfolyamat
+- Egyjátékos módban a challenge mód nincs hatással (nincs ki megtámadja)
+- Szótár-ellenőrzés (`board.validate_placement`) kihagyva lerakáskor, csak challenge-nél fut
+
+### Socket.IO eventek
+- `challenge` (kliens→szerver): megtámadás indítása
+- `accept_words` (kliens→szerver): lerakás elfogadása (timer átugrása)
+- `challenge_result` (szerver→szoba): `{challenge_won, message}` — megtámadás eredménye
+
+## In-game Chat
+
+### Működés
+Játék közben a side panelen chat szekció érhető el:
+- Üzenetek max 200 karakter hosszúak
+- Rate limiting: max 10 üzenet / 10 mp
+- Üzenetek a szoba összes játékosának broadcastolva
+- Max 100 üzenet tárolva szobánként (memóriában)
+
+### Socket.IO eventek
+- `send_chat` (kliens→szerver): `{message}` — üzenet küldése
+- `chat_message` (szerver→szoba): `{name, message}` — üzenet broadcastolás
 
 ## Legutóbbi javítások
 
@@ -131,14 +170,14 @@ Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztésh
 ## Ismert problémák / TODO
 
 ### Játékmenet
-- [ ] Challenge rendszer — szó megkérdőjelezése más játékos által (hivatalos Scrabble szabály)
+- [x] Challenge rendszer — szó megkérdőjelezése más játékos által (30 mp ablak, megtámadás/elfogadás)
 - [ ] Időlimit a körökre — opcionális időzítő (pl. 2 perc/kör), lejáratkor automatikus passz
 - [ ] AI ellenfél — egyjátékos mód számítógépes ellenfél(ek)kel, nehézségi szintek
 - [ ] Játék mentés / visszatöltés — félbehagyott játék folytatása (szerver újraindítás után is)
 - [ ] Visszajátszás — befejezett játék lépéseinek visszanézése
 
 ### Közösségi funkciók
-- [ ] Chat — játék közbeni szöveges üzenetküldés a játékosok között
+- [x] Chat — játék közbeni szöveges üzenetküldés a játékosok között
 - [ ] Spectator mód — folyamatban lévő játék megfigyelése játékos nélkül
 - [ ] Ranglista / leaderboard — regisztrált játékosok összesített statisztikái
 - [ ] Játékos profil oldal — saját statisztikák, játékelőzmények megtekintése

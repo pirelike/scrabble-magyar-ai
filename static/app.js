@@ -54,6 +54,10 @@ let exchangeIndices = new Set();
 let placedTiles = []; // [{row, col, letter, is_blank, handIdx}]
 let currentRoomCode = null;
 let boardDragInitialized = false;
+let challengeTimer = null;
+let challengeTimeLeft = 0;
+let chatMessages = [];
+let challengeModeEnabled = false;
 
 // Képernyő váltás
 function showScreen(screenId) {
@@ -321,7 +325,8 @@ function showAuthError(el, msg) {
 document.getElementById('btn-create-room').addEventListener('click', () => {
     const name = document.getElementById('room-name').value.trim() || 'Szoba';
     const maxPlayers = document.getElementById('room-max-players').value;
-    socket.emit('create_room', { name, max_players: maxPlayers });
+    const challengeMode = document.getElementById('room-challenge-mode').checked;
+    socket.emit('create_room', { name, max_players: maxPlayers, challenge_mode: challengeMode });
 });
 
 // Csatlakozás kóddal
@@ -358,7 +363,7 @@ socket.on('rooms_list', (rooms) => {
 
         const details = document.createElement('div');
         details.className = 'room-details';
-        details.textContent = `${room.players}/${room.max_players} játékos | Tulajdonos: ${room.owner} | ${room.started ? 'Folyamatban' : 'Várakozik'}`;
+        details.textContent = `${room.players}/${room.max_players} játékos | Tulajdonos: ${room.owner} | ${room.started ? 'Folyamatban' : 'Várakozik'}${room.challenge_mode ? ' | Megtámadás' : ''}`;
 
         info.appendChild(nameDiv);
         info.appendChild(details);
@@ -380,7 +385,16 @@ socket.on('rooms_list', (rooms) => {
 // ===== Szoba =====
 socket.on('room_joined', (data) => {
     isOwner = data.is_owner;
+    challengeModeEnabled = data.challenge_mode || false;
     document.getElementById('waiting-room-name').textContent = data.room_name;
+
+    // Challenge mód badge
+    const challengeBadge = document.getElementById('waiting-challenge-mode');
+    if (challengeModeEnabled) {
+        challengeBadge.classList.remove('hidden');
+    } else {
+        challengeBadge.classList.add('hidden');
+    }
 
     // Kód megjelenítés reset
     const codeSection = document.getElementById('room-code-display');
@@ -418,6 +432,8 @@ document.getElementById('btn-copy-code').addEventListener('click', () => {
 
 socket.on('room_left', () => {
     currentRoomCode = null;
+    chatMessages = [];
+    stopChallengeCountdown();
     showScreen('lobby-screen');
     socket.emit('get_rooms');
 });
@@ -464,9 +480,11 @@ socket.on('game_state', (state) => {
         renderHand();
         renderScoreboard();
         renderGameInfo();
+        renderChallengeSection();
         updateButtons();
 
         if (state.finished) {
+            stopChallengeCountdown();
             showGameOver();
         }
     } else {
@@ -601,6 +619,7 @@ function renderBoard() {
     if (!gameState) return;
     const cells = document.querySelectorAll('.cell');
     const hasSelected = selectedTileIdx !== null;
+    const pendingTiles = gameState.pending_challenge ? gameState.pending_challenge.tiles : [];
     cells.forEach(cell => {
         const r = parseInt(cell.dataset.row);
         const c = parseInt(cell.dataset.col);
@@ -608,10 +627,15 @@ function renderBoard() {
 
         // Lerakott zseton ebben a körben?
         const placed = placedTiles.find(t => t.row === r && t.col === c);
+        // Pending challenge zseton?
+        const pending = pendingTiles.find(t => t.row === r && t.col === c);
 
-        cell.classList.remove('has-tile', 'placed-this-turn', 'can-place');
+        cell.classList.remove('has-tile', 'placed-this-turn', 'can-place', 'pending-challenge-tile');
 
-        if (placed) {
+        if (pending) {
+            cell.classList.add('has-tile', 'pending-challenge-tile');
+            cell.innerHTML = `${pending.letter}<span class="tile-value">${pending.is_blank ? 0 : (TILE_VALUES[pending.letter] || 0)}</span>`;
+        } else if (placed) {
             cell.classList.add('has-tile', 'placed-this-turn');
             cell.innerHTML = `${placed.letter}<span class="tile-value">${placed.is_blank ? 0 : (TILE_VALUES[placed.letter] || 0)}</span>`;
         } else if (boardCell) {
@@ -770,10 +794,11 @@ function renderGameInfo() {
 function updateButtons() {
     if (!gameState) return;
     const isMyTurn = gameState.current_player === myPlayerId && !gameState.finished;
+    const hasPending = !!gameState.pending_challenge;
 
-    document.getElementById('btn-place').disabled = !isMyTurn || placedTiles.length === 0;
-    document.getElementById('btn-exchange').disabled = !isMyTurn;
-    document.getElementById('btn-pass').disabled = !isMyTurn;
+    document.getElementById('btn-place').disabled = !isMyTurn || placedTiles.length === 0 || hasPending;
+    document.getElementById('btn-exchange').disabled = !isMyTurn || hasPending;
+    document.getElementById('btn-pass').disabled = !isMyTurn || hasPending;
 
     if (exchangeMode) {
         document.getElementById('btn-exchange').textContent = `Csere (${exchangeIndices.size})`;
@@ -895,6 +920,129 @@ document.getElementById('btn-recall').addEventListener('click', () => {
     updateButtons();
 });
 
+// ===== Challenge rendszer =====
+
+function startChallengeCountdown() {
+    stopChallengeCountdown();
+    challengeTimeLeft = 30;
+    challengeTimer = setInterval(() => {
+        challengeTimeLeft--;
+        if (challengeTimeLeft <= 0) {
+            stopChallengeCountdown();
+        }
+        renderChallengeSection();
+    }, 1000);
+}
+
+function stopChallengeCountdown() {
+    if (challengeTimer) {
+        clearInterval(challengeTimer);
+        challengeTimer = null;
+    }
+    challengeTimeLeft = 0;
+}
+
+function renderChallengeSection() {
+    if (!gameState) return;
+    const section = document.getElementById('challenge-section');
+    const infoEl = document.getElementById('challenge-info');
+    const timerEl = document.getElementById('challenge-timer');
+    const buttonsEl = document.getElementById('challenge-buttons');
+
+    if (!gameState.pending_challenge) {
+        section.classList.add('hidden');
+        if (challengeTimer) stopChallengeCountdown();
+        return;
+    }
+
+    section.classList.remove('hidden');
+    const pc = gameState.pending_challenge;
+    const isMyPlacement = pc.player_id === myPlayerId;
+
+    // Timer indítása ha még nem fut
+    if (!challengeTimer) {
+        startChallengeCountdown();
+    }
+
+    infoEl.innerHTML = '';
+    const infoText = document.createElement('div');
+    infoText.textContent = `${escapeHtml(pc.player_name)}: ${pc.words.join(', ')} (${pc.score} pont)`;
+    infoEl.appendChild(infoText);
+
+    timerEl.textContent = challengeTimeLeft > 0 ? `${challengeTimeLeft} mp` : '';
+
+    buttonsEl.innerHTML = '';
+    if (!isMyPlacement) {
+        const challengeBtn = document.createElement('button');
+        challengeBtn.className = 'btn-challenge';
+        challengeBtn.textContent = 'Megtámad';
+        challengeBtn.addEventListener('click', () => {
+            socket.emit('challenge');
+        });
+        buttonsEl.appendChild(challengeBtn);
+
+        const acceptBtn = document.createElement('button');
+        acceptBtn.className = 'btn-accept';
+        acceptBtn.textContent = 'Elfogad';
+        acceptBtn.addEventListener('click', () => {
+            socket.emit('accept_words');
+        });
+        buttonsEl.appendChild(acceptBtn);
+    } else {
+        const waitText = document.createElement('div');
+        waitText.className = 'challenge-wait';
+        waitText.textContent = 'Várakozás megtámadásra...';
+        buttonsEl.appendChild(waitText);
+    }
+}
+
+socket.on('challenge_result', (data) => {
+    showMessage(data.message, false);
+    stopChallengeCountdown();
+});
+
+// ===== Chat =====
+
+socket.on('chat_message', (msg) => {
+    chatMessages.push(msg);
+    if (chatMessages.length > 100) chatMessages.shift();
+    renderChatMessages();
+});
+
+function renderChatMessages() {
+    const container = document.getElementById('chat-messages');
+    if (!container) return;
+    container.innerHTML = '';
+    chatMessages.forEach(msg => {
+        const msgEl = document.createElement('div');
+        msgEl.className = 'chat-msg';
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'chat-name';
+        nameSpan.textContent = msg.name + ': ';
+        msgEl.appendChild(nameSpan);
+
+        const textSpan = document.createElement('span');
+        textSpan.textContent = msg.message;
+        msgEl.appendChild(textSpan);
+
+        container.appendChild(msgEl);
+    });
+    container.scrollTop = container.scrollHeight;
+}
+
+document.getElementById('btn-send-chat').addEventListener('click', () => {
+    const input = document.getElementById('chat-input');
+    const message = input.value.trim();
+    if (!message) return;
+    socket.emit('send_chat', { message });
+    input.value = '';
+});
+
+document.getElementById('chat-input').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') document.getElementById('btn-send-chat').click();
+});
+
 // Játék vége
 function showGameOver() {
     const dialog = document.getElementById('game-over-dialog');
@@ -914,6 +1062,8 @@ function showGameOver() {
 document.getElementById('btn-back-lobby').addEventListener('click', () => {
     document.getElementById('game-over-dialog').classList.add('hidden');
     currentRoomCode = null;
+    chatMessages = [];
+    stopChallengeCountdown();
     socket.emit('leave_room');
     showScreen('lobby-screen');
     socket.emit('get_rooms');

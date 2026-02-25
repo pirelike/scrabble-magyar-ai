@@ -90,6 +90,9 @@
                         <option value="3">3 játékos</option>
                         <option value="4" selected>4 játékos</option>
                     </select>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="room-challenge-mode"> Megtámadás mód
+                    </label>
                     <button id="btn-create-room">Létrehozás</button>
                 </div>
             </div>
@@ -123,6 +126,7 @@
                 <div class="code-value" id="room-code-value"></div>
                 <button id="btn-copy-code" class="small-btn">Másolás</button>
             </div>
+            <div id="waiting-challenge-mode" class="challenge-mode-badge hidden">Megtámadás mód</div>
             <div id="waiting-players"></div>
             <button id="btn-start-game" class="hidden">Játék indítása</button>
             <button id="btn-leave-room" class="danger">Kilépés</button>
@@ -141,11 +145,26 @@
                     <div id="current-turn">-</div>
                     <div id="last-action" class="last-action"></div>
                 </div>
+                <!-- Challenge szekció -->
+                <div id="challenge-section" class="challenge-section hidden">
+                    <div id="challenge-info" class="challenge-info"></div>
+                    <div id="challenge-timer" class="challenge-timer"></div>
+                    <div id="challenge-buttons" class="challenge-buttons"></div>
+                </div>
                 <div class="actions">
                     <button id="btn-place" class="action-btn" disabled>Lerak</button>
                     <button id="btn-exchange" class="action-btn" disabled>Csere</button>
                     <button id="btn-pass" class="action-btn" disabled>Passz</button>
                     <button id="btn-recall" class="action-btn">Visszavon</button>
+                </div>
+                <!-- Chat -->
+                <div class="chat-section">
+                    <h3>Chat</h3>
+                    <div id="chat-messages" class="chat-messages"></div>
+                    <div class="chat-input-row">
+                        <input type="text" id="chat-input" placeholder="Üzenet..." maxlength="200">
+                        <button id="btn-send-chat" class="small-btn">Küldés</button>
+                    </div>
                 </div>
             </div>
 

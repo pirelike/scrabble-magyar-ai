@@ -20,7 +20,7 @@ from collections import defaultdict
 from flask import Flask, render_template, request, jsonify, make_response
 from flask_socketio import SocketIO, emit, join_room, leave_room
 
-from game import Game
+from game import Game, CHALLENGE_TIMEOUT
 from config import AUTH_RATE_LIMITS, SMTP_CONFIGURED
 from auth import init_db, get_user_by_email, create_user, verify_password, \
     create_verification_code, verify_code, create_session, validate_session, \
@@ -44,6 +44,10 @@ player_rooms = {}
 player_names = {}
 # Játékos auth info: {sid: {user_id, is_guest}}
 player_auth = {}
+# Chat üzenetek szobánként: {room_id: [{name, message, timestamp}, ...]}
+room_chat = {}
+# Challenge timer azonosítók: {room_id: int}
+_challenge_counter = {}
 
 # --- Rate limiting ---
 # {sid: {event_name: [timestamp, ...]}}
@@ -57,6 +61,9 @@ _RATE_LIMITS = {
     'exchange_tiles': (5, 10),
     'pass_turn': (5, 10),
     'get_rooms': (10, 5),
+    'challenge': (5, 10),
+    'accept_words': (5, 10),
+    'send_chat': (10, 10),
 }
 
 # IP-alapú rate limiting az auth endpointokra
@@ -155,6 +162,27 @@ def _set_session_cookie(response, token):
         max_age=30 * 24 * 3600,  # 30 nap
     )
     return response
+
+
+# --- Challenge timer ---
+
+def _start_challenge_timer(room_id):
+    """Challenge timeout visszaszámlálás."""
+    if room_id not in _challenge_counter:
+        _challenge_counter[room_id] = 0
+    _challenge_counter[room_id] += 1
+    current_id = _challenge_counter[room_id]
+
+    def timeout_callback():
+        eventlet.sleep(CHALLENGE_TIMEOUT)
+        if room_id in rooms and _challenge_counter.get(room_id) == current_id:
+            game = rooms[room_id]['game']
+            if game.pending_challenge:
+                game.accept_pending()
+                for player in game.players:
+                    socketio.emit('game_state', game.get_state(for_player_id=player.id), room=player.id)
+
+    socketio.start_background_task(timeout_callback)
 
 
 # ===== AUTH HTTP ROUTES =====
@@ -346,6 +374,7 @@ def get_rooms_list():
             'max_players': room['max_players'],
             'started': room['game'].started,
             'owner': room['owner_name'],
+            'challenge_mode': room['game'].challenge_mode,
         })
     return result
 
@@ -371,6 +400,10 @@ def handle_disconnect():
             # Szoba törlés - join_code felszabadítás
             if room.get('join_code') in join_codes:
                 del join_codes[room['join_code']]
+            if room_id in room_chat:
+                del room_chat[room_id]
+            if room_id in _challenge_counter:
+                del _challenge_counter[room_id]
             del rooms[room_id]
         else:
             # Ha a tulajdonos ment el, új tulajdonos
@@ -440,11 +473,12 @@ def handle_create_room(data):
         max_players = min(max(int(data.get('max_players', 4)), 2), 4)
     except (ValueError, TypeError):
         max_players = 4
+    challenge_mode = bool(data.get('challenge_mode', False))
     player_name = player_names.get(sid, 'Névtelen')
 
     room_id = str(uuid.uuid4())[:8]
     join_code = _generate_join_code()
-    game = Game(room_id)
+    game = Game(room_id, challenge_mode=challenge_mode)
     game.add_player(sid, player_name)
 
     rooms[room_id] = {
@@ -464,6 +498,7 @@ def handle_create_room(data):
         'room_id': room_id,
         'room_name': name,
         'is_owner': True,
+        'challenge_mode': game.challenge_mode,
     })
     # Csak a tulajdonosnak küldjük el a csatlakozási kódot
     emit('room_code', {'code': join_code})
@@ -529,6 +564,7 @@ def handle_join_room(data):
         'room_id': room_id,
         'room_name': room['name'],
         'is_owner': False,
+        'challenge_mode': game.challenge_mode,
     })
 
     # Frissítjük mindenkit a szobában
@@ -558,6 +594,10 @@ def handle_leave_room():
         # Szoba törlés - join_code felszabadítás
         if room.get('join_code') in join_codes:
             del join_codes[room['join_code']]
+        if room_id in room_chat:
+            del room_chat[room_id]
+        if room_id in _challenge_counter:
+            del _challenge_counter[room_id]
         del rooms[room_id]
     else:
         if room['owner'] == sid:
@@ -654,6 +694,9 @@ def handle_place_tiles(data):
         for player in game.players:
             emit('game_state', game.get_state(for_player_id=player.id), room=player.id)
         emit('action_result', {'success': True, 'message': msg, 'score': score})
+        # Challenge timer indítása ha szükséges
+        if game.pending_challenge:
+            _start_challenge_timer(room_id)
     else:
         emit('action_result', {'success': False, 'message': msg})
 
@@ -711,6 +754,107 @@ def handle_pass_turn():
         emit('action_result', {'success': True, 'message': msg})
     else:
         emit('action_result', {'success': False, 'message': msg})
+
+
+@socketio.on('challenge')
+def handle_challenge():
+    sid = request.sid
+    if not _check_rate_limit(sid, 'challenge'):
+        emit('error', {'message': 'Túl sok kérés, várj egy kicsit.'})
+        return
+    room_id = player_rooms.get(sid)
+    if not room_id or room_id not in rooms:
+        return
+
+    game = rooms[room_id]['game']
+    success, challenge_won, msg = game.challenge(sid)
+
+    if success:
+        # Timer érvénytelenítése (counter növelés)
+        if room_id not in _challenge_counter:
+            _challenge_counter[room_id] = 0
+        _challenge_counter[room_id] += 1
+
+        for player in game.players:
+            emit('game_state', game.get_state(for_player_id=player.id), room=player.id)
+        emit('challenge_result', {
+            'challenge_won': challenge_won,
+            'message': msg,
+        }, room=room_id)
+    else:
+        emit('action_result', {'success': False, 'message': msg})
+
+
+@socketio.on('accept_words')
+def handle_accept_words():
+    sid = request.sid
+    if not _check_rate_limit(sid, 'accept_words'):
+        emit('error', {'message': 'Túl sok kérés, várj egy kicsit.'})
+        return
+    room_id = player_rooms.get(sid)
+    if not room_id or room_id not in rooms:
+        return
+
+    game = rooms[room_id]['game']
+
+    if not game.pending_challenge:
+        emit('action_result', {'success': False, 'message': 'Nincs függő lerakás.'})
+        return
+
+    # Saját lerakást nem lehet elfogadni
+    pending = game.pending_challenge
+    placer = game.players[pending['player_idx']]
+    if placer.id == sid:
+        emit('action_result', {'success': False, 'message': 'Saját lerakásodat nem fogadhatod el.'})
+        return
+
+    success, msg = game.accept_pending()
+    if success:
+        # Timer érvénytelenítése
+        if room_id not in _challenge_counter:
+            _challenge_counter[room_id] = 0
+        _challenge_counter[room_id] += 1
+
+        for player in game.players:
+            emit('game_state', game.get_state(for_player_id=player.id), room=player.id)
+    else:
+        emit('action_result', {'success': False, 'message': msg})
+
+
+@socketio.on('send_chat')
+def handle_send_chat(data):
+    sid = request.sid
+    if not _check_rate_limit(sid, 'send_chat'):
+        emit('error', {'message': 'Túl sok üzenet, várj egy kicsit.'})
+        return
+    room_id = player_rooms.get(sid)
+    if not room_id or room_id not in rooms:
+        return
+    if not isinstance(data, dict):
+        return
+
+    message = data.get('message', '')
+    if not isinstance(message, str):
+        return
+    message = message.strip()
+    if not message or len(message) > 200:
+        return
+
+    player_name = player_names.get(sid, '?')
+
+    chat_msg = {
+        'name': player_name,
+        'message': message,
+    }
+
+    if room_id not in room_chat:
+        room_chat[room_id] = []
+    room_chat[room_id].append(chat_msg)
+    # Max 100 üzenet
+    if len(room_chat[room_id]) > 100:
+        room_chat[room_id] = room_chat[room_id][-100:]
+
+    emit('chat_message', chat_msg, room=room_id)
 
 
 tunnel_process = None

@@ -76,10 +76,11 @@ class Board:
             result.append(row)
         return result
 
-    def validate_placement(self, tiles_placed):
+    def validate_placement(self, tiles_placed, skip_dictionary=False):
         """
         Ellenőrzi a lerakott zsetonokat.
         tiles_placed: lista [(row, col, letter, is_blank), ...]
+        skip_dictionary: ha True, kihagyja a szótár-ellenőrzést (challenge módhoz)
 
         Visszatér: (valid, formed_words, error_message)
         formed_words: lista [(word_str, [(row, col), ...], score), ...]
@@ -221,12 +222,13 @@ class Board:
             if not formed_words:
                 return False, [], "Legalább egy szót kell alkotni."
 
-            # Szótár-ellenőrzés
-            word_strings = [w for w, _, _ in formed_words]
-            all_valid, invalid = check_words(word_strings)
-            if not all_valid:
-                inv_str = ', '.join(invalid)
-                return False, [], f"Érvénytelen szó(k): {inv_str}"
+            # Szótár-ellenőrzés (kihagyható challenge módban)
+            if not skip_dictionary:
+                word_strings = [w for w, _, _ in formed_words]
+                all_valid, invalid = check_words(word_strings)
+                if not all_valid:
+                    inv_str = ', '.join(invalid)
+                    return False, [], f"Érvénytelen szó(k): {inv_str}"
 
             return True, formed_words, ""
 

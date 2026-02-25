@@ -1,8 +1,10 @@
 from tiles import TileBag, TILE_VALUES
 from board import Board
+from dictionary import check_words
 
 HAND_SIZE = 7
 BONUS_ALL_TILES = 50
+CHALLENGE_TIMEOUT = 30  # másodperc
 
 
 class Player:
@@ -14,6 +16,7 @@ class Player:
         self.hand = []  # Betűzsetonok a kézben
         self.score = 0
         self.consecutive_passes = 0
+        self.skip_next_turn = False  # Challenge büntetés
 
     def to_dict(self, reveal_hand=False):
         data = {
@@ -21,6 +24,7 @@ class Player:
             'name': self.name,
             'score': self.score,
             'hand_count': len(self.hand),
+            'skip_next_turn': self.skip_next_turn,
         }
         if reveal_hand:
             data['hand'] = self.hand
@@ -30,7 +34,7 @@ class Player:
 class Game:
     """Scrabble játék állapot és logika."""
 
-    def __init__(self, game_id):
+    def __init__(self, game_id, challenge_mode=False):
         self.id = game_id
         self.players = []
         self.board = Board()
@@ -41,6 +45,12 @@ class Game:
         self.winner = None
         self.turn_number = 0
         self.last_action = None
+        self.challenge_mode = challenge_mode
+
+        # Challenge állapot: ha van függő lerakás, ami megtámadható
+        # None ha nincs, egyébként dict:
+        # {tiles_placed, formed_words, score, player_idx, removed_from_hand}
+        self.pending_challenge = None
 
     def add_player(self, player_id, name):
         if len(self.players) >= 4:
@@ -61,6 +71,10 @@ class Game:
         if removed_idx is None:
             return
 
+        # Ha a távozó játékos éppen challenge fázisban van, töröljük
+        if self.pending_challenge and self.pending_challenge['player_idx'] == removed_idx:
+            self.pending_challenge = None
+
         self.players.pop(removed_idx)
 
         # current_player_idx kiigazítása
@@ -74,6 +88,12 @@ class Game:
                 if self.current_player_idx >= len(self.players):
                     self.current_player_idx = 0
             # Ha removed_idx > current_player_idx, nem kell módosítani
+
+            # pending_challenge player_idx kiigazítása
+            if self.pending_challenge:
+                pidx = self.pending_challenge['player_idx']
+                if removed_idx < pidx:
+                    self.pending_challenge['player_idx'] = pidx - 1
         else:
             self.current_player_idx = 0
 
@@ -95,8 +115,16 @@ class Game:
         return self.players[self.current_player_idx]
 
     def _next_turn(self):
-        self.current_player_idx = (self.current_player_idx + 1) % len(self.players)
-        self.turn_number += 1
+        """Következő játékos. Kihagyja a büntetett játékosokat."""
+        for _ in range(len(self.players)):
+            self.current_player_idx = (self.current_player_idx + 1) % len(self.players)
+            self.turn_number += 1
+            current = self.players[self.current_player_idx]
+            if current.skip_next_turn:
+                current.skip_next_turn = False
+                self.last_action = f"{current.name} kihagy egy kört (sikertelen megtámadás)"
+            else:
+                break
 
     def place_tiles(self, player_id, tiles_placed):
         """
@@ -106,6 +134,9 @@ class Game:
         """
         if self.finished:
             return False, "A játék véget ért.", 0
+
+        if self.pending_challenge:
+            return False, "Várj a megtámadási fázis végéig.", 0
 
         player = self.current_player()
         if player.id != player_id:
@@ -123,8 +154,10 @@ class Game:
                     return False, f"Nincs '{letter}' betűd.", 0
                 hand_copy.remove(letter)
 
-        # Tábla validáció
-        valid, formed_words, error = self.board.validate_placement(tiles_placed)
+        # Tábla validáció - challenge módban szótár nélkül
+        valid, formed_words, error = self.board.validate_placement(
+            tiles_placed, skip_dictionary=self.challenge_mode
+        )
         if not valid:
             return False, error, 0
 
@@ -135,7 +168,33 @@ class Game:
         if len(tiles_placed) == HAND_SIZE:
             total_score += BONUS_ALL_TILES
 
-        # Véglegesítés
+        word_strs = [w for w, _, _ in formed_words]
+
+        if self.challenge_mode and len(self.players) > 1:
+            # Challenge mód: lerakás függőben, megtámadható
+            # Eltávolítjuk a betűket a kézből
+            removed = []
+            for r, c, letter, is_blank in tiles_placed:
+                if is_blank:
+                    player.hand.remove('')
+                    removed.append('')
+                else:
+                    player.hand.remove(letter)
+                    removed.append(letter)
+
+            self.pending_challenge = {
+                'tiles_placed': tiles_placed,
+                'formed_words': formed_words,
+                'word_strs': word_strs,
+                'score': total_score,
+                'player_idx': self.current_player_idx,
+                'removed_from_hand': removed,
+            }
+
+            self.last_action = f"{player.name}: {', '.join(word_strs)} ({total_score} pont) — megtámadható!"
+            return True, f"Szavak: {', '.join(word_strs)} — megtámadható!", total_score
+
+        # Normál mód (vagy egyjátékos challenge módban): azonnal véglegesít
         self.board.apply_placement(tiles_placed)
         player.score += total_score
 
@@ -153,7 +212,6 @@ class Game:
         # Passz számláló reset
         player.consecutive_passes = 0
 
-        word_strs = [w for w, _, _ in formed_words]
         self.last_action = f"{player.name}: {', '.join(word_strs)} ({total_score} pont)"
 
         # Játék vége ellenőrzés
@@ -164,10 +222,113 @@ class Game:
 
         return True, f"Szavak: {', '.join(word_strs)}", total_score
 
+    def challenge(self, challenger_id):
+        """
+        Megtámadás: ellenőrzi a szótárban a függő szavakat.
+        Visszatér: (success, challenge_won, message)
+          - success: True ha a challenge érvényes volt
+          - challenge_won: True ha a szavak érvénytelenek (megtámadó nyert)
+        """
+        if not self.pending_challenge:
+            return False, False, "Nincs megtámadható lerakás."
+
+        pending = self.pending_challenge
+        player = self.players[pending['player_idx']]
+
+        # Saját lerakást nem lehet megtámadni
+        if player.id == challenger_id:
+            return False, False, "Saját lerakásodat nem támadhatod meg."
+
+        # Megkeressük a megtámadót
+        challenger = None
+        for p in self.players:
+            if p.id == challenger_id:
+                challenger = p
+                break
+        if not challenger:
+            return False, False, "Nem vagy a játék résztvevője."
+
+        # Szótár-ellenőrzés
+        word_strings = pending['word_strs']
+        all_valid, invalid = check_words(word_strings)
+
+        self.pending_challenge = None
+
+        if not all_valid:
+            # Megtámadás sikeres — szavak érvénytelenek
+            # Betűk visszakerülnek a lerakó kezébe
+            player.hand.extend(pending['removed_from_hand'])
+            # Lerakó elveszti a körét (már sorra került, kör továbbmegy)
+            player.consecutive_passes = 0
+            inv_str = ', '.join(invalid)
+            self.last_action = (
+                f"{challenger.name} megtámadta {player.name} szavait — "
+                f"érvénytelen: {inv_str}! Betűk visszavéve."
+            )
+            self._next_turn()
+            return True, True, f"Sikeres megtámadás! Érvénytelen szó(k): {inv_str}"
+        else:
+            # Megtámadás sikertelen — szavak érvényesek
+            # Lerakás véglegesítése
+            self.board.apply_placement(pending['tiles_placed'])
+            player.score += pending['score']
+            new_tiles = self.bag.draw(HAND_SIZE - len(player.hand))
+            player.hand.extend(new_tiles)
+            player.consecutive_passes = 0
+
+            # Megtámadó büntetése: következő kör kihagyása
+            challenger.skip_next_turn = True
+
+            self.last_action = (
+                f"{challenger.name} megtámadta {player.name} szavait — "
+                f"érvényes! {challenger.name} kihagy egy kört."
+            )
+
+            # Játék vége ellenőrzés
+            if len(player.hand) == 0 and self.bag.is_empty():
+                self._end_game(player)
+            else:
+                self._next_turn()
+
+            return True, False, f"Sikertelen megtámadás! A szavak érvényesek."
+
+    def accept_pending(self):
+        """
+        Függő lerakás elfogadása (timeout vagy explicit).
+        Visszatér: (success, message)
+        """
+        if not self.pending_challenge:
+            return False, "Nincs függő lerakás."
+
+        pending = self.pending_challenge
+        player = self.players[pending['player_idx']]
+        self.pending_challenge = None
+
+        # Lerakás véglegesítése
+        self.board.apply_placement(pending['tiles_placed'])
+        player.score += pending['score']
+        new_tiles = self.bag.draw(HAND_SIZE - len(player.hand))
+        player.hand.extend(new_tiles)
+        player.consecutive_passes = 0
+
+        word_strs = pending['word_strs']
+        self.last_action = f"{player.name}: {', '.join(word_strs)} ({pending['score']} pont)"
+
+        # Játék vége ellenőrzés
+        if len(player.hand) == 0 and self.bag.is_empty():
+            self._end_game(player)
+        else:
+            self._next_turn()
+
+        return True, "Lerakás elfogadva."
+
     def exchange_tiles(self, player_id, tile_indices):
         """Betűcsere. tile_indices: a cserélendő betűk indexei a kézben."""
         if self.finished:
             return False, "A játék véget ért."
+
+        if self.pending_challenge:
+            return False, "Várj a megtámadási fázis végéig."
 
         player = self.current_player()
         if player.id != player_id:
@@ -211,6 +372,9 @@ class Game:
         if self.finished:
             return False, "A játék véget ért."
 
+        if self.pending_challenge:
+            return False, "Várj a megtámadási fázis végéig."
+
         player = self.current_player()
         if player.id != player_id:
             return False, "Nem te következel."
@@ -230,6 +394,7 @@ class Game:
     def _end_game(self, finisher):
         """Játék vége, végső pontozás."""
         self.finished = True
+        self.pending_challenge = None
 
         # Megmaradt betűk összpontszáma
         remaining_total = 0
@@ -261,7 +426,24 @@ class Game:
             'last_action': self.last_action,
             'players': [],
             'winner': self.winner.to_dict() if self.winner else None,
+            'challenge_mode': self.challenge_mode,
+            'pending_challenge': None,
         }
+
+        # Függő challenge info
+        if self.pending_challenge:
+            pending = self.pending_challenge
+            placer = self.players[pending['player_idx']]
+            state['pending_challenge'] = {
+                'player_id': placer.id,
+                'player_name': placer.name,
+                'words': pending['word_strs'],
+                'score': pending['score'],
+                'tiles': [
+                    {'row': r, 'col': c, 'letter': l, 'is_blank': b}
+                    for r, c, l, b in pending['tiles_placed']
+                ],
+            }
 
         for player in self.players:
             reveal = (player.id == for_player_id)

@@ -24,12 +24,16 @@ def clean_state():
     server.player_rooms.clear()
     server.player_names.clear()
     server.player_auth.clear()
+    server.room_chat.clear()
+    server._challenge_counter.clear()
     yield
     server.rooms.clear()
     server.join_codes.clear()
     server.player_rooms.clear()
     server.player_names.clear()
     server.player_auth.clear()
+    server.room_chat.clear()
+    server._challenge_counter.clear()
 
 
 @pytest.fixture
@@ -344,3 +348,176 @@ class TestRoomCodeVisibility:
         for room in rooms:
             assert 'join_code' not in room
             assert 'code' not in room
+
+
+class TestChallengeMode:
+    def test_create_room_with_challenge_mode(self, registered_client):
+        registered_client.emit('create_room', {
+            'name': 'ChallengeRoom', 'max_players': 4, 'challenge_mode': True
+        })
+        received = registered_client.get_received()
+        join_events = [r for r in received if r['name'] == 'room_joined']
+        assert len(join_events) >= 1
+        assert join_events[0]['args'][0]['challenge_mode'] is True
+
+    def test_create_room_without_challenge_mode(self, registered_client):
+        registered_client.emit('create_room', {'name': 'NormalRoom', 'max_players': 4})
+        received = registered_client.get_received()
+        join_events = [r for r in received if r['name'] == 'room_joined']
+        assert join_events[0]['args'][0]['challenge_mode'] is False
+
+    def test_rooms_list_shows_challenge_mode(self, registered_client):
+        registered_client.emit('create_room', {
+            'name': 'ChalRoom', 'max_players': 4, 'challenge_mode': True
+        })
+        registered_client.get_received()
+
+        registered_client.emit('get_rooms')
+        received = registered_client.get_received()
+        rooms_events = [r for r in received if r['name'] == 'rooms_list']
+        rooms = rooms_events[0]['args'][0]
+        assert any(r['challenge_mode'] for r in rooms)
+
+    def test_join_room_shows_challenge_mode(self, app, socketio_app, registered_client):
+        registered_client.emit('create_room', {
+            'name': 'ChalJoin', 'max_players': 4, 'challenge_mode': True
+        })
+        received = registered_client.get_received()
+        code_events = [r for r in received if r['name'] == 'room_code']
+        code = code_events[0]['args'][0]['code']
+
+        c2 = socketio_app.test_client(app)
+        c2.emit('set_name', {'name': 'P2', 'is_guest': True, 'user_id': None})
+        c2.get_received()
+        c2.emit('join_room', {'code': code})
+        received2 = c2.get_received()
+        join_events = [r for r in received2 if r['name'] == 'room_joined']
+        assert join_events[0]['args'][0]['challenge_mode'] is True
+        c2.disconnect()
+
+    def test_challenge_no_pending(self, registered_client):
+        registered_client.emit('create_room', {
+            'name': 'ChalTest', 'max_players': 4, 'challenge_mode': True
+        })
+        registered_client.get_received()
+        registered_client.emit('start_game')
+        registered_client.get_received()
+
+        registered_client.emit('challenge')
+        received = registered_client.get_received()
+        action_events = [r for r in received if r['name'] == 'action_result']
+        assert len(action_events) >= 1
+        assert action_events[0]['args'][0]['success'] is False
+
+    def test_accept_words_no_pending(self, registered_client):
+        registered_client.emit('create_room', {
+            'name': 'AccTest', 'max_players': 4, 'challenge_mode': True
+        })
+        registered_client.get_received()
+        registered_client.emit('start_game')
+        registered_client.get_received()
+
+        registered_client.emit('accept_words')
+        received = registered_client.get_received()
+        action_events = [r for r in received if r['name'] == 'action_result']
+        assert len(action_events) >= 1
+        assert action_events[0]['args'][0]['success'] is False
+
+
+class TestChat:
+    def test_send_chat_in_room(self, app, socketio_app, registered_client):
+        registered_client.emit('create_room', {'name': 'ChatRoom', 'max_players': 4})
+        registered_client.get_received()
+
+        registered_client.emit('send_chat', {'message': 'Hello!'})
+        received = registered_client.get_received()
+        chat_events = [r for r in received if r['name'] == 'chat_message']
+        assert len(chat_events) >= 1
+        assert chat_events[0]['args'][0]['name'] == 'RegUser'
+        assert chat_events[0]['args'][0]['message'] == 'Hello!'
+
+    def test_send_chat_to_all_in_room(self, app, socketio_app, registered_client):
+        registered_client.emit('create_room', {'name': 'ChatAll', 'max_players': 4})
+        received = registered_client.get_received()
+        code_events = [r for r in received if r['name'] == 'room_code']
+        code = code_events[0]['args'][0]['code']
+
+        c2 = socketio_app.test_client(app)
+        c2.emit('set_name', {'name': 'P2Chat', 'is_guest': True, 'user_id': None})
+        c2.get_received()
+        c2.emit('join_room', {'code': code})
+        c2.get_received()
+
+        registered_client.get_received()  # Clear join notifications
+
+        registered_client.emit('send_chat', {'message': 'Hi all!'})
+        registered_client.get_received()
+
+        received2 = c2.get_received()
+        chat_events = [r for r in received2 if r['name'] == 'chat_message']
+        assert len(chat_events) >= 1
+        assert chat_events[0]['args'][0]['message'] == 'Hi all!'
+        c2.disconnect()
+
+    def test_send_chat_empty_message(self, registered_client):
+        registered_client.emit('create_room', {'name': 'ChatEmpty', 'max_players': 4})
+        registered_client.get_received()
+
+        registered_client.emit('send_chat', {'message': ''})
+        received = registered_client.get_received()
+        chat_events = [r for r in received if r['name'] == 'chat_message']
+        assert len(chat_events) == 0
+
+    def test_send_chat_whitespace_only(self, registered_client):
+        registered_client.emit('create_room', {'name': 'ChatWS', 'max_players': 4})
+        registered_client.get_received()
+
+        registered_client.emit('send_chat', {'message': '   '})
+        received = registered_client.get_received()
+        chat_events = [r for r in received if r['name'] == 'chat_message']
+        assert len(chat_events) == 0
+
+    def test_send_chat_too_long(self, registered_client):
+        registered_client.emit('create_room', {'name': 'ChatLong', 'max_players': 4})
+        registered_client.get_received()
+
+        registered_client.emit('send_chat', {'message': 'x' * 201})
+        received = registered_client.get_received()
+        chat_events = [r for r in received if r['name'] == 'chat_message']
+        assert len(chat_events) == 0
+
+    def test_send_chat_not_in_room(self, registered_client):
+        registered_client.emit('send_chat', {'message': 'Lost!'})
+        received = registered_client.get_received()
+        chat_events = [r for r in received if r['name'] == 'chat_message']
+        assert len(chat_events) == 0
+
+    def test_chat_stored_in_room_chat(self, registered_client):
+        registered_client.emit('create_room', {'name': 'ChatStore', 'max_players': 4})
+        registered_client.get_received()
+
+        registered_client.emit('send_chat', {'message': 'Msg1'})
+        registered_client.emit('send_chat', {'message': 'Msg2'})
+        registered_client.get_received()
+
+        import server
+        # Find room_id
+        room_id = list(server.rooms.keys())[0]
+        assert room_id in server.room_chat
+        assert len(server.room_chat[room_id]) == 2
+        assert server.room_chat[room_id][0]['message'] == 'Msg1'
+
+    def test_chat_cleaned_on_room_delete(self, registered_client):
+        registered_client.emit('create_room', {'name': 'ChatClean', 'max_players': 4})
+        registered_client.get_received()
+
+        registered_client.emit('send_chat', {'message': 'Test'})
+        registered_client.get_received()
+
+        import server
+        assert len(server.room_chat) == 1
+
+        registered_client.emit('leave_room')
+        registered_client.get_received()
+
+        assert len(server.room_chat) == 0
