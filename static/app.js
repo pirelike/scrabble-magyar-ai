@@ -1209,6 +1209,7 @@ let boardScale = 1;
 let boardTranslateX = 0;
 let boardTranslateY = 0;
 let boardZoomInitialized = false;
+const mobileQuery = window.matchMedia('(max-width: 768px)');
 
 function initBoardZoom() {
     if (boardZoomInitialized) return;
@@ -1216,6 +1217,8 @@ function initBoardZoom() {
     const board = document.getElementById('board');
     const resetBtn = document.getElementById('board-zoom-reset');
     if (!container || !board || !isTouchDevice) return;
+    // Csak mobil nézetben engedélyezzük (ahol a CSS overflow:hidden be van állítva)
+    if (!mobileQuery.matches) return;
     boardZoomInitialized = true;
 
     let initialPinchDist = 0;
