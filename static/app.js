@@ -187,7 +187,7 @@ document.getElementById('btn-reg-resend').addEventListener('click', async () => 
         if (data.success) {
             showAuthError(errorEl, 'Új kód elküldve!');
             errorEl.classList.remove('hidden');
-            errorEl.style.color = '#4CAF50';
+            errorEl.style.color = 'var(--success)';
             setTimeout(() => { errorEl.style.color = ''; }, 3000);
             if (data.dev_code) {
                 document.getElementById('reg-code').value = data.dev_code;
@@ -834,7 +834,14 @@ function renderGameInfo() {
     document.getElementById('current-turn').textContent = isMyTurn ?
         'Te következel!' :
         `${gameState.current_player_name || '?'} következik`;
-    document.getElementById('current-turn').style.color = isMyTurn ? '#e8b930' : '#aaa';
+    const turnEl = document.getElementById('current-turn');
+    if (isMyTurn) {
+        turnEl.style.color = 'var(--accent)';
+        turnEl.style.fontWeight = '700';
+    } else {
+        turnEl.style.color = 'var(--text-secondary)';
+        turnEl.style.fontWeight = '';
+    }
 
     if (gameState.last_action) {
         document.getElementById('last-action').textContent = gameState.last_action;

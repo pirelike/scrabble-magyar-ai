@@ -1,54 +1,54 @@
 /* ===== THEME SYSTEM (CSS Custom Properties) ===== */
 
 :root {
-    /* --- Light theme (default) --- */
-    --bg-base: #f5f5f7;
+    /* --- Light theme (default) — Slate + Gold --- */
+    --bg-base: #f8fafc;
     --bg-card: #ffffff;
-    --bg-card-alt: #f0f0f3;
-    --bg-input: #f5f5f7;
-    --bg-overlay: rgba(0, 0, 0, 0.45);
+    --bg-card-alt: #f1f5f9;
+    --bg-input: #f1f5f9;
+    --bg-overlay: rgba(15, 23, 42, 0.45);
 
-    --border-primary: #e0e0e6;
-    --border-input: #d0d0d8;
+    --border-primary: #e2e8f0;
+    --border-input: #cbd5e1;
     --border-focus: var(--accent);
 
-    --text-primary: #1d1d1f;
-    --text-secondary: #6e6e80;
-    --text-muted: #a0a0b0;
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #94a3b8;
     --text-inverse: #ffffff;
 
-    --accent: #c8a024;
-    --accent-hover: #b08e1c;
-    --accent-subtle: rgba(200, 160, 36, 0.12);
-    --accent-text: #1d1d1f;
+    --accent: #eab308;
+    --accent-hover: #ca9a06;
+    --accent-subtle: rgba(234, 179, 8, 0.12);
+    --accent-text: #0f172a;
 
-    --danger: #d63031;
-    --danger-hover: #c0231e;
-    --success: #27ae60;
-    --success-hover: #219a52;
-    --info: #4a90d9;
-    --info-light: #e8f1fb;
+    --danger: #dc2626;
+    --danger-hover: #b91c1c;
+    --success: #16a34a;
+    --success-hover: #15803d;
+    --info: #3b82f6;
+    --info-light: #eff6ff;
 
     --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
     --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
     --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.10), 0 4px 8px rgba(0, 0, 0, 0.06);
     --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.06);
 
-    --board-border: #c0c0cc;
-    --board-gap: #b8b8c4;
+    --board-border: #94a3b8;
+    --board-gap: #cbd5e1;
     --cell-empty: #4a8c42;
     --cell-tile-bg: #f5e6c8;
-    --cell-tile-text: #1a1a2e;
-    --cell-tile-value: #888;
-    --cell-placed: #e8c830;
-    --cell-placed-shadow: rgba(232, 200, 48, 0.5);
-    --cell-pending: #e07820;
+    --cell-tile-text: #1e293b;
+    --cell-tile-value: #64748b;
+    --cell-placed: #eab308;
+    --cell-placed-shadow: rgba(234, 179, 8, 0.5);
+    --cell-pending: #ea580c;
     --cell-drop: #5ea854;
 
-    --hand-bg: var(--bg-card);
+    --hand-bg: #e8dcc8;
     --hand-tile-bg: #f5e6c8;
-    --hand-tile-border: #d4c5a0;
-    --hand-tile-text: #1a1a2e;
+    --hand-tile-border: #c8b896;
+    --hand-tile-text: #1e293b;
 
     --chat-bg: var(--bg-card-alt);
     --chat-name: var(--accent);
@@ -57,20 +57,30 @@
     --toast-border: var(--accent);
     --toast-text: var(--text-primary);
 
-    --challenge-bg: rgba(200, 160, 36, 0.08);
+    --challenge-bg: rgba(234, 179, 8, 0.08);
     --challenge-border: var(--accent);
 
     --scoreboard-border: var(--border-primary);
     --scoreboard-active: var(--accent);
 
-    --link-color: #4a90d9;
-    --link-hover: #3670b0;
+    --link-color: #3b82f6;
+    --link-hover: #2563eb;
 
     --premium-dl: #6bb3d9;
     --premium-tl: #1a6fb5;
     --premium-dw: #e8a0b0;
     --premium-tw: #c0392b;
     --premium-st: var(--accent);
+
+    /* Action button states */
+    --btn-secondary-bg: #f1f5f9;
+    --btn-secondary-text: #334155;
+    --btn-secondary-border: #cbd5e1;
+    --btn-secondary-hover-bg: #e2e8f0;
+    --btn-secondary-hover-text: #0f172a;
+    --btn-disabled-bg: #f8fafc;
+    --btn-disabled-text: #cbd5e1;
+    --btn-disabled-border: #e2e8f0;
 
     --radius-sm: 8px;
     --radius-md: 12px;
@@ -82,42 +92,55 @@
 }
 
 [data-theme="dark"] {
-    --bg-base: #0f1523;
-    --bg-card: #1a2138;
-    --bg-card-alt: #151c30;
-    --bg-input: #0f1523;
+    --bg-base: #0f172a;
+    --bg-card: #1e293b;
+    --bg-card-alt: #162032;
+    --bg-input: #0f172a;
     --bg-overlay: rgba(0, 0, 0, 0.7);
 
-    --border-primary: #2a3352;
-    --border-input: #2a3352;
+    --border-primary: #334155;
+    --border-input: #334155;
 
-    --text-primary: #e8e8f0;
-    --text-secondary: #8a8aa0;
-    --text-muted: #5a5a72;
-    --text-inverse: #0f1523;
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --text-muted: #475569;
+    --text-inverse: #0f172a;
 
-    --accent: #d4a82c;
-    --accent-hover: #e0b840;
-    --accent-subtle: rgba(212, 168, 44, 0.15);
-    --accent-text: #0f1523;
+    --accent: #eab308;
+    --accent-hover: #facc15;
+    --accent-subtle: rgba(234, 179, 8, 0.15);
+    --accent-text: #0f172a;
 
-    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
-    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
-    --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.4);
-    --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.2);
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.5);
+    --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.3);
 
-    --board-border: #3a4468;
-    --board-gap: #1a2038;
+    --board-border: #475569;
+    --board-gap: #1e293b;
+
+    --hand-bg: #2a2418;
+    --hand-tile-border: #a89060;
 
     --toast-bg: var(--bg-card);
     --toast-text: var(--text-primary);
 
-    --challenge-bg: rgba(212, 168, 44, 0.1);
+    --challenge-bg: rgba(234, 179, 8, 0.1);
 
-    --link-color: #7ec8e3;
-    --link-hover: #a0d8ef;
+    --link-color: #60a5fa;
+    --link-hover: #93bbfd;
 
-    --info-light: rgba(74, 144, 217, 0.15);
+    --info-light: rgba(59, 130, 246, 0.15);
+
+    /* Action button states - dark */
+    --btn-secondary-bg: #1e293b;
+    --btn-secondary-text: #cbd5e1;
+    --btn-secondary-border: #475569;
+    --btn-secondary-hover-bg: #334155;
+    --btn-secondary-hover-text: #f8fafc;
+    --btn-disabled-bg: #1e293b;
+    --btn-disabled-text: #334155;
+    --btn-disabled-border: #1e293b;
 }
 
 
@@ -305,23 +328,24 @@ button:active:not(:disabled) {
 }
 
 button:disabled {
-    background: var(--bg-card-alt);
-    color: var(--text-muted);
+    background: var(--btn-disabled-bg);
+    color: var(--btn-disabled-text);
     cursor: not-allowed;
-    border: 1px solid var(--border-primary);
+    border: 1px solid var(--btn-disabled-border);
     transform: none;
     box-shadow: none;
+    opacity: 0.6;
 }
 
 button.secondary {
-    background: var(--bg-card-alt);
-    color: var(--text-secondary);
-    border: 1px solid var(--border-primary);
+    background: var(--btn-secondary-bg);
+    color: var(--btn-secondary-text);
+    border: 1.5px solid var(--btn-secondary-border);
 }
 
 button.secondary:hover {
-    background: var(--border-primary);
-    color: var(--text-primary);
+    background: var(--btn-secondary-hover-bg);
+    color: var(--btn-secondary-hover-text);
 }
 
 button.danger {
@@ -406,6 +430,7 @@ button.link-btn:hover {
 
 .auth-tab-content.active {
     display: block;
+    min-height: 200px;
 }
 
 .auth-tab-content button:not(.auth-tab):not(.link-btn) {
@@ -747,16 +772,27 @@ button.link-btn:hover {
 .action-btn#btn-exchange,
 .action-btn#btn-pass,
 .action-btn#btn-recall {
-    background: var(--bg-card-alt);
-    color: var(--text-secondary);
-    border: 1px solid var(--border-primary);
+    background: var(--btn-secondary-bg);
+    color: var(--btn-secondary-text);
+    border: 1.5px solid var(--btn-secondary-border);
+    font-weight: 600;
+    opacity: 1;
 }
 
 .action-btn#btn-exchange:hover:not(:disabled),
 .action-btn#btn-pass:hover:not(:disabled),
 .action-btn#btn-recall:hover:not(:disabled) {
-    background: var(--border-primary);
-    color: var(--text-primary);
+    background: var(--btn-secondary-hover-bg);
+    color: var(--btn-secondary-hover-text);
+    border-color: var(--btn-secondary-hover-text);
+}
+
+.action-btn#btn-exchange:disabled,
+.action-btn#btn-pass:disabled {
+    background: var(--btn-disabled-bg);
+    color: var(--btn-disabled-text);
+    border-color: var(--btn-disabled-border);
+    opacity: 0.45;
 }
 
 
@@ -896,8 +932,9 @@ button.link-btn:hover {
     border-radius: var(--radius-md);
     min-height: 64px;
     align-items: center;
-    border: 1px solid var(--border-primary);
-    box-shadow: var(--shadow-card);
+    justify-content: center;
+    border: 2px solid var(--hand-tile-border);
+    box-shadow: var(--shadow-md);
     transition: background var(--transition-normal), border-color var(--transition-normal);
 }
 
