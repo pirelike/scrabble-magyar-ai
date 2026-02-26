@@ -96,6 +96,10 @@ def _check_ip_rate_limit(ip, action):
     now = time.time()
     timestamps = _ip_rate_limits[ip][action]
     _ip_rate_limits[ip][action] = [t for t in timestamps if now - t < window]
+    # Üres IP bejegyzések törlése a memória-szivárgás megelőzésére
+    if not _ip_rate_limits[ip][action] and not any(_ip_rate_limits[ip].values()):
+        del _ip_rate_limits[ip]
+        return True
     if len(_ip_rate_limits[ip][action]) >= max_requests:
         return False
     _ip_rate_limits[ip][action].append(now)
@@ -168,6 +172,33 @@ def _set_session_cookie(response, token):
 
 # --- Challenge timer ---
 
+def _cleanup_room(room_id):
+    """Szoba erőforrásainak felszabadítása (join_code, chat, challenge timer)."""
+    room = rooms.get(room_id)
+    if room and room.get('join_code') in join_codes:
+        del join_codes[room['join_code']]
+    if room_id in room_chat:
+        del room_chat[room_id]
+    if room_id in _challenge_counter:
+        del _challenge_counter[room_id]
+    del rooms[room_id]
+
+
+def _transfer_ownership(room):
+    """Szoba tulajdonjogának átadása az első játékosnak."""
+    game = room['game']
+    room['owner'] = game.players[0].id
+    room['owner_name'] = game.players[0].name
+    emit('room_code', {'code': room['join_code']}, room=game.players[0].id)
+
+
+def _emit_all_states(game):
+    """Minden játékosnak elküldi a saját állapotát (közös részt egyszer számítja)."""
+    all_states = game.get_all_states()
+    for player_id, state in all_states.items():
+        emit('game_state', state, room=player_id)
+
+
 def _start_challenge_timer(room_id):
     """Challenge timeout visszaszámlálás."""
     if room_id not in _challenge_counter:
@@ -181,8 +212,9 @@ def _start_challenge_timer(room_id):
             game = rooms[room_id]['game']
             if game.pending_challenge:
                 success, result, msg = game.accept_pending()
-                for player in game.players:
-                    socketio.emit('game_state', game.get_state(for_player_id=player.id), room=player.id)
+                all_states = game.get_all_states()
+                for player_id, state in all_states.items():
+                    socketio.emit('game_state', state, room=player_id)
                 # Szavazás eredmény közlése ha volt szavazási fázis
                 if result in ('vote_accepted', 'vote_rejected'):
                     socketio.emit('challenge_result', {
@@ -405,23 +437,11 @@ def handle_disconnect():
         leave_room(room_id)
 
         if not game.players:
-            # Szoba törlés - join_code felszabadítás
-            if room.get('join_code') in join_codes:
-                del join_codes[room['join_code']]
-            if room_id in room_chat:
-                del room_chat[room_id]
-            if room_id in _challenge_counter:
-                del _challenge_counter[room_id]
-            del rooms[room_id]
+            _cleanup_room(room_id)
         else:
-            # Ha a tulajdonos ment el, új tulajdonos
             if room['owner'] == sid:
-                room['owner'] = game.players[0].id
-                room['owner_name'] = game.players[0].name
-                # Új tulajdonosnak elküldjük a kódot
-                emit('room_code', {'code': room['join_code']}, room=game.players[0].id)
-            for player in game.players:
-                emit('game_state', game.get_state(for_player_id=player.id), room=player.id)
+                _transfer_ownership(room)
+            _emit_all_states(game)
             emit('player_left', {'name': player_names.get(sid, '?')}, room=room_id)
 
         del player_rooms[sid]
@@ -432,11 +452,9 @@ def handle_disconnect():
     if sid in player_auth:
         del player_auth[sid]
 
-    # Rate limit bejegyzések törlése
     if sid in _rate_limits:
         del _rate_limits[sid]
 
-    # Lobby frissítés
     emit('rooms_list', get_rooms_list(), broadcast=True)
 
 
@@ -575,9 +593,7 @@ def handle_join_room(data):
         'challenge_mode': game.challenge_mode,
     })
 
-    # Frissítjük mindenkit a szobában
-    for player in game.players:
-        emit('game_state', game.get_state(for_player_id=player.id), room=player.id)
+    _emit_all_states(game)
 
     emit('player_joined', {'name': player_name}, room=room_id)
     emit('rooms_list', get_rooms_list(), broadcast=True)
@@ -592,29 +608,17 @@ def handle_leave_room():
 
     room = rooms[room_id]
     game = room['game']
+    player_name = player_names.get(sid, '?')
     game.remove_player(sid)
     leave_room(room_id)
     del player_rooms[sid]
 
-    player_name = player_names.get(sid, '?')
-
     if not game.players:
-        # Szoba törlés - join_code felszabadítás
-        if room.get('join_code') in join_codes:
-            del join_codes[room['join_code']]
-        if room_id in room_chat:
-            del room_chat[room_id]
-        if room_id in _challenge_counter:
-            del _challenge_counter[room_id]
-        del rooms[room_id]
+        _cleanup_room(room_id)
     else:
         if room['owner'] == sid:
-            room['owner'] = game.players[0].id
-            room['owner_name'] = game.players[0].name
-            # Új tulajdonosnak elküldjük a kódot
-            emit('room_code', {'code': room['join_code']}, room=game.players[0].id)
-        for player in game.players:
-            emit('game_state', game.get_state(for_player_id=player.id), room=player.id)
+            _transfer_ownership(room)
+        _emit_all_states(game)
         emit('player_left', {'name': player_name}, room=room_id)
 
     emit('room_left', {})
@@ -639,9 +643,7 @@ def handle_start_game():
         emit('error', {'message': msg})
         return
 
-    # Minden játékosnak elküldjük a saját állapotát
-    for player in game.players:
-        emit('game_state', game.get_state(for_player_id=player.id), room=player.id)
+    _emit_all_states(game)
 
     emit('game_started', {}, room=room_id)
     emit('rooms_list', get_rooms_list(), broadcast=True)
@@ -699,8 +701,7 @@ def handle_place_tiles(data):
     success, msg, score = game.place_tiles(sid, tiles_placed)
 
     if success:
-        for player in game.players:
-            emit('game_state', game.get_state(for_player_id=player.id), room=player.id)
+        _emit_all_states(game)
         emit('action_result', {'success': True, 'message': msg, 'score': score})
         # Challenge timer indítása ha szükséges
         if game.pending_challenge:
@@ -736,8 +737,7 @@ def handle_exchange_tiles(data):
     success, msg = game.exchange_tiles(sid, indices)
 
     if success:
-        for player in game.players:
-            emit('game_state', game.get_state(for_player_id=player.id), room=player.id)
+        _emit_all_states(game)
         emit('action_result', {'success': True, 'message': msg})
     else:
         emit('action_result', {'success': False, 'message': msg})
@@ -757,8 +757,7 @@ def handle_pass_turn():
     success, msg = game.pass_turn(sid)
 
     if success:
-        for player in game.players:
-            emit('game_state', game.get_state(for_player_id=player.id), room=player.id)
+        _emit_all_states(game)
         emit('action_result', {'success': True, 'message': msg})
     else:
         emit('action_result', {'success': False, 'message': msg})
@@ -787,8 +786,7 @@ def handle_challenge():
             # Szavazás indult: új timer
             _start_challenge_timer(room_id)
 
-        for player in game.players:
-            emit('game_state', game.get_state(for_player_id=player.id), room=player.id)
+        _emit_all_states(game)
 
         # Ha azonnal eldőlt (minden szavazó már szavazott)
         if result in ('vote_accepted', 'vote_rejected'):
@@ -820,8 +818,7 @@ def handle_accept_words():
                 _challenge_counter[room_id] = 0
             _challenge_counter[room_id] += 1
 
-        for player in game.players:
-            emit('game_state', game.get_state(for_player_id=player.id), room=player.id)
+        _emit_all_states(game)
 
         if result in ('vote_accepted', 'vote_rejected'):
             emit('challenge_result', {
@@ -851,8 +848,7 @@ def handle_reject_words():
             _challenge_counter[room_id] = 0
         _challenge_counter[room_id] += 1
 
-        for player in game.players:
-            emit('game_state', game.get_state(for_player_id=player.id), room=player.id)
+        _emit_all_states(game)
 
         emit('challenge_result', {
             'challenge_won': True,
@@ -889,8 +885,7 @@ def handle_cast_vote(data):
                 _challenge_counter[room_id] = 0
             _challenge_counter[room_id] += 1
 
-        for player in game.players:
-            emit('game_state', game.get_state(for_player_id=player.id), room=player.id)
+        _emit_all_states(game)
 
         if result in ('vote_accepted', 'vote_rejected'):
             emit('challenge_result', {

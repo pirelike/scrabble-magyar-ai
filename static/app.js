@@ -59,6 +59,7 @@ let challengeTimeLeft = 0;
 let chatMessages = [];
 let challengeModeEnabled = false;
 let wasVotingPhase = false;
+let lastDropTarget = null;  // Aktuálisan kijelölt cella drag közben
 
 // Képernyő váltás
 function showScreen(screenId) {
@@ -556,7 +557,10 @@ function removeDragGhost() {
         touchDragGhost = null;
     }
     touchDragTile = null;
-    document.querySelectorAll('.cell.drop-target').forEach(c => c.classList.remove('drop-target'));
+    if (lastDropTarget) {
+        lastDropTarget.classList.remove('drop-target');
+        lastDropTarget = null;
+    }
 }
 
 // Tábla felépítése
@@ -587,22 +591,29 @@ function buildBoard() {
         board.addEventListener('dragover', (e) => {
             e.preventDefault();
             e.dataTransfer.dropEffect = 'move';
-            document.querySelectorAll('.cell.drop-target').forEach(c => c.classList.remove('drop-target'));
             const cell = e.target.closest('.cell');
-            if (cell) {
-                cell.classList.add('drop-target');
+            if (cell !== lastDropTarget) {
+                if (lastDropTarget) lastDropTarget.classList.remove('drop-target');
+                if (cell) cell.classList.add('drop-target');
+                lastDropTarget = cell;
             }
         });
 
         board.addEventListener('dragleave', (e) => {
             if (!board.contains(e.relatedTarget)) {
-                document.querySelectorAll('.cell.drop-target').forEach(c => c.classList.remove('drop-target'));
+                if (lastDropTarget) {
+                    lastDropTarget.classList.remove('drop-target');
+                    lastDropTarget = null;
+                }
             }
         });
 
         board.addEventListener('drop', (e) => {
             e.preventDefault();
-            document.querySelectorAll('.cell.drop-target').forEach(c => c.classList.remove('drop-target'));
+            if (lastDropTarget) {
+                lastDropTarget.classList.remove('drop-target');
+                lastDropTarget = null;
+            }
             const cell = e.target.closest('.cell');
             if (cell) {
                 const r = parseInt(cell.dataset.row);
@@ -621,15 +632,24 @@ function renderBoard() {
     const cells = document.querySelectorAll('.cell');
     const hasSelected = selectedTileIdx !== null;
     const pendingTiles = gameState.pending_challenge ? gameState.pending_challenge.tiles : [];
+
+    // Map-ek a O(1) kereséshez O(n*m) find() helyett
+    const placedMap = new Map();
+    for (const t of placedTiles) {
+        placedMap.set(`${t.row},${t.col}`, t);
+    }
+    const pendingMap = new Map();
+    for (const t of pendingTiles) {
+        pendingMap.set(`${t.row},${t.col}`, t);
+    }
+
     cells.forEach(cell => {
         const r = parseInt(cell.dataset.row);
         const c = parseInt(cell.dataset.col);
+        const key = `${r},${c}`;
         const boardCell = gameState.board[r][c];
-
-        // Lerakott zseton ebben a körben?
-        const placed = placedTiles.find(t => t.row === r && t.col === c);
-        // Pending challenge zseton?
-        const pending = pendingTiles.find(t => t.row === r && t.col === c);
+        const placed = placedMap.get(key);
+        const pending = pendingMap.get(key);
 
         cell.classList.remove('has-tile', 'placed-this-turn', 'can-place', 'pending-challenge-tile');
 
@@ -643,11 +663,10 @@ function renderBoard() {
             cell.classList.add('has-tile');
             cell.innerHTML = `${boardCell.letter}<span class="tile-value">${boardCell.is_blank ? 0 : (TILE_VALUES[boardCell.letter] || 0)}</span>`;
         } else {
-            // Üres cella - jelöljük ha van kiválasztott betű
             if (hasSelected) {
                 cell.classList.add('can-place');
             }
-            const premium = PREMIUM_MAP[`${r},${c}`];
+            const premium = PREMIUM_MAP[key];
             if (premium) {
                 cell.innerHTML = `<span class="premium-label">${PREMIUM_LABELS[premium]}</span>`;
             } else {
@@ -722,9 +741,10 @@ function renderHand() {
                     // Highlight cella alatta
                     const rawEl = document.elementFromPoint(touch.clientX, touch.clientY);
                     const targetCell = rawEl && rawEl.closest('.cell');
-                    document.querySelectorAll('.cell.drop-target').forEach(c => c.classList.remove('drop-target'));
-                    if (targetCell) {
-                        targetCell.classList.add('drop-target');
+                    if (targetCell !== lastDropTarget) {
+                        if (lastDropTarget) lastDropTarget.classList.remove('drop-target');
+                        if (targetCell) targetCell.classList.add('drop-target');
+                        lastDropTarget = targetCell;
                     }
                 }
             }, { passive: false });
@@ -1119,29 +1139,41 @@ socket.on('challenge_result', (data) => {
 
 socket.on('chat_message', (msg) => {
     chatMessages.push(msg);
-    if (chatMessages.length > 100) chatMessages.shift();
-    renderChatMessages();
+    const container = document.getElementById('chat-messages');
+    if (!container) return;
+
+    // Max 100 üzenet: DOM-ból is töröljük a legrégebbit
+    if (chatMessages.length > 100) {
+        chatMessages.shift();
+        if (container.firstChild) container.removeChild(container.firstChild);
+    }
+
+    // Csak az új üzenetet fűzzük hozzá
+    _appendChatMsg(container, msg);
+    container.scrollTop = container.scrollHeight;
 });
+
+function _appendChatMsg(container, msg) {
+    const msgEl = document.createElement('div');
+    msgEl.className = 'chat-msg';
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'chat-name';
+    nameSpan.textContent = msg.name + ': ';
+    msgEl.appendChild(nameSpan);
+
+    const textSpan = document.createElement('span');
+    textSpan.textContent = msg.message;
+    msgEl.appendChild(textSpan);
+
+    container.appendChild(msgEl);
+}
 
 function renderChatMessages() {
     const container = document.getElementById('chat-messages');
     if (!container) return;
     container.innerHTML = '';
-    chatMessages.forEach(msg => {
-        const msgEl = document.createElement('div');
-        msgEl.className = 'chat-msg';
-
-        const nameSpan = document.createElement('span');
-        nameSpan.className = 'chat-name';
-        nameSpan.textContent = msg.name + ': ';
-        msgEl.appendChild(nameSpan);
-
-        const textSpan = document.createElement('span');
-        textSpan.textContent = msg.message;
-        msgEl.appendChild(textSpan);
-
-        container.appendChild(msgEl);
-    });
+    chatMessages.forEach(msg => _appendChatMsg(container, msg));
     container.scrollTop = container.scrollHeight;
 }
 

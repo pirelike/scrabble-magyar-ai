@@ -512,8 +512,9 @@ class Game:
                 return False, "Érvénytelen zseton index."
 
         # Kivesszük a cserélendő zsetonokat
-        tiles_to_exchange = [player.hand[i] for i in sorted(tile_indices, reverse=True)]
-        for i in sorted(tile_indices, reverse=True):
+        sorted_desc = sorted(tile_indices, reverse=True)
+        tiles_to_exchange = [player.hand[i] for i in sorted_desc]
+        for i in sorted_desc:
             player.hand.pop(i)
 
         # Új zsetonok húzása
@@ -573,8 +574,9 @@ class Game:
         self.winner = max(self.players, key=lambda p: p.score)
         self.last_action = f"Játék vége! Győztes: {self.winner.name} ({self.winner.score} pont)"
 
-    def get_state(self, for_player_id=None):
-        """Visszaadja a játék állapotát JSON-kompatibilis formában."""
+    def _get_shared_state(self):
+        """Visszaadja a játék közös állapotát (ami minden játékosnál azonos).
+        Cached: egyszer számítja ki, és get_state() újrahasználja."""
         current = self.current_player()
         state = {
             'game_id': self.id,
@@ -586,13 +588,11 @@ class Game:
             'turn_number': self.turn_number,
             'tiles_remaining': self.bag.remaining(),
             'last_action': self.last_action,
-            'players': [],
             'winner': self.winner.to_dict() if self.winner else None,
             'challenge_mode': self.challenge_mode,
             'pending_challenge': None,
         }
 
-        # Függő challenge info
         if self.pending_challenge:
             pending = self.pending_challenge
             placer = self.players[pending['player_idx']]
@@ -618,8 +618,29 @@ class Game:
                         break
             state['pending_challenge'] = pc_state
 
-        for player in self.players:
-            reveal = (player.id == for_player_id)
-            state['players'].append(player.to_dict(reveal_hand=reveal))
-
         return state
+
+    def get_state(self, for_player_id=None, _shared=None):
+        """Visszaadja a játék állapotát JSON-kompatibilis formában.
+        _shared: előre kiszámított közös állapot (get_all_states()-ből).
+        """
+        if _shared is None:
+            _shared = self._get_shared_state()
+
+        state = dict(_shared)
+        state['players'] = [
+            player.to_dict(reveal_hand=(player.id == for_player_id))
+            for player in self.players
+        ]
+        return state
+
+    def get_all_states(self):
+        """Visszaadja az összes játékos állapotát egyszerre.
+        A közös részt (board, challenge, stb.) csak egyszer számítja ki.
+        Visszatér: {player_id: state_dict, ...}
+        """
+        shared = self._get_shared_state()
+        return {
+            player.id: self.get_state(for_player_id=player.id, _shared=shared)
+            for player in self.players
+        }

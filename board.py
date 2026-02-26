@@ -76,6 +76,58 @@ class Board:
             result.append(row)
         return result
 
+    def _find_word_bounds(self, fixed, start, end, horizontal):
+        """Kiterjeszti a szó határait a meglévő betűkkel.
+        horizontal=True: fixed=row, start/end=col tartomány
+        horizontal=False: fixed=col, start/end=row tartomány
+        """
+        if horizontal:
+            while start > 0 and self.cells[fixed][start - 1] is not None:
+                start -= 1
+            while end < 14 and self.cells[fixed][end + 1] is not None:
+                end += 1
+        else:
+            while start > 0 and self.cells[start - 1][fixed] is not None:
+                start -= 1
+            while end < 14 and self.cells[end + 1][fixed] is not None:
+                end += 1
+        return start, end
+
+    def _extract_word(self, fixed, start, end, horizontal, new_positions):
+        """Kinyeri a szót és kiszámítja a pontszámát.
+        horizontal=True: fixed=row, start..end=col tartomány
+        horizontal=False: fixed=col, start..end=row tartomány
+        """
+        word = ""
+        word_positions = []
+        letter_score = 0
+        word_multiplier = 1
+
+        for i in range(start, end + 1):
+            r, c = (fixed, i) if horizontal else (i, fixed)
+            cell = self.cells[r][c]
+            letter, is_blank = cell
+            word += letter
+            word_positions.append((r, c))
+
+            tile_value = 0 if is_blank else TILE_VALUES.get(letter, 0)
+
+            if (r, c) in new_positions:
+                premium = self.premium_at(r, c)
+                if premium == DL:
+                    tile_value *= 2
+                elif premium == TL:
+                    tile_value *= 3
+                elif premium in (DW, ST):
+                    word_multiplier *= 2
+                elif premium == TW:
+                    word_multiplier *= 3
+
+            letter_score += tile_value
+
+        total = letter_score * word_multiplier
+        return (word, word_positions, total)
+
     def validate_placement(self, tiles_placed, skip_dictionary=False):
         """
         Ellenőrzi a lerakott zsetonokat.
@@ -96,6 +148,7 @@ class Board:
                 return False, [], f"A ({r},{c}) mező már foglalt."
 
         positions = [(r, c) for r, c, _, _ in tiles_placed]
+        new_positions = set(positions)
         rows = set(r for r, c in positions)
         cols = set(c for r, c in positions)
 
@@ -112,47 +165,39 @@ class Board:
         try:
             # Ha ez az első lépés, a középső mezőt kell fednie
             if self.is_empty:
-                if (CENTER, CENTER) not in positions:
+                if (CENTER, CENTER) not in new_positions:
                     return False, [], "Az első szónak a középső mezőt (csillagot) kell fednie."
                 if len(tiles_placed) < 2:
                     return False, [], "Az első szónak legalább 2 betűből kell állnia."
 
             # Meghatározzuk az irányt (1 betűnél mindkét irányt ellenőrizzük)
             if len(tiles_placed) == 1:
-                # Egy betű - megnézzük, melyik irányban van szomszéd
                 r, c = positions[0]
                 has_h_neighbor = (self._has_letter(r, c - 1) or self._has_letter(r, c + 1))
                 has_v_neighbor = (self._has_letter(r - 1, c) or self._has_letter(r + 1, c))
                 if not self.is_empty and not has_h_neighbor and not has_v_neighbor:
                     return False, [], "A betűnek csatlakoznia kell meglévő szóhoz."
-                # Irány: ha van vízszintes szomszéd, vízszintes fő szó
                 horizontal = has_h_neighbor or not has_v_neighbor
 
-            # Fő irány mentén ellenőrizzük a folytonosságot
+            # Fő irány: határok kiszámítása (egyszer, újrahasználjuk)
             if horizontal:
-                row = list(rows)[0] if len(rows) == 1 else positions[0][0]
-                min_col = min(c for r, c in positions)
-                max_col = max(c for r, c in positions)
-                # Kiterjesztjük a szót a meglévő betűkkel
-                while min_col > 0 and self.cells[row][min_col - 1] is not None:
-                    min_col -= 1
-                while max_col < 14 and self.cells[row][max_col + 1] is not None:
-                    max_col += 1
-                # Folytonosság ellenőrzése
-                for c in range(min_col, max_col + 1):
-                    if self.cells[row][c] is None:
-                        return False, [], "A betűknek folytonos sort kell alkotniuk."
+                main_fixed = list(rows)[0] if len(rows) == 1 else positions[0][0]
+                main_start = min(c for r, c in positions)
+                main_end = max(c for r, c in positions)
             else:
-                col = list(cols)[0] if len(cols) == 1 else positions[0][1]
-                min_row = min(r for r, c in positions)
-                max_row = max(r for r, c in positions)
-                while min_row > 0 and self.cells[min_row - 1][col] is not None:
-                    min_row -= 1
-                while max_row < 14 and self.cells[max_row + 1][col] is not None:
-                    max_row += 1
-                for r in range(min_row, max_row + 1):
-                    if self.cells[r][col] is None:
-                        return False, [], "A betűknek folytonos sort kell alkotniuk."
+                main_fixed = list(cols)[0] if len(cols) == 1 else positions[0][1]
+                main_start = min(r for r, c in positions)
+                main_end = max(r for r, c in positions)
+
+            main_start, main_end = self._find_word_bounds(
+                main_fixed, main_start, main_end, horizontal
+            )
+
+            # Folytonosság ellenőrzése
+            for i in range(main_start, main_end + 1):
+                r, c = (main_fixed, i) if horizontal else (i, main_fixed)
+                if self.cells[r][c] is None:
+                    return False, [], "A betűknek folytonos sort kell alkotniuk."
 
             # Nem első lépésnél: csatlakozik-e meglévő betűhöz?
             if not self.is_empty:
@@ -160,7 +205,7 @@ class Board:
                 for r, c in positions:
                     for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
                         nr, nc = r + dr, c + dc
-                        if (nr, nc) not in positions and self._has_letter(nr, nc):
+                        if (nr, nc) not in new_positions and self._has_letter(nr, nc):
                             touches_existing = True
                             break
                     if touches_existing:
@@ -170,53 +215,25 @@ class Board:
 
             # Összegyűjtjük az összes képzett szót
             formed_words = []
-            new_positions = set(positions)
 
-            # Fő szó
-            if horizontal:
-                row = list(rows)[0] if len(rows) == 1 else positions[0][0]
-                min_col = min(c for r, c in positions)
-                max_col = max(c for r, c in positions)
-                while min_col > 0 and self.cells[row][min_col - 1] is not None:
-                    min_col -= 1
-                while max_col < 14 and self.cells[row][max_col + 1] is not None:
-                    max_col += 1
-                if max_col > min_col:  # Legalább 2 betű
-                    word_info = self._extract_word_horizontal(row, min_col, max_col, new_positions)
-                    formed_words.append(word_info)
-            else:
-                col = list(cols)[0] if len(cols) == 1 else positions[0][1]
-                min_row = min(r for r, c in positions)
-                max_row = max(r for r, c in positions)
-                while min_row > 0 and self.cells[min_row - 1][col] is not None:
-                    min_row -= 1
-                while max_row < 14 and self.cells[max_row + 1][col] is not None:
-                    max_row += 1
-                if max_row > min_row:
-                    word_info = self._extract_word_vertical(col, min_row, max_row, new_positions)
-                    formed_words.append(word_info)
+            # Fő szó (határok már kiszámítva)
+            if main_end > main_start:
+                word_info = self._extract_word(
+                    main_fixed, main_start, main_end, horizontal, new_positions
+                )
+                formed_words.append(word_info)
 
             # Mellékszavak (keresztirányban)
             for r, c in positions:
                 if horizontal:
-                    # Függőleges mellékszó
-                    min_r, max_r = r, r
-                    while min_r > 0 and self.cells[min_r - 1][c] is not None:
-                        min_r -= 1
-                    while max_r < 14 and self.cells[max_r + 1][c] is not None:
-                        max_r += 1
-                    if max_r > min_r:
-                        word_info = self._extract_word_vertical(c, min_r, max_r, new_positions)
+                    cross_start, cross_end = self._find_word_bounds(c, r, r, False)
+                    if cross_end > cross_start:
+                        word_info = self._extract_word(c, cross_start, cross_end, False, new_positions)
                         formed_words.append(word_info)
                 else:
-                    # Vízszintes mellékszó
-                    min_c, max_c = c, c
-                    while min_c > 0 and self.cells[r][min_c - 1] is not None:
-                        min_c -= 1
-                    while max_c < 14 and self.cells[r][max_c + 1] is not None:
-                        max_c += 1
-                    if max_c > min_c:
-                        word_info = self._extract_word_horizontal(r, min_c, max_c, new_positions)
+                    cross_start, cross_end = self._find_word_bounds(r, c, c, True)
+                    if cross_end > cross_start:
+                        word_info = self._extract_word(r, cross_start, cross_end, True, new_positions)
                         formed_words.append(word_info)
 
             if not formed_words:
@@ -241,68 +258,6 @@ class Board:
         if 0 <= row < BOARD_SIZE and 0 <= col < BOARD_SIZE:
             return self.cells[row][col] is not None
         return False
-
-    def _extract_word_horizontal(self, row, min_col, max_col, new_positions):
-        """Kinyeri a vízszintes szót és kiszámítja a pontszámát."""
-        word = ""
-        word_positions = []
-        letter_score = 0
-        word_multiplier = 1
-
-        for c in range(min_col, max_col + 1):
-            cell = self.cells[row][c]
-            letter, is_blank = cell
-            word += letter
-            word_positions.append((row, c))
-
-            tile_value = 0 if is_blank else TILE_VALUES.get(letter, 0)
-
-            if (row, c) in new_positions:
-                premium = self.premium_at(row, c)
-                if premium == DL:
-                    tile_value *= 2
-                elif premium == TL:
-                    tile_value *= 3
-                elif premium in (DW, ST):
-                    word_multiplier *= 2
-                elif premium == TW:
-                    word_multiplier *= 3
-
-            letter_score += tile_value
-
-        total = letter_score * word_multiplier
-        return (word, word_positions, total)
-
-    def _extract_word_vertical(self, col, min_row, max_row, new_positions):
-        """Kinyeri a függőleges szót és kiszámítja a pontszámát."""
-        word = ""
-        word_positions = []
-        letter_score = 0
-        word_multiplier = 1
-
-        for r in range(min_row, max_row + 1):
-            cell = self.cells[r][col]
-            letter, is_blank = cell
-            word += letter
-            word_positions.append((r, col))
-
-            tile_value = 0 if is_blank else TILE_VALUES.get(letter, 0)
-
-            if (r, col) in new_positions:
-                premium = self.premium_at(r, col)
-                if premium == DL:
-                    tile_value *= 2
-                elif premium == TL:
-                    tile_value *= 3
-                elif premium in (DW, ST):
-                    word_multiplier *= 2
-                elif premium == TW:
-                    word_multiplier *= 3
-
-            letter_score += tile_value
-
-        total = letter_score * word_multiplier
-        return (word, word_positions, total)
 
     def apply_placement(self, tiles_placed):
         """Véglegesen lerakja a betűket."""
