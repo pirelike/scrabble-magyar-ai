@@ -671,6 +671,20 @@ button.link-btn:hover {
     letter-spacing: 0.04em;
 }
 
+.private-mode-badge {
+    display: inline-block;
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    border: 1px solid #ef4444;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
 
 /* ===== GAME SCREEN ===== */
 

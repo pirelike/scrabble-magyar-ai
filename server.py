@@ -435,9 +435,12 @@ def index():
 
 
 def get_rooms_list():
-    """Szobák listája a lobby számára (kód nélkül - az csak a tulajdonosnak)."""
+    """Szobák listája a lobby számára (kód nélkül - az csak a tulajdonosnak).
+    Privát szobák nem jelennek meg a listában."""
     result = []
     for room_id, room in rooms.items():
+        if room.get('is_private', False):
+            continue
         result.append({
             'id': room_id,
             'name': room['name'],
@@ -679,6 +682,7 @@ def handle_create_room(data):
     except (ValueError, TypeError):
         max_players = 4
     challenge_mode = bool(data.get('challenge_mode', False))
+    is_private = bool(data.get('is_private', False))
     player_name = player_names.get(sid, 'Névtelen')
 
     room_id = str(uuid.uuid4())[:8]
@@ -693,6 +697,7 @@ def handle_create_room(data):
         'name': name,
         'max_players': max_players,
         'join_code': join_code,
+        'is_private': is_private,
     }
     join_codes[join_code] = room_id
 
@@ -706,6 +711,7 @@ def handle_create_room(data):
         'room_name': name,
         'is_owner': True,
         'challenge_mode': game.challenge_mode,
+        'is_private': is_private,
         'reconnect_token': token,
     })
     # Csak a tulajdonosnak küldjük el a csatlakozási kódot
@@ -727,6 +733,7 @@ def handle_join_room(data):
     code = data.get('code', '').strip()
     room_id = data.get('room_id')
 
+    joined_by_code = False
     if code:
         if not re.match(r'^\d{6}$', code):
             emit('error', {'message': 'Érvénytelen kód. 6 számjegyű kódot adj meg.'})
@@ -735,6 +742,7 @@ def handle_join_room(data):
         if not room_id:
             emit('error', {'message': 'Nincs ilyen kódú szoba.'})
             return
+        joined_by_code = True
     elif room_id:
         if not isinstance(room_id, str) or len(room_id) > 8:
             emit('error', {'message': 'Érvénytelen szoba azonosító.'})
@@ -747,6 +755,11 @@ def handle_join_room(data):
 
     if room_id not in rooms:
         emit('error', {'message': 'A szoba nem létezik.'})
+        return
+
+    # Privát szobába csak kóddal lehet csatlakozni
+    if rooms[room_id].get('is_private', False) and not joined_by_code:
+        emit('error', {'message': 'Ez egy privát szoba. Csatlakozáshoz kód szükséges.'})
         return
 
     room = rooms[room_id]
@@ -775,6 +788,7 @@ def handle_join_room(data):
         'room_name': room['name'],
         'is_owner': False,
         'challenge_mode': game.challenge_mode,
+        'is_private': room.get('is_private', False),
         'reconnect_token': token,
     })
 

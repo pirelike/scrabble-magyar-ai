@@ -351,7 +351,8 @@ document.getElementById('btn-create-room').addEventListener('click', () => {
     const name = document.getElementById('room-name').value.trim() || 'Szoba';
     const maxPlayers = document.getElementById('room-max-players').value;
     const challengeMode = document.getElementById('room-challenge-mode').checked;
-    socket.emit('create_room', { name, max_players: maxPlayers, challenge_mode: challengeMode });
+    const isPrivate = document.getElementById('room-private').checked;
+    socket.emit('create_room', { name, max_players: maxPlayers, challenge_mode: challengeMode, is_private: isPrivate });
 });
 
 // Csatlakozás kóddal
@@ -423,11 +424,22 @@ socket.on('room_joined', (data) => {
         challengeBadge.classList.add('hidden');
     }
 
+    // Privát szoba badge
+    const privateBadge = document.getElementById('waiting-private-mode');
+    if (data.is_private) {
+        privateBadge.classList.remove('hidden');
+    } else {
+        privateBadge.classList.add('hidden');
+    }
+
     // Kód megjelenítés reset
     const codeSection = document.getElementById('room-code-display');
     if (isOwner) {
         // A kódot a 'room_code' event-ben kapjuk
         codeSection.classList.remove('hidden');
+    } else if (data.is_private) {
+        // Privát szobánál a kódot a csatlakozónak is megmutatjuk (ha van)
+        codeSection.classList.add('hidden');
     } else {
         codeSection.classList.add('hidden');
     }

@@ -472,6 +472,104 @@ class TestChallengeMode:
         assert action_events[0]['args'][0]['success'] is False
 
 
+class TestPrivateRoom:
+    def test_create_private_room(self, registered_client):
+        registered_client.emit('create_room', {
+            'name': 'PrivateRoom', 'max_players': 4, 'is_private': True
+        })
+        received = registered_client.get_received()
+        join_events = [r for r in received if r['name'] == 'room_joined']
+        assert len(join_events) >= 1
+        assert join_events[0]['args'][0]['is_private'] is True
+
+    def test_create_public_room_default(self, registered_client):
+        registered_client.emit('create_room', {'name': 'PublicRoom', 'max_players': 4})
+        received = registered_client.get_received()
+        join_events = [r for r in received if r['name'] == 'room_joined']
+        assert join_events[0]['args'][0]['is_private'] is False
+
+    def test_private_room_not_in_rooms_list(self, registered_client):
+        registered_client.emit('create_room', {
+            'name': 'HiddenRoom', 'max_players': 4, 'is_private': True
+        })
+        registered_client.get_received()
+
+        registered_client.emit('get_rooms')
+        received = registered_client.get_received()
+        rooms_events = [r for r in received if r['name'] == 'rooms_list']
+        assert len(rooms_events) >= 1
+        rooms = rooms_events[0]['args'][0]
+        assert len(rooms) == 0  # privát szoba nem jelenik meg
+
+    def test_public_room_in_rooms_list(self, registered_client):
+        registered_client.emit('create_room', {
+            'name': 'VisibleRoom', 'max_players': 4, 'is_private': False
+        })
+        registered_client.get_received()
+
+        registered_client.emit('get_rooms')
+        received = registered_client.get_received()
+        rooms_events = [r for r in received if r['name'] == 'rooms_list']
+        rooms = rooms_events[0]['args'][0]
+        assert len(rooms) == 1
+        assert rooms[0]['name'] == 'VisibleRoom'
+
+    def test_join_private_room_by_code(self, app, socketio_app, registered_client):
+        registered_client.emit('create_room', {
+            'name': 'PrivJoin', 'max_players': 4, 'is_private': True
+        })
+        received = registered_client.get_received()
+        code_events = [r for r in received if r['name'] == 'room_code']
+        code = code_events[0]['args'][0]['code']
+
+        c2 = socketio_app.test_client(app)
+        c2.emit('set_name', {'name': 'Joiner', 'is_guest': True, 'user_id': None})
+        c2.get_received()
+        c2.emit('join_room', {'code': code})
+        received2 = c2.get_received()
+        join_events = [r for r in received2 if r['name'] == 'room_joined']
+        assert len(join_events) >= 1
+        assert join_events[0]['args'][0]['room_name'] == 'PrivJoin'
+        assert join_events[0]['args'][0]['is_private'] is True
+        c2.disconnect()
+
+    def test_join_private_room_by_id_blocked(self, app, socketio_app, registered_client):
+        registered_client.emit('create_room', {
+            'name': 'PrivBlock', 'max_players': 4, 'is_private': True
+        })
+        received = registered_client.get_received()
+        join_events = [r for r in received if r['name'] == 'room_joined']
+        room_id = join_events[0]['args'][0]['room_id']
+
+        c2 = socketio_app.test_client(app)
+        c2.emit('set_name', {'name': 'Blocked', 'is_guest': True, 'user_id': None})
+        c2.get_received()
+        c2.emit('join_room', {'room_id': room_id})
+        received2 = c2.get_received()
+        error_events = [r for r in received2 if r['name'] == 'error']
+        assert len(error_events) >= 1
+        assert 'privát' in error_events[0]['args'][0]['message'].lower()
+        c2.disconnect()
+
+    def test_join_public_room_by_id_allowed(self, app, socketio_app, registered_client):
+        registered_client.emit('create_room', {
+            'name': 'PubJoin', 'max_players': 4, 'is_private': False
+        })
+        received = registered_client.get_received()
+        join_events = [r for r in received if r['name'] == 'room_joined']
+        room_id = join_events[0]['args'][0]['room_id']
+
+        c2 = socketio_app.test_client(app)
+        c2.emit('set_name', {'name': 'PubJoiner', 'is_guest': True, 'user_id': None})
+        c2.get_received()
+        c2.emit('join_room', {'room_id': room_id})
+        received2 = c2.get_received()
+        join_events2 = [r for r in received2 if r['name'] == 'room_joined']
+        assert len(join_events2) >= 1
+        assert join_events2[0]['args'][0]['is_private'] is False
+        c2.disconnect()
+
+
 class TestChat:
     def test_send_chat_in_room(self, app, socketio_app, registered_client):
         registered_client.emit('create_room', {'name': 'ChatRoom', 'max_players': 4})
