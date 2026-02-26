@@ -779,6 +779,7 @@ button.link-btn:hover {
     margin-top: 16px;
     border-top: 1px solid #0f3460;
     padding-top: 12px;
+    touch-action: pan-y;
 }
 
 .chat-section h3 {
@@ -789,7 +790,10 @@ button.link-btn:hover {
 
 .chat-messages {
     height: 150px;
-    overflow-y: auto;
+    overflow-y: scroll;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
     margin-bottom: 8px;
     font-size: 0.85em;
     padding: 4px;
