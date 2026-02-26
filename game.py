@@ -321,6 +321,29 @@ class Game:
         self.last_action = f"{voter.name} szavazott."
         return True, 'vote_recorded', f"{voter.name} szavazott."
 
+    def reject_pending_by_player(self, player_id):
+        """
+        Játékos elutasítja a függő lerakást (2 játékos mód).
+        Visszatér: (success, result, message)
+        """
+        if not self.pending_challenge:
+            return False, None, "Nincs függő lerakás."
+
+        pending = self.pending_challenge
+        placer = self.players[pending['player_idx']]
+
+        if placer.id == player_id:
+            return False, None, "Saját lerakásodat nem utasíthatod el."
+
+        if len(self.players) > 2:
+            return False, None, "3+ játékos módban használd a szavazást."
+
+        if pending.get('voting_phase'):
+            return False, None, "Szavazás folyamatban."
+
+        self._finalize_reject()
+        return True, 'rejected', "Lerakás elutasítva."
+
     def accept_pending_by_player(self, player_id):
         """
         Játékos elfogadja a függő lerakást.

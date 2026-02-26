@@ -608,6 +608,82 @@ class TestChallengeMode:
         success, result, msg = g.accept_pending_by_player('p1')
         assert success is False
 
+    # --- 2 játékos: elutasítás ---
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_2_player_reject(self, mock_check):
+        """2 játékosnál az elutasítás visszavonja a lerakást."""
+        from game import Game
+        g = Game('test', challenge_mode=True)
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.start()
+        g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
+        old_score = g.players[0].score
+        success, result, msg = g.reject_pending_by_player('p2')
+        assert success is True
+        assert result == 'rejected'
+        assert g.pending_challenge is None
+        assert g.players[0].score == old_score
+        assert g.board.get(7, 6) is None
+        assert g.board.get(7, 7) is None
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_2_player_cannot_reject_own(self, mock_check):
+        """2 játékosnál a lerakó nem utasíthatja el saját lerakását."""
+        from game import Game
+        g = Game('test', challenge_mode=True)
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.start()
+        g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
+        success, result, msg = g.reject_pending_by_player('p1')
+        assert success is False
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_2_player_reject_tiles_returned(self, mock_check):
+        """2 játékos elutasítás: betűk visszakerülnek a lerakó kezébe."""
+        from game import Game
+        g = Game('test', challenge_mode=True)
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.start()
+        g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        hand_before = len(g.players[0].hand)
+        g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
+        hand_after_place = len(g.players[0].hand)
+        assert hand_after_place == hand_before - 2
+        g.reject_pending_by_player('p2')
+        assert len(g.players[0].hand) == hand_before
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_2_player_reject_no_pending(self, mock_check):
+        """Elutasítás pending nélkül sikertelen."""
+        from game import Game
+        g = Game('test', challenge_mode=True)
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.start()
+        success, result, msg = g.reject_pending_by_player('p2')
+        assert success is False
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_3_player_cannot_use_reject(self, mock_check):
+        """3+ játékosnál a reject_pending_by_player nem használható."""
+        from game import Game
+        g = Game('test', challenge_mode=True)
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.add_player('p3', 'Charlie')
+        g.start()
+        g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
+        success, result, msg = g.reject_pending_by_player('p2')
+        assert success is False
+        assert '3+' in msg
+
     # --- accept_pending (timeout) ---
 
     @patch('board.check_words', return_value=(True, []))

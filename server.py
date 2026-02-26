@@ -63,6 +63,7 @@ _RATE_LIMITS = {
     'get_rooms': (10, 5),
     'challenge': (5, 10),
     'accept_words': (5, 10),
+    'reject_words': (5, 10),
     'cast_vote': (5, 10),
     'send_chat': (10, 10),
 }
@@ -827,6 +828,36 @@ def handle_accept_words():
                 'challenge_won': result == 'vote_rejected',
                 'message': msg,
             }, room=room_id)
+    else:
+        emit('action_result', {'success': False, 'message': msg})
+
+
+@socketio.on('reject_words')
+def handle_reject_words():
+    sid = request.sid
+    if not _check_rate_limit(sid, 'reject_words'):
+        emit('error', {'message': 'Túl sok kérés, várj egy kicsit.'})
+        return
+    room_id = player_rooms.get(sid)
+    if not room_id or room_id not in rooms:
+        return
+
+    game = rooms[room_id]['game']
+    success, result, msg = game.reject_pending_by_player(sid)
+
+    if success:
+        # Timer törlése
+        if room_id not in _challenge_counter:
+            _challenge_counter[room_id] = 0
+        _challenge_counter[room_id] += 1
+
+        for player in game.players:
+            emit('game_state', game.get_state(for_player_id=player.id), room=player.id)
+
+        emit('challenge_result', {
+            'challenge_won': True,
+            'message': msg,
+        }, room=room_id)
     else:
         emit('action_result', {'success': False, 'message': msg})
 

@@ -1060,13 +1060,21 @@ function renderChallengeSection() {
             buttonsEl.appendChild(rejectBtn);
         }
     } else if (playerCount <= 2) {
-        // 2 játékos: csak Elfogad gomb (nincs Megtámad)
+        // 2 játékos: Elfogad + Elutasít gombok
         if (myAccepted) {
             const waitText = document.createElement('div');
             waitText.className = 'challenge-wait';
             waitText.textContent = 'Elfogadva — várakozás...';
             buttonsEl.appendChild(waitText);
         } else {
+            const rejectBtn = document.createElement('button');
+            rejectBtn.className = 'btn-challenge';
+            rejectBtn.textContent = 'Elutasít';
+            rejectBtn.addEventListener('click', () => {
+                socket.emit('reject_words');
+            });
+            buttonsEl.appendChild(rejectBtn);
+
             const acceptBtn = document.createElement('button');
             acceptBtn.className = 'btn-accept';
             acceptBtn.textContent = 'Elfogad';
