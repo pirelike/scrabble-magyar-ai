@@ -708,7 +708,8 @@ button.link-btn:hover {
     background: var(--bg-card);
     padding: 20px;
     border-radius: var(--radius-lg);
-    width: 220px;
+    width: 270px;
+    min-width: 270px;
     flex-shrink: 0;
     position: sticky;
     top: 20px;
@@ -762,8 +763,8 @@ button.link-btn:hover {
 
 .actions {
     margin-top: 18px;
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: 8px;
 }
 
@@ -1388,15 +1389,12 @@ button.link-btn:hover {
     }
 
     .side-panel .actions {
-        flex-direction: row;
-        flex-wrap: wrap;
+        grid-template-columns: 1fr 1fr;
         gap: 6px;
         margin-top: 10px;
     }
 
     .side-panel .action-btn {
-        flex: 1 1 calc(50% - 6px);
-        min-width: 0;
         padding: 12px 6px;
         font-size: 14px;
         min-height: 44px;
