@@ -1004,3 +1004,114 @@ class TestChallengeMode:
         assert g.pending_challenge is not None
         g.remove_player('p1')
         assert g.pending_challenge is None
+
+    # --- Turn order after reject ---
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_2_player_reject_same_player_turn(self, mock_check):
+        """2 játékos elutasítás: a lerakó újra jön (nem a következő)."""
+        from game import Game
+        g = Game('test', challenge_mode=True)
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.start()
+        assert g.current_player().id == 'p1'
+        g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
+        g.reject_pending_by_player('p2')
+        # Elutasítás után a lerakó (p1) újra jön
+        assert g.current_player().id == 'p1'
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_3_player_vote_reject_same_player_turn(self, mock_check):
+        """3 játékos szavazásos elutasítás: a lerakó újra jön."""
+        from game import Game
+        g = Game('test', challenge_mode=True)
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.add_player('p3', 'Charlie')
+        g.start()
+        assert g.current_player().id == 'p1'
+        g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
+        g.challenge('p2')
+        g.cast_vote('p3', 'reject')
+        # Elutasítás után a lerakó (p1) újra jön
+        assert g.current_player().id == 'p1'
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_4_player_all_reject_same_player_turn(self, mock_check):
+        """4 játékos: mindenki elutasít → a lerakó újra jön."""
+        from game import Game
+        g = Game('test', challenge_mode=True)
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.add_player('p3', 'Charlie')
+        g.add_player('p4', 'Diana')
+        g.start()
+        assert g.current_player().id == 'p1'
+        g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
+        g.challenge('p2')
+        g.cast_vote('p3', 'reject')
+        g.cast_vote('p4', 'reject')
+        # Elutasítás után a lerakó (p1) újra jön
+        assert g.current_player().id == 'p1'
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_2_player_accept_next_player_turn(self, mock_check):
+        """2 játékos elfogadás: a következő játékos jön."""
+        from game import Game
+        g = Game('test', challenge_mode=True)
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.start()
+        assert g.current_player().id == 'p1'
+        g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
+        g.accept_pending_by_player('p2')
+        # Elfogadás után a másik játékos (p2) jön
+        assert g.current_player().id == 'p2'
+
+    # --- Reconnect (mark_disconnected, replace_player_sid) ---
+
+    def test_mark_disconnected(self):
+        """Játékos ideiglenesen lecsatlakozottnak jelölése."""
+        from game import Game
+        g = Game('test')
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.start()
+        assert g.players[0].disconnected is False
+        g.mark_disconnected('p1')
+        assert g.players[0].disconnected is True
+        assert g.players[1].disconnected is False
+
+    def test_replace_player_sid(self):
+        """Játékos sid cseréje újracsatlakozáskor."""
+        from game import Game
+        g = Game('test')
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.start()
+        g.mark_disconnected('p1')
+        assert g.replace_player_sid('p1', 'p1_new') is True
+        assert g.players[0].id == 'p1_new'
+        assert g.players[0].disconnected is False
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_replace_player_sid_updates_pending_challenge(self, mock_check):
+        """Sid csere frissíti a pending challenge-t is."""
+        from game import Game
+        g = Game('test', challenge_mode=True)
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.add_player('p3', 'Charlie')
+        g.start()
+        g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
+        g.accept_pending_by_player('p2')  # p2 elfogadja
+        # p2 disconnectel és reconnecel
+        g.mark_disconnected('p2')
+        g.replace_player_sid('p2', 'p2_new')
+        assert g.players[1].id == 'p2_new'

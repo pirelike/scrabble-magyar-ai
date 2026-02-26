@@ -29,7 +29,8 @@ from email_service import send_verification_email
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(32).hex())
-socketio = SocketIO(app, cors_allowed_origins=[])
+socketio = SocketIO(app, cors_allowed_origins=[],
+                    ping_timeout=120, ping_interval=25)
 
 # Adatbázis inicializálása
 init_db()
@@ -48,6 +49,14 @@ player_auth = {}
 room_chat = {}
 # Challenge timer azonosítók: {room_id: int}
 _challenge_counter = {}
+# Reconnect tokenek: {token: {room_id, player_name, sid}}
+_reconnect_tokens = {}
+# Sid -> reconnect token mapping: {sid: token}
+_sid_to_token = {}
+# Disconnected játékosok grace period: {token: {room_id, player_idx, timer_id, ...}}
+_disconnected_players = {}
+# Grace period időtartam (mp) — ennyi ideig várunk az újracsatlakozásra
+_DISCONNECT_GRACE_PERIOD = 120
 
 # --- Rate limiting ---
 # {sid: {event_name: [timestamp, ...]}}
@@ -66,6 +75,7 @@ _RATE_LIMITS = {
     'reject_words': (5, 10),
     'cast_vote': (5, 10),
     'send_chat': (10, 10),
+    'rejoin_room': (5, 10),
 }
 
 # IP-alapú rate limiting az auth endpointokra
@@ -152,6 +162,18 @@ def _generate_join_code():
             return code
 
 
+def _generate_reconnect_token(sid, room_id, player_name):
+    """Reconnect token generálása és mentése."""
+    token = secrets.token_urlsafe(24)
+    _reconnect_tokens[token] = {
+        'room_id': room_id,
+        'player_name': player_name,
+        'sid': sid,
+    }
+    _sid_to_token[sid] = token
+    return token
+
+
 def _get_client_ip():
     """Kliens IP cím lekérése (proxy mögötti is)."""
     return request.headers.get('X-Forwarded-For', request.remote_addr or '127.0.0.1').split(',')[0].strip()
@@ -173,7 +195,7 @@ def _set_session_cookie(response, token):
 # --- Challenge timer ---
 
 def _cleanup_room(room_id):
-    """Szoba erőforrásainak felszabadítása (join_code, chat, challenge timer)."""
+    """Szoba erőforrásainak felszabadítása (join_code, chat, challenge timer, tokenek)."""
     room = rooms.get(room_id)
     if room and room.get('join_code') in join_codes:
         del join_codes[room['join_code']]
@@ -181,6 +203,15 @@ def _cleanup_room(room_id):
         del room_chat[room_id]
     if room_id in _challenge_counter:
         del _challenge_counter[room_id]
+    # Disconnected játékosok és tokenek törlése a szobához
+    tokens_to_remove = [
+        t for t, info in _disconnected_players.items()
+        if info['room_id'] == room_id
+    ]
+    for t in tokens_to_remove:
+        dc = _disconnected_players.pop(t)
+        _sid_to_token.pop(dc['sid'], None)
+        _reconnect_tokens.pop(t, None)
     del rooms[room_id]
 
 
@@ -430,21 +461,61 @@ def handle_connect():
 def handle_disconnect():
     sid = request.sid
     room_id = player_rooms.get(sid)
+    token = _sid_to_token.get(sid)
+
     if room_id and room_id in rooms:
         room = rooms[room_id]
         game = room['game']
-        game.remove_player(sid)
-        leave_room(room_id)
 
-        if not game.players:
-            _cleanup_room(room_id)
-        else:
-            if room['owner'] == sid:
-                _transfer_ownership(room)
+        # Ha a játék folyamatban van és van reconnect token,
+        # grace period-ot adunk az újracsatlakozásra
+        if game.started and not game.finished and token:
+            game.mark_disconnected(sid)
+            leave_room(room_id)
+
+            # Grace period timer indítása
+            _disconnected_players[token] = {
+                'room_id': room_id,
+                'sid': sid,
+                'player_name': player_names.get(sid, '?'),
+            }
+
+            def grace_timeout():
+                eventlet.sleep(_DISCONNECT_GRACE_PERIOD)
+                if token in _disconnected_players:
+                    _finalize_player_disconnect(token)
+
+            socketio.start_background_task(grace_timeout)
+
             _emit_all_states(game)
-            emit('player_left', {'name': player_names.get(sid, '?')}, room=room_id)
+            emit('player_disconnected',
+                 {'name': player_names.get(sid, '?')}, room=room_id)
+            del player_rooms[sid]
+        else:
+            # Nem aktív játék: azonnali eltávolítás
+            game.remove_player(sid)
+            leave_room(room_id)
 
-        del player_rooms[sid]
+            if not game.players:
+                _cleanup_room(room_id)
+            else:
+                if room['owner'] == sid:
+                    _transfer_ownership(room)
+                _emit_all_states(game)
+                emit('player_left', {'name': player_names.get(sid, '?')},
+                     room=room_id)
+
+            del player_rooms[sid]
+
+            # Token cleanup
+            if token:
+                _reconnect_tokens.pop(token, None)
+                _sid_to_token.pop(sid, None)
+    else:
+        # Token cleanup ha nem volt szobában
+        if token:
+            _reconnect_tokens.pop(token, None)
+            _sid_to_token.pop(sid, None)
 
     if sid in player_names:
         del player_names[sid]
@@ -456,6 +527,39 @@ def handle_disconnect():
         del _rate_limits[sid]
 
     emit('rooms_list', get_rooms_list(), broadcast=True)
+
+
+def _finalize_player_disconnect(token):
+    """Grace period lejárt: játékos végleges eltávolítása."""
+    info = _disconnected_players.pop(token, None)
+    if not info:
+        return
+    room_id = info['room_id']
+    old_sid = info['sid']
+
+    _reconnect_tokens.pop(token, None)
+    _sid_to_token.pop(old_sid, None)
+
+    if room_id not in rooms:
+        return
+
+    room = rooms[room_id]
+    game = room['game']
+    game.remove_player(old_sid)
+
+    if not game.players:
+        _cleanup_room(room_id)
+    else:
+        if room['owner'] == old_sid:
+            _transfer_ownership(room)
+
+        all_states = game.get_all_states()
+        for player_id, state in all_states.items():
+            socketio.emit('game_state', state, room=player_id)
+        socketio.emit('player_left',
+                      {'name': info['player_name']}, room=room_id)
+
+    socketio.emit('rooms_list', get_rooms_list(), broadcast=True)
 
 
 @socketio.on('set_name')
@@ -474,6 +578,81 @@ def handle_set_name(data):
 
     player_names[sid] = name
     player_auth[sid] = {'user_id': user_id, 'is_guest': is_guest}
+
+
+@socketio.on('rejoin_room')
+def handle_rejoin_room(data):
+    """Újracsatlakozás egy aktív játékba reconnect tokennel."""
+    sid = request.sid
+    if not _check_rate_limit(sid, 'rejoin_room'):
+        emit('error', {'message': 'Túl sok kérés, várj egy kicsit.'})
+        return
+    if not isinstance(data, dict):
+        emit('rejoin_failed', {'message': 'Érvénytelen kérés.'})
+        return
+
+    token = data.get('token', '')
+    if not isinstance(token, str) or not token:
+        emit('rejoin_failed', {'message': 'Hiányzó token.'})
+        return
+
+    # Ellenőrizzük, hogy van-e disconnected játékos ezzel a tokennel
+    dc_info = _disconnected_players.get(token)
+    token_info = _reconnect_tokens.get(token)
+
+    if not dc_info or not token_info:
+        emit('rejoin_failed', {'message': 'Érvénytelen vagy lejárt token.'})
+        return
+
+    room_id = dc_info['room_id']
+    old_sid = dc_info['sid']
+
+    if room_id not in rooms:
+        _disconnected_players.pop(token, None)
+        _reconnect_tokens.pop(token, None)
+        emit('rejoin_failed', {'message': 'A szoba már nem létezik.'})
+        return
+
+    room = rooms[room_id]
+    game = room['game']
+
+    # Sid csere a játékban
+    if not game.replace_player_sid(old_sid, sid):
+        emit('rejoin_failed', {'message': 'Nem sikerült újracsatlakozni.'})
+        return
+
+    # Cleanup: grace period leállítása
+    del _disconnected_players[token]
+
+    # Token frissítése az új sid-del
+    _reconnect_tokens[token]['sid'] = sid
+    _sid_to_token.pop(old_sid, None)
+    _sid_to_token[sid] = token
+
+    # Owner frissítése ha szükséges
+    if room['owner'] == old_sid:
+        room['owner'] = sid
+
+    # Szoba kezelés
+    player_name = dc_info['player_name']
+    player_rooms[sid] = room_id
+    player_names[sid] = player_name
+    join_room(room_id)
+
+    emit('room_joined', {
+        'room_id': room_id,
+        'room_name': room['name'],
+        'is_owner': room['owner'] == sid,
+        'challenge_mode': game.challenge_mode,
+        'reconnect_token': token,
+    })
+
+    if room['owner'] == sid:
+        emit('room_code', {'code': room['join_code']})
+
+    _emit_all_states(game)
+    emit('player_reconnected', {'name': player_name}, room=room_id)
+    emit('rooms_list', get_rooms_list(), broadcast=True)
 
 
 @socketio.on('get_rooms')
@@ -520,11 +699,14 @@ def handle_create_room(data):
     player_rooms[sid] = room_id
     join_room(room_id)
 
+    token = _generate_reconnect_token(sid, room_id, player_name)
+
     emit('room_joined', {
         'room_id': room_id,
         'room_name': name,
         'is_owner': True,
         'challenge_mode': game.challenge_mode,
+        'reconnect_token': token,
     })
     # Csak a tulajdonosnak küldjük el a csatlakozási kódot
     emit('room_code', {'code': join_code})
@@ -586,11 +768,14 @@ def handle_join_room(data):
     player_rooms[sid] = room_id
     join_room(room_id)
 
+    token = _generate_reconnect_token(sid, room_id, player_name)
+
     emit('room_joined', {
         'room_id': room_id,
         'room_name': room['name'],
         'is_owner': False,
         'challenge_mode': game.challenge_mode,
+        'reconnect_token': token,
     })
 
     _emit_all_states(game)
@@ -612,6 +797,12 @@ def handle_leave_room():
     game.remove_player(sid)
     leave_room(room_id)
     del player_rooms[sid]
+
+    # Token cleanup (explicit leave = nem kell grace period)
+    token = _sid_to_token.pop(sid, None)
+    if token:
+        _reconnect_tokens.pop(token, None)
+        _disconnected_players.pop(token, None)
 
     if not game.players:
         _cleanup_room(room_id)

@@ -26,6 +26,9 @@ def clean_state():
     server.player_auth.clear()
     server.room_chat.clear()
     server._challenge_counter.clear()
+    server._reconnect_tokens.clear()
+    server._sid_to_token.clear()
+    server._disconnected_players.clear()
     yield
     server.rooms.clear()
     server.join_codes.clear()
@@ -34,6 +37,9 @@ def clean_state():
     server.player_auth.clear()
     server.room_chat.clear()
     server._challenge_counter.clear()
+    server._reconnect_tokens.clear()
+    server._sid_to_token.clear()
+    server._disconnected_players.clear()
 
 
 @pytest.fixture

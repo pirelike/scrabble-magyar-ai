@@ -16,6 +16,7 @@ class Player:
         self.score = 0
         self.consecutive_passes = 0
         self.skip_next_turn = False  # Challenge büntetés
+        self.disconnected = False  # Ideiglenesen lecsatlakozott
 
     def to_dict(self, reveal_hand=False):
         data = {
@@ -24,6 +25,7 @@ class Player:
             'score': self.score,
             'hand_count': len(self.hand),
             'skip_next_turn': self.skip_next_turn,
+            'disconnected': self.disconnected,
         }
         if reveal_hand:
             data['hand'] = self.hand
@@ -59,6 +61,33 @@ class Game:
         player = Player(player_id, name)
         self.players.append(player)
         return True, "Csatlakozás sikeres."
+
+    def mark_disconnected(self, player_id):
+        """Jelöli a játékost ideiglenesen lecsatlakozottnak."""
+        for p in self.players:
+            if p.id == player_id:
+                p.disconnected = True
+                return True
+        return False
+
+    def replace_player_sid(self, old_id, new_id):
+        """Kicseréli a játékos sid-jét újracsatlakozáskor."""
+        for p in self.players:
+            if p.id == old_id:
+                p.id = new_id
+                p.disconnected = False
+                # pending_challenge-ben is frissítjük ha kell
+                if self.pending_challenge:
+                    pc = self.pending_challenge
+                    if pc.get('challenger_id') == old_id:
+                        pc['challenger_id'] = new_id
+                    if old_id in pc.get('accepted_players', set()):
+                        pc['accepted_players'].discard(old_id)
+                        pc['accepted_players'].add(new_id)
+                    if old_id in pc.get('votes', {}):
+                        pc['votes'][new_id] = pc['votes'].pop(old_id)
+                return True
+        return False
 
     def remove_player(self, player_id):
         # Megkeressük az eltávolítandó játékos indexét
@@ -462,7 +491,7 @@ class Game:
             self._next_turn()
 
     def _finalize_reject(self):
-        """Lerakás elutasítása szavazással. Betűk visszakerülnek."""
+        """Lerakás elutasítása. Betűk visszakerülnek, a lerakó újra jön."""
         pending = self.pending_challenge
         player = self.players[pending['player_idx']]
         self.pending_challenge = None
@@ -472,10 +501,10 @@ class Game:
 
         word_strs = pending['word_strs']
         self.last_action = (
-            f"{player.name} szavai elutasítva szavazással: "
-            f"{', '.join(word_strs)}. Betűk visszavéve."
+            f"{player.name} szavai elutasítva: "
+            f"{', '.join(word_strs)}. Betűk visszavéve, újra ő következik."
         )
-        self._next_turn()
+        # NEM hívunk _next_turn()-t: a lerakó újra próbálkozhat
 
     def _make_vote_message(self, result):
         """Szavazás eredmény üzenet."""

@@ -1,4 +1,10 @@
-const socket = io();
+const socket = io({
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+    timeout: 120000,
+});
 
 // Magyar betűk és pontértékek
 const TILE_VALUES = {
@@ -53,6 +59,8 @@ let exchangeMode = false;
 let exchangeIndices = new Set();
 let placedTiles = []; // [{row, col, letter, is_blank, handIdx}]
 let currentRoomCode = null;
+let currentRoomId = null;
+let reconnectToken = null;
 let boardDragInitialized = false;
 let challengeTimer = null;
 let challengeTimeLeft = 0;
@@ -387,6 +395,8 @@ socket.on('rooms_list', (rooms) => {
 // ===== Szoba =====
 socket.on('room_joined', (data) => {
     isOwner = data.is_owner;
+    currentRoomId = data.room_id;
+    if (data.reconnect_token) reconnectToken = data.reconnect_token;
     challengeModeEnabled = data.challenge_mode || false;
     document.getElementById('waiting-room-name').textContent = data.room_name;
 
@@ -434,6 +444,8 @@ document.getElementById('btn-copy-code').addEventListener('click', () => {
 
 socket.on('room_left', () => {
     currentRoomCode = null;
+    currentRoomId = null;
+    reconnectToken = null;
     chatMessages = [];
     stopChallengeCountdown();
     showScreen('lobby-screen');
@@ -1208,6 +1220,8 @@ function showGameOver() {
 document.getElementById('btn-back-lobby').addEventListener('click', () => {
     document.getElementById('game-over-dialog').classList.add('hidden');
     currentRoomCode = null;
+    currentRoomId = null;
+    reconnectToken = null;
     chatMessages = [];
     stopChallengeCountdown();
     socket.emit('leave_room');
@@ -1221,6 +1235,44 @@ function escapeHtml(str) {
     div.textContent = str;
     return div.innerHTML;
 }
+
+// ===== Reconnect kezelés =====
+
+socket.on('connect', () => {
+    // Újracsatlakozás után: ha volt aktív szoba, megpróbáljuk visszakapni
+    if (reconnectToken) {
+        socket.emit('rejoin_room', { token: reconnectToken });
+    }
+});
+
+socket.on('rejoin_failed', () => {
+    // Reconnect sikertelen: visszadobjuk a lobbyba
+    reconnectToken = null;
+    currentRoomId = null;
+    currentRoomCode = null;
+    chatMessages = [];
+    stopChallengeCountdown();
+    showScreen('lobby-screen');
+    socket.emit('get_rooms');
+});
+
+socket.on('player_disconnected', (data) => {
+    showMessage(`${data.name} lecsatlakozott, várakozás újracsatlakozásra...`, false);
+});
+
+socket.on('player_reconnected', (data) => {
+    showMessage(`${data.name} újracsatlakozott!`, false);
+});
+
+// Amikor az oldal visszakerül előtérbe (telefon feloldás, tab váltás),
+// ellenőrizzük a kapcsolatot és ha kell, reconnectelünk
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        if (!socket.connected) {
+            socket.connect();
+        }
+    }
+});
 
 // Oldal betöltéskor: session ellenőrzés
 checkSession();
