@@ -434,6 +434,10 @@ button.link-btn:hover {
     align-items: center;
 }
 
+.board-zoom-container {
+    position: relative;
+}
+
 .board {
     display: grid;
     grid-template-columns: repeat(15, 1fr);
@@ -781,14 +785,30 @@ button.link-btn:hover {
 }
 
 .chat-messages {
-    max-height: 140px;
+    height: 150px;
     overflow-y: auto;
     margin-bottom: 8px;
     font-size: 0.85em;
     padding: 4px;
     background: #1a1a2e;
     border-radius: 4px;
-    min-height: 40px;
+}
+
+/* Board zoom reset gomb */
+.board-zoom-reset {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 10;
+    min-height: 32px;
+    min-width: 32px;
+    padding: 4px 10px;
+    font-size: 13px;
+    background: rgba(22, 33, 62, 0.85);
+    color: #e8b930;
+    border: 1px solid #e8b930;
+    border-radius: 6px;
+    cursor: pointer;
 }
 
 .chat-msg {
@@ -969,11 +989,23 @@ button:active:not(:disabled) {
         align-items: center;
     }
 
-    .board {
+    .board-zoom-container {
         --board-size: min(92vw, calc(100vh - 300px));
         width: var(--board-size);
         height: var(--board-size);
         max-width: 100%;
+        overflow: hidden;
+        touch-action: none;
+        border-radius: 4px;
+        border: 2px solid #555;
+    }
+
+    .board {
+        width: var(--board-size);
+        height: var(--board-size);
+        transform-origin: 0 0;
+        border: none;
+        border-radius: 0;
     }
 
     .cell {
@@ -1120,6 +1152,11 @@ button:active:not(:disabled) {
 
 /* Kis telefonok (< 375px) */
 @media (max-width: 374px) {
+    .board-zoom-container {
+        width: 98vw;
+        height: 98vw;
+    }
+
     .board {
         width: 98vw;
         height: 98vw;
@@ -1172,8 +1209,13 @@ button:active:not(:disabled) {
         box-shadow: none;
     }
 
-    .board {
+    .board-zoom-container {
         --board-size: min(70vh, 400px);
+        width: var(--board-size);
+        height: var(--board-size);
+    }
+
+    .board {
         width: var(--board-size);
         height: var(--board-size);
     }

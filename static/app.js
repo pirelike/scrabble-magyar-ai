@@ -479,6 +479,7 @@ function updateWaitingRoom() {
 socket.on('game_started', () => {
     showScreen('game-screen');
     buildBoard();
+    initBoardZoom();
 });
 
 socket.on('game_state', (state) => {
@@ -489,6 +490,7 @@ socket.on('game_state', (state) => {
         if (document.getElementById('game-screen').classList.contains('hidden')) {
             showScreen('game-screen');
             buildBoard();
+            initBoardZoom();
         }
         renderBoard();
         renderHand();
@@ -1200,6 +1202,143 @@ document.getElementById('btn-send-chat').addEventListener('click', () => {
 document.getElementById('chat-input').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') document.getElementById('btn-send-chat').click();
 });
+
+// ===== Board pinch-to-zoom (mobil) =====
+
+let boardScale = 1;
+let boardTranslateX = 0;
+let boardTranslateY = 0;
+let boardZoomInitialized = false;
+
+function initBoardZoom() {
+    if (boardZoomInitialized) return;
+    const container = document.getElementById('board-zoom-container');
+    const board = document.getElementById('board');
+    const resetBtn = document.getElementById('board-zoom-reset');
+    if (!container || !board || !isTouchDevice) return;
+    boardZoomInitialized = true;
+
+    let initialPinchDist = 0;
+    let initialScale = 1;
+    let isPinching = false;
+    let isPanning = false;
+    let didPan = false;
+    let panLastX = 0;
+    let panLastY = 0;
+    let panStartX = 0;
+    let panStartY = 0;
+
+    // Pinch midpoint for zoom-toward-center
+    let pinchMidX = 0;
+    let pinchMidY = 0;
+
+    function getTouchDist(t) {
+        const dx = t[0].clientX - t[1].clientX;
+        const dy = t[0].clientY - t[1].clientY;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function clampTranslation() {
+        const maxX = container.offsetWidth * (boardScale - 1);
+        const maxY = container.offsetHeight * (boardScale - 1);
+        boardTranslateX = Math.min(0, Math.max(-maxX, boardTranslateX));
+        boardTranslateY = Math.min(0, Math.max(-maxY, boardTranslateY));
+    }
+
+    function applyTransform() {
+        board.style.transform = `translate(${boardTranslateX}px, ${boardTranslateY}px) scale(${boardScale})`;
+        if (boardScale > 1.01) {
+            resetBtn.classList.remove('hidden');
+        } else {
+            resetBtn.classList.add('hidden');
+        }
+    }
+
+    function resetZoom() {
+        boardScale = 1;
+        boardTranslateX = 0;
+        boardTranslateY = 0;
+        applyTransform();
+    }
+
+    resetBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        resetZoom();
+    });
+
+    container.addEventListener('touchstart', (e) => {
+        // Ne zavarjuk a tile drag-et (kézből húzás)
+        if (touchDragTile !== null) return;
+
+        if (e.touches.length === 2) {
+            isPinching = true;
+            isPanning = false;
+            initialPinchDist = getTouchDist(e.touches);
+            initialScale = boardScale;
+            const rect = container.getBoundingClientRect();
+            pinchMidX = ((e.touches[0].clientX + e.touches[1].clientX) / 2) - rect.left;
+            pinchMidY = ((e.touches[0].clientY + e.touches[1].clientY) / 2) - rect.top;
+            e.preventDefault();
+        } else if (e.touches.length === 1 && boardScale > 1.01) {
+            isPanning = true;
+            didPan = false;
+            panStartX = e.touches[0].clientX;
+            panStartY = e.touches[0].clientY;
+            panLastX = panStartX;
+            panLastY = panStartY;
+        }
+    }, { passive: false });
+
+    container.addEventListener('touchmove', (e) => {
+        if (touchDragTile !== null) return;
+
+        if (isPinching && e.touches.length === 2) {
+            e.preventDefault();
+            const dist = getTouchDist(e.touches);
+            const newScale = Math.min(Math.max(initialScale * (dist / initialPinchDist), 1), 3.5);
+
+            // Zoom toward pinch midpoint
+            const ratio = newScale / boardScale;
+            boardTranslateX = pinchMidX - ratio * (pinchMidX - boardTranslateX);
+            boardTranslateY = pinchMidY - ratio * (pinchMidY - boardTranslateY);
+            boardScale = newScale;
+
+            clampTranslation();
+            applyTransform();
+        } else if (isPanning && e.touches.length === 1 && boardScale > 1.01) {
+            const dx = e.touches[0].clientX - panStartX;
+            const dy = e.touches[0].clientY - panStartY;
+            if (!didPan && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) {
+                didPan = true;
+            }
+            if (didPan) {
+                e.preventDefault();
+                boardTranslateX += e.touches[0].clientX - panLastX;
+                boardTranslateY += e.touches[0].clientY - panLastY;
+                panLastX = e.touches[0].clientX;
+                panLastY = e.touches[0].clientY;
+                clampTranslation();
+                applyTransform();
+            }
+        }
+    }, { passive: false });
+
+    container.addEventListener('touchend', (e) => {
+        if (e.touches.length < 2) isPinching = false;
+        if (e.touches.length === 0) {
+            if (didPan) {
+                // Megakadályozzuk a kattintást pan után
+                e.preventDefault();
+            }
+            isPanning = false;
+        }
+        // Ha nagyon közel van az 1×-hez, reseteljük
+        if (boardScale < 1.05 && !isPinching) {
+            resetZoom();
+        }
+    }, { passive: false });
+}
 
 // Játék vége
 function showGameOver() {
