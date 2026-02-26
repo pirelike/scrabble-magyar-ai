@@ -1,3 +1,18 @@
+// ===== THEME SYSTEM =====
+(function initTheme() {
+    const saved = localStorage.getItem('scrabble-theme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const theme = saved || (prefersDark ? 'dark' : 'light');
+    document.body.setAttribute('data-theme', theme);
+})();
+
+document.getElementById('theme-toggle').addEventListener('click', () => {
+    const current = document.body.getAttribute('data-theme');
+    const next = current === 'dark' ? 'light' : 'dark';
+    document.body.setAttribute('data-theme', next);
+    localStorage.setItem('scrabble-theme', next);
+});
+
 const socket = io({
     reconnection: true,
     reconnectionAttempts: Infinity,

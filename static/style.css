@@ -1,3 +1,128 @@
+/* ===== THEME SYSTEM (CSS Custom Properties) ===== */
+
+:root {
+    /* --- Light theme (default) --- */
+    --bg-base: #f5f5f7;
+    --bg-card: #ffffff;
+    --bg-card-alt: #f0f0f3;
+    --bg-input: #f5f5f7;
+    --bg-overlay: rgba(0, 0, 0, 0.45);
+
+    --border-primary: #e0e0e6;
+    --border-input: #d0d0d8;
+    --border-focus: var(--accent);
+
+    --text-primary: #1d1d1f;
+    --text-secondary: #6e6e80;
+    --text-muted: #a0a0b0;
+    --text-inverse: #ffffff;
+
+    --accent: #c8a024;
+    --accent-hover: #b08e1c;
+    --accent-subtle: rgba(200, 160, 36, 0.12);
+    --accent-text: #1d1d1f;
+
+    --danger: #d63031;
+    --danger-hover: #c0231e;
+    --success: #27ae60;
+    --success-hover: #219a52;
+    --info: #4a90d9;
+    --info-light: #e8f1fb;
+
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+    --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.10), 0 4px 8px rgba(0, 0, 0, 0.06);
+    --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.06);
+
+    --board-border: #c0c0cc;
+    --board-gap: #b8b8c4;
+    --cell-empty: #4a8c42;
+    --cell-tile-bg: #f5e6c8;
+    --cell-tile-text: #1a1a2e;
+    --cell-tile-value: #888;
+    --cell-placed: #e8c830;
+    --cell-placed-shadow: rgba(232, 200, 48, 0.5);
+    --cell-pending: #e07820;
+    --cell-drop: #5ea854;
+
+    --hand-bg: var(--bg-card);
+    --hand-tile-bg: #f5e6c8;
+    --hand-tile-border: #d4c5a0;
+    --hand-tile-text: #1a1a2e;
+
+    --chat-bg: var(--bg-card-alt);
+    --chat-name: var(--accent);
+
+    --toast-bg: var(--bg-card);
+    --toast-border: var(--accent);
+    --toast-text: var(--text-primary);
+
+    --challenge-bg: rgba(200, 160, 36, 0.08);
+    --challenge-border: var(--accent);
+
+    --scoreboard-border: var(--border-primary);
+    --scoreboard-active: var(--accent);
+
+    --link-color: #4a90d9;
+    --link-hover: #3670b0;
+
+    --premium-dl: #6bb3d9;
+    --premium-tl: #1a6fb5;
+    --premium-dw: #e8a0b0;
+    --premium-tw: #c0392b;
+    --premium-st: var(--accent);
+
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-xl: 20px;
+
+    --transition-fast: 0.15s ease;
+    --transition-normal: 0.25s ease;
+}
+
+[data-theme="dark"] {
+    --bg-base: #0f1523;
+    --bg-card: #1a2138;
+    --bg-card-alt: #151c30;
+    --bg-input: #0f1523;
+    --bg-overlay: rgba(0, 0, 0, 0.7);
+
+    --border-primary: #2a3352;
+    --border-input: #2a3352;
+
+    --text-primary: #e8e8f0;
+    --text-secondary: #8a8aa0;
+    --text-muted: #5a5a72;
+    --text-inverse: #0f1523;
+
+    --accent: #d4a82c;
+    --accent-hover: #e0b840;
+    --accent-subtle: rgba(212, 168, 44, 0.15);
+    --accent-text: #0f1523;
+
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.4);
+    --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.2);
+
+    --board-border: #3a4468;
+    --board-gap: #1a2038;
+
+    --toast-bg: var(--bg-card);
+    --toast-text: var(--text-primary);
+
+    --challenge-bg: rgba(212, 168, 44, 0.1);
+
+    --link-color: #7ec8e3;
+    --link-hover: #a0d8ef;
+
+    --info-light: rgba(74, 144, 217, 0.15);
+}
+
+
+/* ===== RESET & BASE ===== */
+
 * {
     margin: 0;
     padding: 0;
@@ -5,12 +130,19 @@
 }
 
 body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: #1a1a2e;
-    color: #eee;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg-base);
+    color: var(--text-primary);
     min-height: 100vh;
     overflow-x: hidden;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    transition: background var(--transition-normal), color var(--transition-normal);
 }
+
+
+/* ===== LAYOUT ===== */
 
 .screen {
     display: flex;
@@ -23,67 +155,183 @@ body {
     display: none !important;
 }
 
-/* Név és várakozó képernyő */
+
+/* ===== THEME TOGGLE ===== */
+
+.theme-toggle {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 300;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 1px solid var(--border-primary);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    box-shadow: var(--shadow-md);
+    transition: all var(--transition-fast);
+    padding: 0;
+    min-height: 0;
+    line-height: 1;
+}
+
+.theme-toggle:hover {
+    background: var(--accent-subtle);
+    color: var(--accent);
+    border-color: var(--accent);
+    transform: rotate(15deg);
+}
+
+.theme-toggle:active:not(:disabled) {
+    transform: rotate(15deg) scale(0.92);
+}
+
+.theme-toggle .icon-sun,
+.theme-toggle .icon-moon {
+    display: none;
+}
+
+[data-theme="dark"] .theme-toggle .icon-sun {
+    display: block;
+}
+
+:root .theme-toggle .icon-moon,
+[data-theme="light"] .theme-toggle .icon-moon {
+    display: block;
+}
+
+[data-theme="light"] .theme-toggle .icon-sun {
+    display: none;
+}
+
+[data-theme="dark"] .theme-toggle .icon-moon {
+    display: none;
+}
+
+
+/* ===== CARDS (center-box pattern) ===== */
+
 .center-box {
-    background: #16213e;
+    background: var(--bg-card);
     padding: 40px;
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     text-align: center;
     min-width: 350px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    box-shadow: var(--shadow-lg);
+    border: 1px solid var(--border-primary);
+    transition: background var(--transition-normal), border-color var(--transition-normal), box-shadow var(--transition-normal);
 }
 
 .center-box h1, .center-box h2 {
     margin-bottom: 24px;
-    color: #e8b930;
+    color: var(--accent);
+    font-weight: 700;
+    letter-spacing: -0.02em;
 }
+
+.center-box h1 {
+    font-size: 1.75em;
+}
+
+
+/* ===== TYPOGRAPHY ===== */
+
+h1, h2, h3 {
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+}
+
+
+/* ===== INPUTS ===== */
 
 input[type="text"], input[type="email"], input[type="password"], select {
-    padding: 10px 16px;
-    border: 2px solid #0f3460;
-    border-radius: 6px;
-    background: #1a1a2e;
-    color: #eee;
-    font-size: 16px;
+    padding: 11px 16px;
+    border: 1.5px solid var(--border-input);
+    border-radius: var(--radius-sm);
+    background: var(--bg-input);
+    color: var(--text-primary);
+    font-size: 15px;
+    font-family: inherit;
     width: 100%;
     margin-bottom: 12px;
-}
-
-input[type="text"]:focus, input[type="email"]:focus, input[type="password"]:focus {
-    border-color: #e8b930;
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-normal);
     outline: none;
 }
+
+input[type="text"]::placeholder,
+input[type="email"]::placeholder,
+input[type="password"]::placeholder {
+    color: var(--text-muted);
+}
+
+input[type="text"]:focus, input[type="email"]:focus, input[type="password"]:focus, select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-subtle);
+}
+
+
+/* ===== BUTTONS ===== */
 
 button {
     padding: 10px 24px;
     border: none;
-    border-radius: 6px;
-    font-size: 16px;
+    border-radius: var(--radius-sm);
+    font-size: 15px;
+    font-family: inherit;
+    font-weight: 600;
     cursor: pointer;
-    background: #e8b930;
-    color: #1a1a2e;
-    font-weight: bold;
-    transition: background 0.2s;
+    background: var(--accent);
+    color: var(--accent-text);
+    transition: all var(--transition-fast);
+    position: relative;
 }
 
 button:hover {
-    background: #f0c850;
+    background: var(--accent-hover);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
+}
+
+button:active:not(:disabled) {
+    transform: translateY(0) scale(0.98);
+    box-shadow: none;
 }
 
 button:disabled {
-    background: #555;
-    color: #888;
+    background: var(--bg-card-alt);
+    color: var(--text-muted);
     cursor: not-allowed;
+    border: 1px solid var(--border-primary);
+    transform: none;
+    box-shadow: none;
+}
+
+button.secondary {
+    background: var(--bg-card-alt);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-primary);
+}
+
+button.secondary:hover {
+    background: var(--border-primary);
+    color: var(--text-primary);
 }
 
 button.danger {
-    background: #c0392b;
+    background: var(--danger);
     color: #fff;
     margin-top: 12px;
 }
 
 button.danger:hover {
-    background: #e74c3c;
+    background: var(--danger-hover);
 }
 
 button.small-btn {
@@ -93,54 +341,62 @@ button.small-btn {
 
 button.link-btn {
     background: none;
-    color: #7ec8e3;
-    font-weight: normal;
+    color: var(--link-color);
+    font-weight: 500;
     font-size: 14px;
     text-decoration: underline;
     padding: 4px 0;
     margin-top: 8px;
+    box-shadow: none;
 }
 
 button.link-btn:hover {
-    color: #a0d8ef;
+    color: var(--link-hover);
     background: none;
+    transform: none;
+    box-shadow: none;
 }
 
-/* Auth képernyő */
+
+/* ===== AUTH SCREEN ===== */
+
 .auth-box {
     min-width: 400px;
-    max-width: 440px;
+    max-width: 460px;
 }
 
 .auth-tabs {
     display: flex;
     gap: 0;
-    margin-bottom: 24px;
-    border-bottom: 2px solid #0f3460;
+    margin-bottom: 28px;
+    border-bottom: 2px solid var(--border-primary);
 }
 
 .auth-tab {
     flex: 1;
-    padding: 10px 8px;
+    padding: 12px 8px;
     background: transparent;
-    color: #aaa;
+    color: var(--text-muted);
     border: none;
-    border-bottom: 3px solid transparent;
+    border-bottom: 2.5px solid transparent;
     border-radius: 0;
-    font-size: 15px;
-    font-weight: bold;
+    font-size: 14px;
+    font-weight: 600;
     cursor: pointer;
-    transition: color 0.2s, border-color 0.2s;
+    transition: color var(--transition-fast), border-color var(--transition-fast);
+    min-height: 0;
 }
 
 .auth-tab:hover {
-    color: #eee;
+    color: var(--text-primary);
     background: transparent;
+    transform: none;
+    box-shadow: none;
 }
 
 .auth-tab.active {
-    color: #e8b930;
-    border-bottom-color: #e8b930;
+    color: var(--accent);
+    border-bottom-color: var(--accent);
     background: transparent;
 }
 
@@ -158,33 +414,38 @@ button.link-btn:hover {
 }
 
 .auth-error {
-    color: #e74c3c;
-    font-size: 14px;
+    color: var(--danger);
+    font-size: 13px;
     margin-top: 12px;
     text-align: center;
+    font-weight: 500;
 }
 
 .step-label {
-    color: #e8b930;
-    font-weight: bold;
-    font-size: 14px;
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 13px;
     margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
 }
 
 .step-info {
-    color: #aaa;
+    color: var(--text-secondary);
     font-size: 14px;
     margin-bottom: 16px;
-    line-height: 1.4;
+    line-height: 1.5;
 }
 
 .reg-step {
     text-align: center;
 }
 
-/* Lobby */
+
+/* ===== LOBBY ===== */
+
 .lobby-container {
-    max-width: 700px;
+    max-width: 720px;
     width: 100%;
     padding: 30px;
 }
@@ -193,41 +454,47 @@ button.link-btn:hover {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 24px;
+    margin-bottom: 28px;
     flex-wrap: wrap;
     gap: 12px;
 }
 
 .lobby-header h1 {
-    color: #e8b930;
+    color: var(--accent);
+    font-size: 1.6em;
 }
 
 .lobby-user-info {
     display: flex;
     align-items: center;
     gap: 12px;
-    color: #aaa;
+    color: var(--text-secondary);
     font-size: 14px;
 }
 
 .subtitle {
     font-size: 0.5em;
-    color: #aaa;
+    color: var(--text-muted);
+    font-weight: 400;
 }
 
 .lobby-actions {
-    margin-bottom: 16px;
+    margin-bottom: 20px;
 }
 
 .create-room, .join-by-code {
-    background: #16213e;
-    padding: 20px;
-    border-radius: 8px;
+    background: var(--bg-card);
+    padding: 24px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-primary);
+    box-shadow: var(--shadow-card);
+    transition: background var(--transition-normal), border-color var(--transition-normal);
 }
 
 .create-room h3, .join-by-code h3 {
-    margin-bottom: 12px;
-    color: #e8b930;
+    margin-bottom: 16px;
+    color: var(--accent);
+    font-size: 1em;
 }
 
 .create-room select {
@@ -249,24 +516,38 @@ button.link-btn:hover {
     white-space: nowrap;
 }
 
+.rooms-list {
+    margin-top: 8px;
+}
+
 .rooms-list h3 {
-    margin-bottom: 12px;
-    color: #e8b930;
+    margin-bottom: 14px;
+    color: var(--accent);
+    font-size: 1em;
 }
 
 .empty-msg {
-    color: #888;
+    color: var(--text-muted);
     font-style: italic;
+    font-size: 14px;
 }
 
 .room-card {
-    background: #16213e;
-    padding: 16px;
-    border-radius: 8px;
-    margin-bottom: 8px;
+    background: var(--bg-card);
+    padding: 16px 20px;
+    border-radius: var(--radius-md);
+    margin-bottom: 10px;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    border: 1px solid var(--border-primary);
+    box-shadow: var(--shadow-sm);
+    transition: all var(--transition-fast);
+}
+
+.room-card:hover {
+    box-shadow: var(--shadow-md);
+    border-color: var(--accent);
 }
 
 .room-card .room-info {
@@ -274,64 +555,72 @@ button.link-btn:hover {
 }
 
 .room-card .room-name {
-    font-weight: bold;
-    font-size: 1.1em;
+    font-weight: 600;
+    font-size: 1.05em;
 }
 
 .room-card .room-details {
-    color: #aaa;
-    font-size: 0.9em;
+    color: var(--text-secondary);
+    font-size: 0.85em;
+    margin-top: 2px;
 }
 
-/* Várakozó szoba */
+
+/* ===== WAITING ROOM ===== */
+
 #waiting-players {
     margin: 16px 0;
     text-align: left;
 }
 
 .player-item {
-    padding: 8px 16px;
-    background: #1a1a2e;
-    border-radius: 4px;
-    margin-bottom: 4px;
+    padding: 10px 16px;
+    background: var(--bg-card-alt);
+    border-radius: var(--radius-sm);
+    margin-bottom: 6px;
+    border: 1px solid var(--border-primary);
+    font-weight: 500;
+    transition: background var(--transition-normal);
 }
 
 .player-item.owner::after {
     content: ' (tulajdonos)';
-    color: #e8b930;
+    color: var(--accent);
     font-size: 0.85em;
+    font-weight: 600;
 }
 
-/* Lobby kód megjelenítés */
 .room-code-section {
     margin: 16px 0;
-    padding: 16px;
-    background: #1a1a2e;
-    border-radius: 8px;
-    border: 1px solid #0f3460;
+    padding: 20px;
+    background: var(--bg-card-alt);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-primary);
 }
 
 .code-label {
-    color: #aaa;
-    font-size: 14px;
+    color: var(--text-secondary);
+    font-size: 13px;
     margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 500;
 }
 
 .code-value {
     font-size: 32px;
-    font-weight: bold;
+    font-weight: 700;
     letter-spacing: 8px;
-    color: #e8b930;
-    font-family: 'Courier New', monospace;
-    margin-bottom: 8px;
+    color: var(--accent);
+    font-family: 'Inter', monospace;
+    margin-bottom: 10px;
 }
 
-/* Checkbox label */
 .checkbox-label {
     display: flex;
     align-items: center;
     gap: 8px;
-    color: #aaa;
+    color: var(--text-secondary);
     font-size: 14px;
     margin-bottom: 12px;
     cursor: pointer;
@@ -340,68 +629,84 @@ button.link-btn:hover {
 .checkbox-label input[type="checkbox"] {
     width: 18px;
     height: 18px;
-    accent-color: #e8b930;
+    accent-color: var(--accent);
 }
 
-/* Challenge mód badge (várakozó szoba) */
 .challenge-mode-badge {
     display: inline-block;
-    background: #8b4513;
-    color: #e8b930;
-    padding: 4px 12px;
-    border-radius: 12px;
-    font-size: 13px;
-    font-weight: bold;
+    background: var(--accent-subtle);
+    color: var(--accent);
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
     margin-bottom: 12px;
-    border: 1px solid #e8b930;
+    border: 1px solid var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
 }
 
-/* Játék képernyő */
+
+/* ===== GAME SCREEN ===== */
+
 #game-screen.screen {
     align-items: flex-start;
 }
 
-/* Játék layout */
 .game-layout {
     display: flex;
-    gap: 20px;
+    gap: 24px;
     padding: 20px;
     align-items: flex-start;
     width: 100%;
     justify-content: center;
 }
 
+
+/* ===== SIDE PANEL ===== */
+
 .side-panel {
-    background: #16213e;
+    background: var(--bg-card);
     padding: 20px;
-    border-radius: 8px;
-    min-width: 200px;
+    border-radius: var(--radius-lg);
+    min-width: 220px;
     position: sticky;
     top: 20px;
+    border: 1px solid var(--border-primary);
+    box-shadow: var(--shadow-card);
+    transition: background var(--transition-normal), border-color var(--transition-normal);
 }
 
 .side-panel h2 {
-    color: #e8b930;
+    color: var(--accent);
     margin-bottom: 12px;
-    font-size: 1.1em;
+    font-size: 1em;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
 }
 
 #scoreboard .score-item {
     display: flex;
     justify-content: space-between;
-    padding: 6px 0;
-    border-bottom: 1px solid #0f3460;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--scoreboard-border);
+    font-size: 14px;
+    transition: color var(--transition-fast);
+}
+
+#scoreboard .score-item:last-child {
+    border-bottom: none;
 }
 
 #scoreboard .score-item.active {
-    color: #e8b930;
-    font-weight: bold;
+    color: var(--accent);
+    font-weight: 700;
 }
 
 .game-info {
     margin-top: 16px;
-    font-size: 0.9em;
-    color: #aaa;
+    font-size: 13px;
+    color: var(--text-secondary);
 }
 
 .game-info > div {
@@ -409,13 +714,14 @@ button.link-btn:hover {
 }
 
 .last-action {
-    color: #7ec8e3 !important;
+    color: var(--info) !important;
     font-style: italic;
     min-height: 20px;
+    font-size: 12px;
 }
 
 .actions {
-    margin-top: 16px;
+    margin-top: 18px;
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -423,11 +729,39 @@ button.link-btn:hover {
 
 .action-btn {
     width: 100%;
-    padding: 8px;
+    padding: 10px;
     font-size: 14px;
+    border-radius: var(--radius-sm);
 }
 
-/* Tábla */
+.action-btn#btn-place {
+    background: var(--accent);
+    color: var(--accent-text);
+    font-weight: 700;
+}
+
+.action-btn#btn-place:hover:not(:disabled) {
+    background: var(--accent-hover);
+}
+
+.action-btn#btn-exchange,
+.action-btn#btn-pass,
+.action-btn#btn-recall {
+    background: var(--bg-card-alt);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-primary);
+}
+
+.action-btn#btn-exchange:hover:not(:disabled),
+.action-btn#btn-pass:hover:not(:disabled),
+.action-btn#btn-recall:hover:not(:disabled) {
+    background: var(--border-primary);
+    color: var(--text-primary);
+}
+
+
+/* ===== BOARD ===== */
+
 .board-area {
     display: flex;
     flex-direction: column;
@@ -438,58 +772,61 @@ button.link-btn:hover {
     position: relative;
     overflow: hidden;
     touch-action: none;
+    border-radius: var(--radius-sm);
 }
 
 .board {
     display: grid;
     grid-template-columns: repeat(15, 1fr);
     grid-template-rows: repeat(15, 1fr);
-    gap: 1px;
-    background: #333;
-    border: 2px solid #555;
-    border-radius: 4px;
+    gap: 1.5px;
+    background: var(--board-gap);
+    border: 2px solid var(--board-border);
+    border-radius: var(--radius-sm);
     width: min(70vw, 600px, calc(100vh - 180px));
     height: min(70vw, 600px, calc(100vh - 180px));
     transform-origin: 0 0;
+    box-shadow: var(--shadow-md);
 }
 
 .cell {
-    background: #2d5a27;
+    background: var(--cell-empty);
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: min(2.2vw, 14px);
-    font-weight: bold;
+    font-weight: 700;
     position: relative;
     cursor: pointer;
     user-select: none;
     aspect-ratio: 1;
     overflow: hidden;
+    transition: background 0.1s ease;
 }
 
 .cell.premium-DL {
-    background: #6bb3d9;
+    background: var(--premium-dl);
     color: #1a1a2e;
 }
 
 .cell.premium-TL {
-    background: #1a6fb5;
+    background: var(--premium-tl);
     color: #eee;
 }
 
 .cell.premium-DW {
-    background: #e8a0b0;
+    background: var(--premium-dw);
     color: #1a1a2e;
 }
 
 .cell.premium-TW {
-    background: #c0392b;
+    background: var(--premium-tw);
     color: #eee;
 }
 
 .cell.premium-ST {
-    background: #e8b930;
-    color: #1a1a2e;
+    background: var(--premium-st);
+    color: var(--accent-text);
 }
 
 .cell .premium-label,
@@ -499,16 +836,17 @@ button.link-btn:hover {
 
 .cell .premium-label {
     font-size: min(1.5vw, 9px);
-    opacity: 0.8;
+    opacity: 0.85;
     text-align: center;
     line-height: 1.1;
     white-space: pre-line;
     overflow: hidden;
+    font-weight: 600;
 }
 
 .cell.has-tile {
-    background: #f5e6c8 !important;
-    color: #1a1a2e !important;
+    background: var(--cell-tile-bg) !important;
+    color: var(--cell-tile-text) !important;
     font-size: min(2.5vw, 16px);
     border-radius: 2px;
 }
@@ -519,16 +857,16 @@ button.link-btn:hover {
     right: 2px;
     font-size: min(1.3vw, 8px);
     font-weight: normal;
-    color: #666;
+    color: var(--cell-tile-value);
 }
 
 .cell.placed-this-turn {
-    background: #ffd700 !important;
-    box-shadow: 0 0 4px rgba(255, 215, 0, 0.6);
+    background: var(--cell-placed) !important;
+    box-shadow: 0 0 6px var(--cell-placed-shadow);
 }
 
 .cell.pending-challenge-tile {
-    background: #ff8c00 !important;
+    background: var(--cell-pending) !important;
     animation: challengePulse 1.5s infinite;
 }
 
@@ -538,58 +876,64 @@ button.link-btn:hover {
 }
 
 .cell.drop-target {
-    background: #4a7a44 !important;
-    box-shadow: inset 0 0 6px rgba(255,255,255,0.3);
+    background: var(--cell-drop) !important;
+    box-shadow: inset 0 0 8px rgba(255, 255, 255, 0.3);
 }
 
-/* Kiválasztott betű indikátor - üres cellák villogása */
 .cell.can-place {
-    box-shadow: inset 0 0 4px rgba(232, 185, 48, 0.3);
+    box-shadow: inset 0 0 4px var(--accent-subtle);
 }
 
-/* Betűtartó */
+
+/* ===== HAND (tile rack) ===== */
+
 .hand {
     display: flex;
-    gap: 6px;
+    gap: 7px;
     margin-top: 16px;
-    padding: 12px;
-    background: #16213e;
-    border-radius: 8px;
-    min-height: 60px;
+    padding: 14px 18px;
+    background: var(--hand-bg);
+    border-radius: var(--radius-md);
+    min-height: 64px;
     align-items: center;
+    border: 1px solid var(--border-primary);
+    box-shadow: var(--shadow-card);
+    transition: background var(--transition-normal), border-color var(--transition-normal);
 }
 
 .hand-tile {
-    width: 48px;
-    height: 48px;
-    background: #f5e6c8;
-    color: #1a1a2e;
-    border-radius: 4px;
+    width: 50px;
+    height: 50px;
+    background: var(--hand-tile-bg);
+    color: var(--hand-tile-text);
+    border-radius: 6px;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 20px;
-    font-weight: bold;
+    font-weight: 700;
     cursor: grab;
     position: relative;
     user-select: none;
-    border: 2px solid #d4c5a0;
-    transition: transform 0.1s;
+    border: 2px solid var(--hand-tile-border);
+    transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast);
+    box-shadow: var(--shadow-sm);
 }
 
 .hand-tile:hover {
-    transform: translateY(-4px);
+    transform: translateY(-5px);
+    box-shadow: var(--shadow-md);
 }
 
 .hand-tile.selected {
-    border-color: #e8b930;
-    box-shadow: 0 0 8px rgba(232, 185, 48, 0.6);
-    transform: translateY(-6px);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-subtle), var(--shadow-md);
+    transform: translateY(-7px);
 }
 
 .hand-tile.exchange-selected {
-    border-color: #c0392b;
-    box-shadow: 0 0 8px rgba(192, 57, 43, 0.6);
+    border-color: var(--danger);
+    box-shadow: 0 0 0 3px rgba(214, 48, 49, 0.2);
 }
 
 .hand-tile .tile-value {
@@ -597,7 +941,7 @@ button.link-btn:hover {
     bottom: 2px;
     right: 3px;
     font-size: 10px;
-    font-weight: normal;
+    font-weight: 500;
     color: #888;
 }
 
@@ -607,37 +951,45 @@ button.link-btn:hover {
 }
 
 .hand-tile.drag-ghost {
-    box-shadow: 0 6px 20px rgba(0,0,0,0.4);
-    border-color: #e8b930;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    border-color: var(--accent);
     transform: scale(1.1);
 }
 
-/* Joker dialog */
+
+/* ===== DIALOGS ===== */
+
 .dialog {
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0,0,0,0.7);
+    background: var(--bg-overlay);
     display: flex;
     justify-content: center;
     align-items: center;
     z-index: 100;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
 }
 
 .dialog-content {
-    background: #16213e;
-    padding: 30px;
-    border-radius: 12px;
+    background: var(--bg-card);
+    padding: 36px;
+    border-radius: var(--radius-lg);
     max-width: 500px;
     width: 90%;
     text-align: center;
+    box-shadow: var(--shadow-lg);
+    border: 1px solid var(--border-primary);
+    transition: background var(--transition-normal);
 }
 
 .dialog-content h3, .dialog-content h2 {
-    color: #e8b930;
-    margin-bottom: 16px;
+    color: var(--accent);
+    margin-bottom: 20px;
+    font-weight: 700;
 }
 
 .blank-letters {
@@ -648,59 +1000,73 @@ button.link-btn:hover {
 }
 
 .blank-letters button {
-    width: 44px;
-    height: 44px;
+    width: 46px;
+    height: 46px;
     font-size: 16px;
     padding: 0;
-    background: #f5e6c8;
-    color: #1a1a2e;
+    background: var(--hand-tile-bg);
+    color: var(--hand-tile-text);
+    border-radius: 6px;
+    font-weight: 700;
+    border: 1.5px solid var(--hand-tile-border);
 }
 
 .blank-letters button:hover {
-    background: #e8b930;
+    background: var(--accent);
+    color: var(--accent-text);
+    border-color: var(--accent);
 }
 
-/* Játék vége */
+
+/* ===== GAME OVER ===== */
+
 #final-scores .score-final {
     display: flex;
     justify-content: space-between;
-    padding: 8px 0;
-    border-bottom: 1px solid #0f3460;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border-primary);
     font-size: 1.1em;
 }
 
+#final-scores .score-final:last-child {
+    border-bottom: none;
+}
+
 #final-scores .score-final.winner {
-    color: #e8b930;
-    font-weight: bold;
+    color: var(--accent);
+    font-weight: 700;
     font-size: 1.3em;
 }
 
 #btn-back-lobby {
-    margin-top: 20px;
+    margin-top: 24px;
 }
 
-/* Challenge szekció */
+
+/* ===== CHALLENGE SECTION ===== */
+
 .challenge-section {
-    margin-top: 12px;
-    padding: 12px;
-    background: #2c1810;
-    border: 2px solid #e8b930;
-    border-radius: 8px;
+    margin-top: 14px;
+    padding: 14px;
+    background: var(--challenge-bg);
+    border: 1.5px solid var(--challenge-border);
+    border-radius: var(--radius-md);
 }
 
 .challenge-info {
-    font-size: 0.9em;
-    color: #e8b930;
+    font-size: 13px;
+    color: var(--accent);
     margin-bottom: 8px;
-    font-weight: bold;
+    font-weight: 600;
 }
 
 .challenge-timer {
-    font-size: 1.3em;
-    font-weight: bold;
-    color: #c0392b;
+    font-size: 1.4em;
+    font-weight: 700;
+    color: var(--danger);
     text-align: center;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
+    font-variant-numeric: tabular-nums;
 }
 
 .challenge-buttons {
@@ -711,37 +1077,37 @@ button.link-btn:hover {
 .challenge-buttons button {
     flex: 1;
     padding: 8px;
-    font-size: 14px;
+    font-size: 13px;
 }
 
 .btn-challenge {
-    background: #c0392b !important;
+    background: var(--danger) !important;
     color: #fff !important;
 }
 
 .btn-challenge:hover {
-    background: #e74c3c !important;
+    background: var(--danger-hover) !important;
 }
 
 .btn-accept {
-    background: #27ae60 !important;
+    background: var(--success) !important;
     color: #fff !important;
 }
 
 .btn-accept:hover {
-    background: #2ecc71 !important;
+    background: var(--success-hover) !important;
 }
 
 .challenge-wait {
     text-align: center;
-    color: #aaa;
+    color: var(--text-muted);
     font-style: italic;
-    font-size: 0.9em;
+    font-size: 13px;
 }
 
 .vote-status {
-    color: #f39c12;
-    font-size: 0.85em;
+    color: var(--accent);
+    font-size: 12px;
     margin-top: 4px;
 }
 
@@ -753,80 +1119,74 @@ button.link-btn:hover {
 }
 
 .vote-item {
-    font-size: 0.8em;
-    padding: 2px 8px;
-    border-radius: 4px;
-    background: #1a1a2e;
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-weight: 500;
 }
 
 .vote-item.vote-accept {
-    color: #2ecc71;
-    border: 1px solid #27ae60;
+    color: var(--success);
+    border: 1px solid var(--success);
+    background: rgba(39, 174, 96, 0.08);
 }
 
 .vote-item.vote-reject {
-    color: #e74c3c;
-    border: 1px solid #c0392b;
+    color: var(--danger);
+    border: 1px solid var(--danger);
+    background: rgba(214, 48, 49, 0.08);
 }
 
 .vote-item.vote-pending {
-    color: #888;
-    border: 1px solid #444;
+    color: var(--text-muted);
+    border: 1px solid var(--border-primary);
+    background: var(--bg-card-alt);
 }
 
-/* Chat */
+
+/* ===== CHAT ===== */
+
 .chat-section {
-    margin-top: 16px;
-    border-top: 1px solid #0f3460;
-    padding-top: 12px;
+    margin-top: 18px;
+    border-top: 1px solid var(--border-primary);
+    padding-top: 14px;
     touch-action: pan-y;
 }
 
 .chat-section h3 {
-    color: #e8b930;
-    font-size: 0.95em;
-    margin-bottom: 8px;
+    color: var(--text-secondary);
+    font-size: 0.85em;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
 }
 
 .chat-messages {
-    height: 150px;
+    height: 140px;
     overflow-y: scroll;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
     touch-action: pan-y;
-    margin-bottom: 8px;
-    font-size: 0.85em;
-    padding: 4px;
-    background: #1a1a2e;
-    border-radius: 4px;
-}
-
-/* Board zoom reset gomb */
-.board-zoom-reset {
-    position: absolute;
-    top: 6px;
-    right: 6px;
-    z-index: 10;
-    min-height: 32px;
-    min-width: 32px;
-    padding: 4px 10px;
+    margin-bottom: 10px;
     font-size: 13px;
-    background: rgba(22, 33, 62, 0.85);
-    color: #e8b930;
-    border: 1px solid #e8b930;
-    border-radius: 6px;
-    cursor: pointer;
+    padding: 8px;
+    background: var(--bg-card-alt);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-primary);
+    transition: background var(--transition-normal);
 }
 
 .chat-msg {
-    padding: 3px 6px;
+    padding: 4px 6px;
     word-break: break-word;
-    line-height: 1.3;
+    line-height: 1.4;
 }
 
 .chat-msg .chat-name {
-    font-weight: bold;
-    color: #e8b930;
+    font-weight: 600;
+    color: var(--accent);
+    font-size: 12px;
 }
 
 .chat-input-row {
@@ -837,15 +1197,47 @@ button.link-btn:hover {
 .chat-input-row input {
     flex: 1;
     margin-bottom: 0;
-    padding: 6px 10px;
-    font-size: 14px;
+    padding: 8px 12px;
+    font-size: 13px;
+    border-radius: var(--radius-sm);
 }
 
 .chat-input-row button {
     white-space: nowrap;
+    padding: 8px 14px;
+    font-size: 13px;
+    border-radius: var(--radius-sm);
 }
 
-/* Toast értesítések */
+
+/* ===== BOARD ZOOM RESET ===== */
+
+.board-zoom-reset {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 10;
+    min-height: 32px;
+    min-width: 32px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    background: var(--bg-card);
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+}
+
+.board-zoom-reset:hover {
+    background: var(--accent);
+    color: var(--accent-text);
+}
+
+
+/* ===== TOAST NOTIFICATIONS ===== */
+
 #toast-container {
     position: fixed;
     top: 16px;
@@ -861,20 +1253,23 @@ button.link-btn:hover {
 }
 
 .toast {
-    background: #16213e;
-    color: #eee;
+    background: var(--toast-bg);
+    color: var(--toast-text);
     padding: 14px 20px;
-    border-radius: 8px;
-    border-left: 4px solid #e8b930;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
-    font-size: 15px;
+    border-radius: var(--radius-md);
+    border-left: 4px solid var(--toast-border);
+    box-shadow: var(--shadow-lg);
+    font-size: 14px;
     pointer-events: auto;
     animation: toastIn 0.3s ease-out;
     word-break: break-word;
+    border: 1px solid var(--border-primary);
+    border-left-width: 4px;
+    border-left-color: var(--toast-border);
 }
 
 .toast.toast-error {
-    border-left-color: #e74c3c;
+    border-left-color: var(--danger);
 }
 
 .toast.toast-out {
@@ -882,30 +1277,26 @@ button.link-btn:hover {
 }
 
 @keyframes toastIn {
-    from { opacity: 0; transform: translateY(-20px); }
+    from { opacity: 0; transform: translateY(-16px); }
     to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes toastOut {
     from { opacity: 1; transform: translateY(0); }
-    to { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 0; transform: translateY(-16px); }
 }
 
-/* Touch-friendly tap feedback */
-button:active:not(:disabled) {
-    transform: scale(0.96);
-    opacity: 0.85;
-}
+
+/* ===== TOUCH INTERACTION ===== */
 
 .hand-tile:active {
     transform: scale(0.93) !important;
 }
 
 .cell:active {
-    opacity: 0.7;
+    opacity: 0.8;
 }
 
-/* Touch-specifikus */
 .hand-tile, .cell, button {
     -webkit-touch-callout: none;
     -webkit-user-select: none;
@@ -920,7 +1311,9 @@ button:active:not(:disabled) {
     touch-action: manipulation;
 }
 
-/* Reszponzív */
+
+/* ===== RESPONSIVE: MOBILE ===== */
+
 @media (max-width: 768px) {
     #game-screen.screen {
         min-height: 0;
@@ -943,16 +1336,21 @@ button:active:not(:disabled) {
         left: 0;
         right: 0;
         top: auto;
-        border-radius: 12px 12px 0 0;
-        padding: 10px 16px;
+        border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+        padding: 12px 16px;
         z-index: 50;
-        box-shadow: 0 -4px 16px rgba(0,0,0,0.3);
+        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
         max-height: 35vh;
         overflow-y: auto;
+        border-bottom: none;
+    }
+
+    [data-theme="dark"] .side-panel {
+        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.4);
     }
 
     .side-panel h2 {
-        font-size: 1em;
+        font-size: 0.9em;
         margin-bottom: 6px;
     }
 
@@ -973,7 +1371,7 @@ button:active:not(:disabled) {
 
     #scoreboard .score-item {
         padding: 4px 0;
-        font-size: 0.9em;
+        font-size: 13px;
     }
 
     .game-info {
@@ -981,7 +1379,7 @@ button:active:not(:disabled) {
         display: flex;
         flex-wrap: wrap;
         gap: 4px 12px;
-        font-size: 0.85em;
+        font-size: 12px;
     }
 
     .game-info > div {
@@ -1001,8 +1399,8 @@ button:active:not(:disabled) {
         width: var(--board-size);
         height: var(--board-size);
         max-width: 100%;
-        border-radius: 4px;
-        border: 2px solid #555;
+        border-radius: var(--radius-sm);
+        border: 2px solid var(--board-border);
     }
 
     .board {
@@ -1081,7 +1479,7 @@ button:active:not(:disabled) {
     }
 
     .lobby-header h1 {
-        font-size: 1.4em;
+        font-size: 1.3em;
     }
 
     .room-card {
@@ -1104,7 +1502,7 @@ button:active:not(:disabled) {
 
     button {
         min-height: 44px;
-        font-size: 16px;
+        font-size: 15px;
     }
 
     button.small-btn {
@@ -1117,7 +1515,7 @@ button:active:not(:disabled) {
     }
 
     .dialog-content {
-        padding: 20px;
+        padding: 24px;
         max-height: 90vh;
         overflow-y: auto;
     }
@@ -1140,17 +1538,23 @@ button:active:not(:disabled) {
 
     .auth-tab {
         padding: 12px 6px;
-        font-size: 14px;
+        font-size: 13px;
     }
 
-    /* Játék vége dialog mobilon */
     #game-over-dialog .dialog-content {
         width: 95%;
     }
 
-    /* Side panel toggle gomb */
     .side-panel-toggle {
         display: block;
+    }
+
+    .theme-toggle {
+        width: 38px;
+        height: 38px;
+        font-size: 17px;
+        top: 12px;
+        right: 12px;
     }
 }
 
@@ -1209,8 +1613,8 @@ button:active:not(:disabled) {
         width: 200px;
         min-width: 180px;
         max-height: none;
-        border-radius: 8px;
-        box-shadow: none;
+        border-radius: var(--radius-md);
+        box-shadow: var(--shadow-card);
     }
 
     .board-zoom-container {
