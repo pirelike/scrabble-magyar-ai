@@ -436,6 +436,8 @@ button.link-btn:hover {
 
 .board-zoom-container {
     position: relative;
+    overflow: hidden;
+    touch-action: none;
 }
 
 .board {
@@ -448,6 +450,7 @@ button.link-btn:hover {
     border-radius: 4px;
     width: min(70vw, 600px, calc(100vh - 180px));
     height: min(70vw, 600px, calc(100vh - 180px));
+    transform-origin: 0 0;
 }
 
 .cell {
@@ -994,8 +997,6 @@ button:active:not(:disabled) {
         width: var(--board-size);
         height: var(--board-size);
         max-width: 100%;
-        overflow: hidden;
-        touch-action: none;
         border-radius: 4px;
         border: 2px solid #555;
     }
@@ -1003,7 +1004,6 @@ button:active:not(:disabled) {
     .board {
         width: var(--board-size);
         height: var(--board-size);
-        transform-origin: 0 0;
         border: none;
         border-radius: 0;
     }
