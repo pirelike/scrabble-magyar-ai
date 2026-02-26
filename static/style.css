@@ -45,9 +45,9 @@
     --cell-pending: #ea580c;
     --cell-drop: #5ea854;
 
-    --hand-bg: #e8dcc8;
+    --hand-bg: var(--bg-card);
     --hand-tile-bg: #f5e6c8;
-    --hand-tile-border: #c8b896;
+    --hand-tile-border: var(--border-primary);
     --hand-tile-text: #1e293b;
 
     --chat-bg: var(--bg-card-alt);
@@ -119,8 +119,8 @@
     --board-border: #475569;
     --board-gap: #1e293b;
 
-    --hand-bg: #2a2418;
-    --hand-tile-border: #a89060;
+    --hand-bg: var(--bg-card);
+    --hand-tile-border: var(--border-primary);
 
     --toast-bg: var(--bg-card);
     --toast-text: var(--text-primary);
@@ -759,40 +759,24 @@ button.link-btn:hover {
     border-radius: var(--radius-sm);
 }
 
-.action-btn#btn-place {
+.action-btn {
     background: var(--accent);
     color: var(--accent-text);
     font-weight: 700;
+    border: 1.5px solid transparent;
+    transition: all var(--transition-fast);
 }
 
-.action-btn#btn-place:hover:not(:disabled) {
+.action-btn:hover:not(:disabled) {
     background: var(--accent-hover);
 }
 
-.action-btn#btn-exchange,
-.action-btn#btn-pass,
-.action-btn#btn-recall {
-    background: var(--btn-secondary-bg);
-    color: var(--btn-secondary-text);
-    border: 1.5px solid var(--btn-secondary-border);
-    font-weight: 600;
-    opacity: 1;
-}
-
-.action-btn#btn-exchange:hover:not(:disabled),
-.action-btn#btn-pass:hover:not(:disabled),
-.action-btn#btn-recall:hover:not(:disabled) {
-    background: var(--btn-secondary-hover-bg);
-    color: var(--btn-secondary-hover-text);
-    border-color: var(--btn-secondary-hover-text);
-}
-
-.action-btn#btn-exchange:disabled,
-.action-btn#btn-pass:disabled {
+.action-btn:disabled {
     background: var(--btn-disabled-bg);
     color: var(--btn-disabled-text);
     border-color: var(--btn-disabled-border);
-    opacity: 0.45;
+    opacity: 0.5;
+    font-weight: 600;
 }
 
 
@@ -933,8 +917,8 @@ button.link-btn:hover {
     min-height: 64px;
     align-items: center;
     justify-content: center;
-    border: 2px solid var(--hand-tile-border);
-    box-shadow: var(--shadow-md);
+    border: 1px solid var(--border-primary);
+    box-shadow: var(--shadow-card);
     transition: background var(--transition-normal), border-color var(--transition-normal);
 }
 

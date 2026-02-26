@@ -606,6 +606,10 @@ function buildBoard() {
             const premium = PREMIUM_MAP[`${r},${c}`];
             if (premium) {
                 cell.classList.add(`premium-${premium}`);
+                const label = document.createElement('span');
+                label.className = 'premium-label';
+                label.textContent = PREMIUM_LABELS[premium];
+                cell.appendChild(label);
             }
 
             cell.addEventListener('click', () => onCellClick(r, c));
