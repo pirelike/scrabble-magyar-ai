@@ -24,8 +24,6 @@ def clean_state():
     server.player_rooms.clear()
     server.player_names.clear()
     server.player_auth.clear()
-    server.room_chat.clear()
-    server._challenge_counter.clear()
     server._reconnect_tokens.clear()
     server._sid_to_token.clear()
     server._disconnected_players.clear()
@@ -35,8 +33,6 @@ def clean_state():
     server.player_rooms.clear()
     server.player_names.clear()
     server.player_auth.clear()
-    server.room_chat.clear()
-    server._challenge_counter.clear()
     server._reconnect_tokens.clear()
     server._sid_to_token.clear()
     server._disconnected_players.clear()
@@ -153,8 +149,8 @@ class TestCreateRoom:
         import server
         # Find the room
         for room in server.rooms.values():
-            if room['name'] == 'Room':
-                assert room['max_players'] == 4
+            if room.name == 'Room':
+                assert room.max_players == 4
                 break
 
 
@@ -278,7 +274,7 @@ class TestLeaveRoom:
         import server
         assert len(server.rooms) == 1
         room = list(server.rooms.values())[0]
-        assert room['owner_name'] == 'P2Owner'
+        assert room.owner_name == 'P2Owner'
         c2.disconnect()
 
     def test_leave_cleans_join_code(self, registered_client):
@@ -638,7 +634,7 @@ class TestChat:
         chat_events = [r for r in received if r['name'] == 'chat_message']
         assert len(chat_events) == 0
 
-    def test_chat_stored_in_room_chat(self, registered_client):
+    def test_chat_stored_in_room(self, registered_client):
         registered_client.emit('create_room', {'name': 'ChatStore', 'max_players': 4})
         registered_client.get_received()
 
@@ -647,11 +643,10 @@ class TestChat:
         registered_client.get_received()
 
         import server
-        # Find room_id
         room_id = list(server.rooms.keys())[0]
-        assert room_id in server.room_chat
-        assert len(server.room_chat[room_id]) == 2
-        assert server.room_chat[room_id][0]['message'] == 'Msg1'
+        room = server.rooms[room_id]
+        assert len(room.chat_messages) == 2
+        assert room.chat_messages[0]['message'] == 'Msg1'
 
     def test_chat_cleaned_on_room_delete(self, registered_client):
         registered_client.emit('create_room', {'name': 'ChatClean', 'max_players': 4})
@@ -661,9 +656,9 @@ class TestChat:
         registered_client.get_received()
 
         import server
-        assert len(server.room_chat) == 1
+        assert len(server.rooms) == 1
 
         registered_client.emit('leave_room')
         registered_client.get_received()
 
-        assert len(server.room_chat) == 0
+        assert len(server.rooms) == 0

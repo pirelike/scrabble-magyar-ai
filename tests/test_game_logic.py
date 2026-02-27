@@ -512,8 +512,8 @@ class TestChallengeMode:
         assert 'A' not in g.players[0].hand
         assert 'B' not in g.players[0].hand
         # Új szavazásos mezők
-        assert g.pending_challenge['voting_phase'] is False
-        assert g.pending_challenge['votes'] == {}
+        assert g.pending_challenge.voting_phase is False
+        assert g.pending_challenge.votes == {}
 
     @patch('board.check_words', return_value=(True, []))
     def test_pending_challenge_in_state(self, mock_check):
@@ -757,8 +757,8 @@ class TestChallengeMode:
         assert success is True
         assert result == 'voting'
         assert g.pending_challenge is not None
-        assert g.pending_challenge['voting_phase'] is True
-        assert g.pending_challenge['challenger_id'] == 'p2'
+        assert g.pending_challenge.voting_phase is True
+        assert g.pending_challenge.challenger_id == 'p2'
 
     @patch('board.check_words', return_value=(True, []))
     def test_3_player_vote_accept(self, mock_check):
