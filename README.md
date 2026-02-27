@@ -6,6 +6,7 @@ Webes magyar Scrabble játék online multiplayer támogatással. Flask + Socket.
 
 - **1-4 játékos** — egyedül is játszható
 - **Online multiplayer** — lobby rendszer, szobák létrehozása/csatlakozás, automatikus Cloudflare tunnel publikus URL-lel
+- **Nyilvános és privát szobák** — privát szoba csak 6-jegyű kóddal csatlakozható, nyilvános szobák a lobbyban listázva
 - **Felhasználói fiókok** — regisztráció email verifikációval, bejelentkezés, vendég mód
 - **Teljes magyar betűkészlet** — 100 zseton, beleértve a többkarakteres betűket (SZ, CS, GY, LY, NY, ZS, TY)
 - **Standard Scrabble pontozás** — DL, TL, DW, TW premium mezők, 50 pont bónusz mind a 7 zseton kirakásakor
@@ -13,8 +14,11 @@ Webes magyar Scrabble játék online multiplayer támogatással. Flask + Socket.
 - **Drag & drop és kattintásos** betűelhelyezés
 - **Joker** — üres zseton bármely betűként használható
 - **Betűcsere és passz**
-- **Megtámadás (challenge) mód** — szobánként bekapcsolható; lerakás után 30 másodperc áll rendelkezésre a szavak megkérdőjelezésére. Ha a szó érvénytelen, a lerakó visszakapja a betűket és kihagy egy kört; ha érvényes, a támadó hagy ki egy kört
+- **Megtámadás (challenge) mód** — szobánként bekapcsolható; 2 játékosnál kötelező elfogadás/elutasítás, 3+ játékosnál szavazásos rendszer (nincs szótár-ellenőrzés, kizárólag a játékosok döntése számít)
 - **In-game chat** — játék közbeni szöveges üzenetküldés a szobában lévő játékosok között
+- **Sötét / világos téma** — automatikus detektálás (`prefers-color-scheme`), manuális váltás, `localStorage`-ban mentve, Slate+Gold paletta
+- **Újracsatlakozás (grace period)** — 120 másodperc a visszacsatlakozásra ha a kapcsolat megszakad játék közben (token alapú)
+- **Pinch-to-zoom** — mobilon a tábla nagyítható/kicsinyíthető csípő mozdulattal
 
 ## Telepítés
 
@@ -133,7 +137,7 @@ A tunnel a `--no-tunnel` kapcsolóval kikapcsolható. Regisztráció vagy Cloudf
 
 ```
 server.py          — Flask + Socket.IO szerver, lobby/szoba kezelés, auth route-ok, Cloudflare tunnel
-game.py            — Játéklogika (Game, Player osztályok), körök, pontozás, challenge mód
+game.py            — Játéklogika (Game, Player osztályok), körök, pontozás, challenge rendszer
 board.py           — 15×15 tábla, premium mezők, szóelhelyezés validáció és pontozás
 dictionary.py      — Magyar szótár-ellenőrzés (pyenchant / hunspell)
 tiles.py           — Magyar betűkészlet (100 zseton), TileBag osztály
@@ -142,11 +146,11 @@ auth.py            — SQLite DB, regisztráció, login, session, jelszó hash (
 email_service.py   — Email verifikációs kód küldés (SMTP / konzol fallback)
 dict/              — Beágyazott hu_HU hunspell szótár fájlok
 templates/
-  index.html       — Egyoldalas UI (auth, lobby, játék)
+  index.html       — Egyoldalas UI (auth, lobby, várakozó szoba, játék)
 static/
-  app.js           — Kliens logika, drag & drop, Socket.IO, auth flow
-  style.css        — Stílusok
-tests/             — Tesztek (pytest, 163 teszt)
+  app.js           — Kliens logika, drag & drop, pinch-to-zoom, Socket.IO, auth flow, téma váltás
+  style.css        — Stílusok, sötét/világos téma (Slate+Gold paletta), reszponzív layout
+tests/             — Tesztek (pytest, 200 teszt)
 ```
 
 ## Játékszabályok
@@ -155,7 +159,7 @@ tests/             — Tesztek (pytest, 163 teszt)
 - Az első szónak a középső (csillag) mezőt kell fednie, és legalább 2 betűből kell állnia
 - Minden további szónak csatlakoznia kell meglévő betűkhöz
 - A betűknek egy sorban vagy oszlopban, folytonosan kell elhelyezkedniük
-- A lerakott szavakat a hunspell magyar szótár ellenőrzi (kivéve challenge módban, ahol a szótár-ellenőrzés a megtámadáskor történik)
+- A lerakott szavakat a hunspell magyar szótár ellenőrzi (kivéve challenge módban, ahol nincs szótár-ellenőrzés — kizárólag a játékosok döntése számít)
 - Premium mezők: dupla/tripla betű (DL/TL) és dupla/tripla szó (DW/TW)
 - Ha valaki mind a 7 zsetonját lerakja, 50 pont bónuszt kap
 - A játék véget ér, ha valaki elfogyasztja az összes zsetonját (és a zsák üres), vagy ha mindenki 2× egymás után passzol
@@ -166,12 +170,12 @@ tests/             — Tesztek (pytest, 163 teszt)
 .venv/bin/python -m pytest tests/ -v
 ```
 
-163 teszt: auth (33), játéklogika (62), szerver auth route-ok (28), Socket.IO eventek (40).
+200 teszt: auth (33), játéklogika (93), szerver auth route-ok (28), Socket.IO eventek (46).
 
 ## TODO
 
 ### Játékmenet
-- [x] Challenge rendszer — szó megkérdőjelezése más játékos által (megtámadás mód, 30 mp időablak)
+- [x] Challenge rendszer — szó megkérdőjelezése más játékos által (megtámadás mód, szavazásos rendszer)
 - [ ] Időlimit a körökre — opcionális időzítő, lejáratkor automatikus passz
 - [ ] AI ellenfél — egyjátékos mód számítógépes ellenfél(ek)kel
 - [ ] Játék mentés / visszatöltés — félbehagyott játék folytatása
@@ -179,15 +183,20 @@ tests/             — Tesztek (pytest, 163 teszt)
 
 ### Közösségi funkciók
 - [x] Chat — játék közbeni üzenetküldés a szobában
+- [x] Privát szobák — 6-jegyű kóddal csatlakozás, lobby-ban nem listázott szobák
 - [ ] Spectator mód — játék megfigyelése
 - [ ] Ranglista / leaderboard
 - [ ] Játékos profil oldal — statisztikák, játékelőzmények
 - [ ] Barátlista / meghívó rendszer
 
+### Hálózat
+- [x] Újracsatlakozás (grace period) — 120 mp-es ablak a visszacsatlakozásra játék közben
+- [x] Pinch-to-zoom — mobilos tábla nagyítás/kicsinyítés
+
 ### UI / UX
+- [x] Sötét / világos téma váltás — Slate+Gold paletta, auto-detektálás, localStorage mentés
 - [ ] Hang effektek
 - [ ] Animációk (betű lerakás, pontszám, kör váltás)
-- [ ] Sötét / világos téma váltás
 - [ ] Szótár-böngésző
 - [ ] PWA támogatás (offline, telepíthető)
 - [ ] Többnyelvű felület

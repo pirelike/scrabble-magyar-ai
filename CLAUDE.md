@@ -12,8 +12,8 @@ cd ~/Documents/Scripts/scrabble
 Böngészőben: http://localhost:5000
 
 ## Fájlstruktúra
-- `server.py` — Flask + SocketIO szerver, lobby/szoba kezelés, Cloudflare tunnel integráció, auth HTTP route-ok
-- `game.py` — Játéklogika (Game, Player osztályok), körök, pontozás, játék vége
+- `server.py` — Flask + SocketIO szerver, lobby/szoba kezelés, Cloudflare tunnel integráció, auth HTTP route-ok, reconnection grace period
+- `game.py` — Játéklogika (Game, Player osztályok), körök, pontozás, játék vége, challenge rendszer
 - `board.py` — 15×15 tábla, premium mezők, szó elhelyezés validáció és pontozás, szótár-ellenőrzés
 - `dictionary.py` — Magyar szótár-ellenőrzés (pyenchant / hunspell CLI fallback)
 - `tiles.py` — Magyar betűkészlet (100 zseton), TileBag osztály
@@ -22,8 +22,8 @@ Böngészőben: http://localhost:5000
 - `email_service.py` — 6 számjegyű kód generálás, SMTP küldés (háttérszálon)
 - `dict/` — Beágyazott hu_HU hunspell szótár fájlok (hu_HU.dic, hu_HU.aff)
 - `templates/index.html` — Egyoldalas UI: auth (3 tab), lobby, várakozó szoba, játék
-- `static/app.js` — Kliens logika, drag & drop, Socket.IO kommunikáció, auth flow
-- `static/style.css` — Stílusok
+- `static/app.js` — Kliens logika, drag & drop, pinch-to-zoom, Socket.IO kommunikáció, auth flow, téma váltás
+- `static/style.css` — Stílusok, sötét/világos téma (Slate+Gold paletta), reszponzív layout
 - `tests/` — Tesztek (pytest)
 - `requirements.txt` — Python függőségek (flask, flask-socketio, pyenchant, eventlet)
 - `.venv/` — Virtual environment
@@ -31,6 +31,7 @@ Böngészőben: http://localhost:5000
 ## Funkciók
 - 1-4 játékos (egyedül is játszható)
 - Online multiplayer: lobby, szobák, Cloudflare tunnel automatikus publikus URL
+- **Nyilvános és privát szobák**: privát szoba csak 6-jegyű kóddal csatlakozható, nyilvános szobák a lobbyban listázva
 - Felhasználói fiók rendszer: regisztráció (email verifikáció), bejelentkezés, vendég mód
 - Teljes magyar betűkészlet (SZ, CS, GY, LY, NY, ZS, TY többkarakteres betűk)
 - Standard Scrabble pontozás: DL, TL, DW, TW premium mezők
@@ -40,6 +41,9 @@ Böngészőben: http://localhost:5000
 - Betűcsere és passz
 - Challenge (megtámadás) mód: 2 játékosnál kötelező elfogadás, 3+ játékosnál szavazásos rendszer (nincs szótár)
 - Játék közbeni chat: szöveges üzenetküldés a szobában
+- **Sötét / világos téma**: automatikus detektálás (`prefers-color-scheme`), manuális váltás, `localStorage`-ban mentve
+- **Újracsatlakozás (grace period)**: 120 másodperc a visszacsatlakozásra ha a kapcsolat megszakad játék közben (token alapú)
+- **Pinch-to-zoom**: mobilon a tábla nagyítható/kicsinyíthető csípő mozdulattal
 - Szótár-ellenőrzés: pyenchant + beágyazott hu_HU szótár (cross-platform, Windows-kompatibilis)
 
 ## Biztonság
@@ -54,6 +58,38 @@ Böngészőben: http://localhost:5000
 - Jelszó: `werkzeug.security` PBKDF2-SHA256, 260k iteráció, random salt
 - Verifikációs kód: 6 számjegy, 10 perc lejárat, max 5 próbálkozás/kód
 - Session: `secrets.token_urlsafe(48)`, HttpOnly cookie, 30 nap lejárat
+
+## Szoba rendszer
+
+### Nyilvános és privát szobák
+- Szoba létrehozásakor a játékos megadhatja: szoba név, max játékosszám (2-4), challenge mód, privát/nyilvános
+- Minden szobához egyedi 6-jegyű csatlakozási kód generálódik
+- **Nyilvános szobák**: megjelennek a lobby listájában, csatlakozhatók kódal vagy room ID-val
+- **Privát szobák**: NEM jelennek meg a listában, kizárólag 6-jegyű kóddal csatlakozhatók
+- A szoba tulajdonosa (owner) az első csatlakozó játékos; ha kilép, az ownership átadódik
+- Csak regisztrált felhasználók hozhatnak létre szobát
+
+### Várakozó szoba
+- Játékosok listája (névvel, ready státusszal)
+- Challenge mód és privát mód badge-ek
+- A tulajdonos indíthatja a játékot (min 1 játékos)
+- Bármely játékos elhagyhatja a szobát
+
+## Újracsatlakozás (Reconnection)
+
+### Grace period
+- Aktív játék közben a kapcsolat megszakadásakor 120 másodperc grace period indul
+- A szerver a játékost "disconnected" állapotúra állítja (nem távolítja el)
+- Token alapú újracsatlakozás: `rejoin_room` event a korábbi tokennel
+- Ha a grace period lejár, a játékost véglegesen eltávolítja
+- Nem indult játéknál nincs grace period (azonnali eltávolítás)
+
+### Adatstruktúrák
+```python
+_reconnect_tokens = {token: {room_id, player_name, sid}}
+_sid_to_token = {sid: token}
+_disconnected_players = {token: {room_id, sid, player_name}}
+```
 
 ## Felhasználói fiók rendszer
 
@@ -112,9 +148,11 @@ Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztésh
 | Fájl | Tesztek | Lefedettség |
 |---|---|---|
 | `tests/test_auth.py` | 33 | DB, user CRUD, jelszó hash, verifikációs kódok, session kezelés |
-| `tests/test_game_logic.py` | 84 | TileBag, Board, Player, Game, Challenge szavazásos rendszer |
+| `tests/test_game_logic.py` | 93 | TileBag, Board, Player, Game, Challenge szavazásos rendszer |
 | `tests/test_server_auth.py` | 28 | HTTP auth route-ok, cookie flow |
-| `tests/test_server_socket.py` | 43 | Socket.IO eventek, lobby, szobák, challenge szavazás, chat |
+| `tests/test_server_socket.py` | 46 | Socket.IO eventek, lobby, szobák, privát szobák, challenge szavazás, chat |
+
+**Összesen: 200 teszt**
 
 ## Challenge (megtámadás) rendszer — szavazásos
 
@@ -175,7 +213,129 @@ Játék közben a side panelen chat szekció érhető el:
 - `send_chat` (kliens→szerver): `{message}` — üzenet küldése
 - `chat_message` (szerver→szoba): `{name, message}` — üzenet broadcastolás
 
+## Socket.IO eventek összefoglaló
+
+### Szoba kezelés
+| Event | Irány | Leírás |
+|---|---|---|
+| `set_name` | kliens→szerver | Játékosnév / auth adatok beállítása |
+| `create_room` | kliens→szerver | Szoba létrehozása (név, max_players, challenge_mode, is_private) |
+| `join_room` | kliens→szerver | Csatlakozás kóddal vagy room_id-val |
+| `leave_room` | kliens→szerver | Szoba elhagyása |
+| `get_rooms` | kliens→szerver | Nyilvános szobák listázása |
+| `rejoin_room` | kliens→szerver | Újracsatlakozás tokennel (grace period alatt) |
+| `start_game` | kliens→szerver | Játék indítása (owner only) |
+
+### Játékmenet
+| Event | Irány | Leírás |
+|---|---|---|
+| `place_tiles` | kliens→szerver | Betűk lerakása a táblára |
+| `exchange_tiles` | kliens→szerver | Betűk cseréje a zsákból |
+| `pass_turn` | kliens→szerver | Kör passzolása |
+| `challenge` | kliens→szerver | Megtámadás indítása (3+ játékos) |
+| `accept_words` | kliens→szerver | Lerakás elfogadása / elfogadó szavazat |
+| `reject_words` | kliens→szerver | Lerakás elutasítása (2 játékos) |
+| `cast_vote` | kliens→szerver | Szavazat: `{vote: 'accept'\|'reject'}` |
+| `send_chat` | kliens→szerver | Chat üzenet küldése |
+
+### Szerver broadcast
+| Event | Irány | Leírás |
+|---|---|---|
+| `rooms_list` | szerver→kliens | Nyilvános szobák frissített listája |
+| `room_joined` | szerver→kliens | Szobához csatlakozás megerősítése |
+| `room_code` | szerver→owner | 6-jegyű csatlakozási kód (csak a tulajdonosnak) |
+| `game_state` | szerver→szoba | Teljes játékállapot (személyre szabva) |
+| `game_started` | szerver→szoba | Játék elindult |
+| `action_result` | szerver→kliens | Lerakás/csere/passz eredménye |
+| `challenge_result` | szerver→szoba | Challenge/szavazás eredménye |
+| `chat_message` | szerver→szoba | Chat üzenet broadcast |
+| `player_joined` | szerver→szoba | Új játékos csatlakozott |
+| `player_left` | szerver→szoba | Játékos kilépett |
+| `player_disconnected` | szerver→szoba | Játékos kapcsolata megszakadt |
+| `player_reconnected` | szerver→szoba | Játékos visszacsatlakozott |
+| `rejoin_failed` | szerver→kliens | Újracsatlakozás sikertelen |
+| `error` | szerver→kliens | Hibaüzenet |
+
+## Rate limiting
+
+### Socket.IO eventek (per SID)
+```python
+'set_name': (5, 10),        # 5 kérés / 10 mp
+'create_room': (3, 30),     # 3 kérés / 30 mp
+'join_room': (5, 10),
+'place_tiles': (10, 10),
+'exchange_tiles': (5, 10),
+'pass_turn': (5, 10),
+'get_rooms': (10, 5),
+'challenge': (5, 10),
+'accept_words': (5, 10),
+'reject_words': (5, 10),
+'cast_vote': (5, 10),
+'send_chat': (10, 10),
+'rejoin_room': (5, 10),
+```
+
+### HTTP auth (IP-alapú)
+- `request_code`: 3 kérés / 300 mp
+- `login`: 10 kérés / 300 mp
+- `register`: 3 kérés / 3600 mp
+
+## UI felépítés
+
+### Képernyők
+1. **Auth képernyő**: 3 tab (Bejelentkezés, Regisztráció, Vendég)
+2. **Lobby**: szoba létrehozás (regisztráltaknak), kóddal csatlakozás, nyilvános szobák listája
+3. **Várakozó szoba**: játékosok listája, challenge/privát badge-ek, start gomb (owner)
+4. **Játék képernyő**: bal panel (270px) + tábla + kéz
+
+### Játék képernyő elrendezés
+- **Bal oldali panel** (`side-panel`, 270px, sticky):
+  - Pontszámok (scoreboard, aktív játékos kiemelve)
+  - Játék infó (zsákban maradt zsetonok, aktuális játékos, utolsó akció)
+  - Challenge szekció (gombok, időzítő, szavazás — dinamikus)
+  - Akciógombok 2×2-es rácsban: Lerak, Csere, Passz, Visszavon
+  - Chat szekció (üzenetek + input mező)
+- **Tábla terület**: 15×15 rács, premium mezők labelekkel, board-level event delegation drag & drop-hoz
+- **Kéz**: 7 zseton, drag & drop / kattintásos elhelyezés, csere mód
+
+### Téma rendszer
+- Slate+Gold színpaletta mindkét módban
+- Automatikus detektálás: `prefers-color-scheme` media query
+- Manuális váltás: téma gomb (jobb felső sarok)
+- Mentés: `localStorage('scrabble-theme')`
+- CSS változók: `--bg-*`, `--text-*`, `--accent-*`, `--border-*` stb.
+
+### Reszponzív design
+- **Desktop**: side panel bal oldalon (270px sticky) + tábla középen
+- **Tablet** (769-1024px): kisebb tábla (`min(60vw, 550px)`)
+- **Mobil portrait** (<768px): panel alulra kerül (fixed), tábla teljes szélességű, pinch-to-zoom
+- **Mobil landscape** (<768px landscape): egymás melletti elrendezés, panel 200px
+
+## Konstansok
+
+### game.py
+- `HAND_SIZE = 7`
+- `BONUS_ALL_TILES = 50`
+- `CHALLENGE_TIMEOUT = 30` (mp)
+
+### server.py
+- `_DISCONNECT_GRACE_PERIOD = 120` (mp)
+
+### auth.py
+- `SESSION_MAX_AGE_DAYS = 30`
+- `VERIFICATION_CODE_EXPIRY_MINUTES = 10`
+- `VERIFICATION_MAX_ATTEMPTS = 5`
+
 ## Legutóbbi javítások
+
+### Bal oldali panel szélesítése (2026-02-26)
+- **Változás:** A side-panel szélessége 220px → 270px, hogy vizuálisan egyensúlyban legyen a táblával. A 4 akciógomb 2×2-es grid-ben jelenik meg.
+
+### Privát szobák (2026-02-25)
+- **Funkció:** Szoba létrehozásakor beállítható "Privát" jelző. Privát szobák nem jelennek meg a lobbyban, kizárólag 6-jegyű kóddal csatlakozhatók.
+
+### Sötét / világos téma (2026-02-25)
+- **Funkció:** Slate+Gold színpaletta mindkét módban. Automatikus detektálás (`prefers-color-scheme`), manuális váltás gombbal, `localStorage`-ban mentve.
 
 ### Drag & drop premium mezőkön (2026-02-24)
 - **Probléma:** Drag & drop nem működött megbízhatóan a speciális (DL, TL, DW, TW, ★) mezőkön, mert a premium label `<span>` elkapta a drag eventeket egyes böngészőkben a `pointer-events: none` ellenére.
@@ -200,15 +360,20 @@ Játék közben a side panelen chat szekció érhető el:
 
 ### Közösségi funkciók
 - [x] Chat — játék közbeni szöveges üzenetküldés a játékosok között
+- [x] Privát szobák — 6-jegyű kóddal csatlakozás, lobby-ban nem listázott szobák
 - [ ] Spectator mód — folyamatban lévő játék megfigyelése játékos nélkül
 - [ ] Ranglista / leaderboard — regisztrált játékosok összesített statisztikái
 - [ ] Játékos profil oldal — saját statisztikák, játékelőzmények megtekintése
 - [ ] Barátlista / meghívó rendszer — közvetlen meghívás barátoknak
 
+### Hálózat
+- [x] Újracsatlakozás (grace period) — 120 mp-es ablak a visszacsatlakozásra játék közben
+- [x] Pinch-to-zoom — mobilos tábla nagyítás/kicsinyítés
+
 ### UI / UX
+- [x] Sötét / világos téma váltás — Slate+Gold paletta, auto-detektálás, localStorage mentés
 - [ ] Hang effektek — betű lerakás, érvénytelen lépés, játék vége hangok
 - [ ] Animációk — betű lerakás, pontszám felugró, kör váltás animáció
-- [ ] Sötét / világos téma váltás
 - [ ] Szótár-böngésző — szavak keresése és validálása játékon kívül
 - [ ] PWA támogatás — offline mód, alkalmazásként telepíthető
 - [ ] Többnyelvű felület — angol és egyéb nyelvű UI (a szótár marad magyar)
