@@ -684,30 +684,25 @@ button.link-btn:hover {
     flex: 1;
 }
 
-/* Rejoin banner */
-.rejoin-banner {
-    background: var(--accent-primary);
-    border-radius: var(--radius-lg);
-    padding: var(--space-3) var(--space-4);
-    margin-bottom: var(--space-4);
+/* Rejoin card in room list */
+.room-card-rejoin {
+    border: 2px solid var(--accent-primary);
+    background: var(--bg-card);
 }
 
-.rejoin-banner-content {
+.room-card-rejoin .room-name {
+    color: var(--accent-primary);
+}
+
+.room-card-actions {
     display: flex;
+    gap: var(--space-2);
     align-items: center;
-    gap: var(--space-3);
-}
-
-.rejoin-banner-content span {
-    flex: 1;
-    color: var(--bg-primary);
-    font-weight: 600;
-    font-size: 0.95rem;
 }
 
 .btn-rejoin {
-    background: var(--bg-primary);
-    color: var(--accent-primary);
+    background: var(--accent-primary);
+    color: var(--bg-primary);
     border: none;
     padding: var(--space-2) var(--space-4);
     border-radius: var(--radius-md);
@@ -724,18 +719,18 @@ button.link-btn:hover {
 
 .btn-rejoin-dismiss {
     background: none;
-    border: none;
-    color: var(--bg-primary);
-    font-size: 1.3rem;
+    border: 1px solid var(--border-primary);
+    color: var(--text-secondary);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
     cursor: pointer;
-    padding: 0 var(--space-1);
-    opacity: 0.7;
-    line-height: 1;
+    font-size: 0.8rem;
+    white-space: nowrap;
     transition: opacity var(--transition-fast);
 }
 
 .btn-rejoin-dismiss:hover {
-    opacity: 1;
+    opacity: 0.8;
 }
 
 .lobby-section {

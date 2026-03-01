@@ -513,10 +513,6 @@ const Lobby = {
         }
 
         socket.on('rooms_list', (rooms) => this.renderRoomsList(rooms));
-
-        // Rejoin banner buttons
-        document.getElementById('btn-rejoin-game').addEventListener('click', () => this.tryRejoin());
-        document.getElementById('btn-rejoin-dismiss').addEventListener('click', () => this.dismissRejoin());
     },
 
     switchTab(tabId) {
@@ -577,58 +573,24 @@ const Lobby = {
         this.switchTab('home');
         showScreen('lobby-screen');
 
-        // Check for active game to rejoin
-        this.checkRejoin();
     },
 
-    checkRejoin() {
-        const banner = document.getElementById('rejoin-banner');
+    _tryRejoin() {
         const saved = localStorage.getItem('scrabble-rejoin');
-        if (!saved) {
-            banner.classList.add('hidden');
-            return;
-        }
+        if (!saved) return;
         try {
             const info = JSON.parse(saved);
-            if (!info.token) {
-                localStorage.removeItem('scrabble-rejoin');
-                banner.classList.add('hidden');
-                return;
-            }
-            const text = document.getElementById('rejoin-banner-text');
-            text.textContent = info.roomName
-                ? `Folyamatban lévő játékod van: ${info.roomName}`
-                : 'Folyamatban lévő játékod van';
-            banner.classList.remove('hidden');
-        } catch {
-            localStorage.removeItem('scrabble-rejoin');
-            banner.classList.add('hidden');
-        }
-    },
-
-    tryRejoin() {
-        const saved = localStorage.getItem('scrabble-rejoin');
-        if (!saved) {
-            showMessage('Nincs aktív játék a visszacsatlakozáshoz.', true);
-            this.dismissRejoin();
-            return;
-        }
-        try {
-            const info = JSON.parse(saved);
-            if (!info.token) {
-                this.dismissRejoin();
-                return;
-            }
+            if (!info.token) { localStorage.removeItem('scrabble-rejoin'); return; }
             AppState.reconnectToken = info.token;
             socket.emit('rejoin_room', { token: info.token });
         } catch {
-            this.dismissRejoin();
+            localStorage.removeItem('scrabble-rejoin');
         }
     },
 
-    dismissRejoin() {
+    _dismissRejoin() {
         localStorage.removeItem('scrabble-rejoin');
-        document.getElementById('rejoin-banner').classList.add('hidden');
+        socket.emit('get_rooms');
     },
 
     createRoom() {
@@ -821,11 +783,66 @@ const Lobby = {
 
     renderRoomsList(rooms) {
         const container = document.getElementById('rooms-container');
-        if (!rooms.length) {
+        container.innerHTML = '';
+
+        // Rejoin card: show at top if there's an active game to rejoin
+        const saved = localStorage.getItem('scrabble-rejoin');
+        if (saved) {
+            try {
+                const rejoinInfo = JSON.parse(saved);
+                if (rejoinInfo.token) {
+                    const card = document.createElement('div');
+                    card.className = 'room-card room-card-rejoin';
+
+                    const info = document.createElement('div');
+                    info.className = 'room-info';
+
+                    const nameDiv = document.createElement('div');
+                    nameDiv.className = 'room-name';
+                    nameDiv.textContent = rejoinInfo.roomName || 'Aktív játék';
+                    info.appendChild(nameDiv);
+
+                    const details = document.createElement('div');
+                    details.className = 'room-details';
+                    details.textContent = 'Folyamatban lévő játékod van';
+                    info.appendChild(details);
+
+                    const badges = document.createElement('div');
+                    badges.className = 'room-badges';
+                    const b = document.createElement('span');
+                    b.className = 'room-badge room-badge-playing';
+                    b.textContent = 'Aktív';
+                    badges.appendChild(b);
+                    info.appendChild(badges);
+
+                    card.appendChild(info);
+
+                    const btns = document.createElement('div');
+                    btns.className = 'room-card-actions';
+
+                    const rejoinBtn = document.createElement('button');
+                    rejoinBtn.textContent = 'Visszacsatlakozás';
+                    rejoinBtn.className = 'btn-join btn-rejoin';
+                    rejoinBtn.addEventListener('click', () => this._tryRejoin());
+                    btns.appendChild(rejoinBtn);
+
+                    const dismissBtn = document.createElement('button');
+                    dismissBtn.textContent = 'Elvetés';
+                    dismissBtn.className = 'btn-rejoin-dismiss';
+                    dismissBtn.addEventListener('click', () => this._dismissRejoin());
+                    btns.appendChild(dismissBtn);
+
+                    card.appendChild(btns);
+                    container.appendChild(card);
+                }
+            } catch { localStorage.removeItem('scrabble-rejoin'); }
+        }
+
+        if (!rooms.length && !container.children.length) {
             container.innerHTML = '<div class="empty-state"><p class="empty-msg">Nincs elérhető szoba.</p></div>';
             return;
         }
-        container.innerHTML = '';
+
         rooms.forEach(room => {
             const card = document.createElement('div');
             card.className = 'room-card';
@@ -1823,8 +1840,6 @@ const Reconnection = {
         socket.on('rejoin_failed', (data) => {
             AppState.reset();
             ChallengeUI.stopCountdown();
-            // Hide rejoin banner if visible
-            document.getElementById('rejoin-banner').classList.add('hidden');
             showScreen('lobby-screen');
             socket.emit('get_rooms');
             if (data && data.message) showMessage(data.message, true);
