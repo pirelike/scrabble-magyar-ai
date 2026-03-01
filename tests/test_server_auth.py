@@ -293,6 +293,204 @@ class TestFullFlow:
         assert data['user']['display_name'] == 'TestUser'
 
 
+class TestProfile:
+    def test_profile_success(self, client):
+        import auth
+        _, user_id = auth.create_user('test@example.com', 'TestUser', 'pass123')
+        token = auth.create_session(user_id)
+        client.set_cookie('session_token', token, domain='localhost')
+
+        res = client.get('/api/auth/profile')
+        data = res.get_json()
+        assert res.status_code == 200
+        assert data['success'] is True
+        assert 'stats' in data
+        assert data['stats']['games_played'] == 0
+        assert data['stats']['win_rate'] == 0
+        assert data['stats']['avg_score'] == 0
+        assert 'history' in data
+
+    def test_profile_with_games(self, client):
+        import auth
+        _, user_id = auth.create_user('test@example.com', 'TestUser', 'pass123')
+        players = [
+            {'player_name': 'TestUser', 'user_id': user_id, 'final_score': 100, 'is_winner': True},
+            {'player_name': 'Bot', 'user_id': None, 'final_score': 50, 'is_winner': False},
+        ]
+        auth.finish_game('room-1', '{}', players)
+
+        token = auth.create_session(user_id)
+        client.set_cookie('session_token', token, domain='localhost')
+
+        res = client.get('/api/auth/profile')
+        data = res.get_json()
+        assert data['stats']['games_played'] == 1
+        assert data['stats']['games_won'] == 1
+        assert data['stats']['win_rate'] == 100.0
+        assert len(data['history']) == 1
+        assert data['history'][0]['final_score'] == 100
+        assert data['history'][0]['is_winner'] is True
+
+    def test_profile_no_session(self, client):
+        res = client.get('/api/auth/profile')
+        assert res.status_code == 401
+
+
+class TestGameMovesAPI:
+    def test_get_moves_success(self, client):
+        import auth
+        game_id = auth.save_game('room-1', 'Room', '{}', False)
+        auth.add_game_move(game_id, 1, 'Alice', 'place', '{"tiles":[]}', '{}')
+        auth.add_game_move(game_id, 2, 'Bob', 'pass', '{}', '{}')
+
+        res = client.get(f'/api/game/{game_id}/moves')
+        data = res.get_json()
+        assert res.status_code == 200
+        assert data['success'] is True
+        assert len(data['moves']) == 2
+        assert data['moves'][0]['player_name'] == 'Alice'
+
+    def test_get_moves_nonexistent(self, client):
+        res = client.get('/api/game/99999/moves')
+        data = res.get_json()
+        assert res.status_code == 404
+        assert data['success'] is False
+
+
+class TestSavedGamesAPI:
+    def test_saved_games_success(self, client):
+        import auth
+        _, user_id = auth.create_user('test@example.com', 'TestUser', 'pass123')
+        players = [{'player_name': 'TestUser', 'user_id': user_id, 'score': 50}]
+        auth.save_game('room-1', 'Room', '{}', False, players_data=players, owner_name='TestUser')
+        token = auth.create_session(user_id)
+        client.set_cookie('session_token', token, domain='localhost')
+
+        res = client.get('/api/auth/saved-games')
+        data = res.get_json()
+        assert res.status_code == 200
+        assert data['success'] is True
+        assert len(data['games']) == 1
+        assert data['games'][0]['room_name'] == 'Room'
+
+    def test_saved_games_no_session(self, client):
+        res = client.get('/api/auth/saved-games')
+        assert res.status_code == 401
+
+    def test_saved_games_empty(self, client):
+        import auth
+        _, user_id = auth.create_user('test@example.com', 'TestUser', 'pass123')
+        token = auth.create_session(user_id)
+        client.set_cookie('session_token', token, domain='localhost')
+
+        res = client.get('/api/auth/saved-games')
+        data = res.get_json()
+        assert data['games'] == []
+
+
+class TestAbandonGameAPI:
+    def test_abandon_success(self, client):
+        import auth
+        _, user_id = auth.create_user('test@example.com', 'TestUser', 'pass123')
+        players = [{'player_name': 'TestUser', 'user_id': user_id, 'score': 50}]
+        game_id = auth.save_game('room-1', 'Room', '{}', False, players_data=players)
+        token = auth.create_session(user_id)
+        client.set_cookie('session_token', token, domain='localhost')
+
+        res = client.post(f'/api/game/{game_id}/abandon')
+        data = res.get_json()
+        assert data['success'] is True
+
+        game = auth.get_game_by_id(game_id)
+        assert game['status'] == 'abandoned'
+
+    def test_abandon_no_session(self, client):
+        res = client.post('/api/game/1/abandon')
+        assert res.status_code == 401
+
+    def test_abandon_nonexistent(self, client):
+        import auth
+        _, user_id = auth.create_user('test@example.com', 'TestUser', 'pass123')
+        token = auth.create_session(user_id)
+        client.set_cookie('session_token', token, domain='localhost')
+
+        res = client.post('/api/game/99999/abandon')
+        assert res.status_code == 404
+
+    def test_abandon_not_active(self, client):
+        import auth
+        _, user_id = auth.create_user('test@example.com', 'TestUser', 'pass123')
+        players = [{'player_name': 'TestUser', 'user_id': user_id, 'final_score': 50, 'is_winner': False}]
+        game_id = auth.finish_game('room-1', '{}', players)
+        token = auth.create_session(user_id)
+        client.set_cookie('session_token', token, domain='localhost')
+
+        res = client.post(f'/api/game/{game_id}/abandon')
+        assert res.status_code == 400
+
+    def test_abandon_not_participant(self, client):
+        import auth
+        _, user_id = auth.create_user('test@example.com', 'TestUser', 'pass123')
+        # Create game without this user
+        game_id = auth.save_game('room-1', 'Room', '{}', False)
+        token = auth.create_session(user_id)
+        client.set_cookie('session_token', token, domain='localhost')
+
+        res = client.post(f'/api/game/{game_id}/abandon')
+        assert res.status_code == 403
+
+
+class TestRateLimit:
+    def test_check_ip_rate_limit_allows_within_limit(self):
+        """Rate limit function allows requests within limit."""
+        import time
+        from server import _check_ip_rate_limit, _ip_rate_limits
+        _ip_rate_limits.clear()
+        ip = '10.0.0.1'
+        # Pre-populate with 2 timestamps (limit is 3 for request_code)
+        _ip_rate_limits[ip]['request_code'] = [time.time(), time.time()]
+        result = _check_ip_rate_limit(ip, 'request_code')
+        assert result is True
+
+    def test_check_ip_rate_limit_blocks_over_limit(self):
+        """Rate limit function blocks when limit exceeded."""
+        import time
+        from server import _check_ip_rate_limit, _ip_rate_limits
+        _ip_rate_limits.clear()
+        ip = '10.0.0.2'
+        # Pre-populate at limit (3 for request_code)
+        _ip_rate_limits[ip]['request_code'] = [time.time(), time.time(), time.time()]
+        result = _check_ip_rate_limit(ip, 'request_code')
+        assert result is False
+
+    def test_check_ip_rate_limit_expired_timestamps(self):
+        """Expired timestamps should not count towards limit."""
+        import time
+        from server import _check_ip_rate_limit, _ip_rate_limits
+        _ip_rate_limits.clear()
+        ip = '10.0.0.3'
+        old = time.time() - 600  # 10 minutes ago (beyond 300s window)
+        _ip_rate_limits[ip]['request_code'] = [old, old, old]
+        result = _check_ip_rate_limit(ip, 'request_code')
+        assert result is True
+
+    def test_check_ip_rate_limit_unknown_action(self):
+        """Unknown action should always be allowed."""
+        from server import _check_ip_rate_limit, _ip_rate_limits
+        _ip_rate_limits.clear()
+        assert _check_ip_rate_limit('10.0.0.4', 'unknown_action') is True
+
+    def test_check_ip_rate_limit_login(self):
+        """Login rate limit: 10 requests per 300s."""
+        import time
+        from server import _check_ip_rate_limit, _ip_rate_limits
+        _ip_rate_limits.clear()
+        ip = '10.0.0.5'
+        _ip_rate_limits[ip]['login'] = [time.time() for _ in range(10)]
+        result = _check_ip_rate_limit(ip, 'login')
+        assert result is False
+
+
 def _get_cookies(response):
     """Extract cookies from a test response."""
     cookies = {}

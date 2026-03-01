@@ -664,6 +664,184 @@ class TestChat:
         assert len(server.rooms) == 0
 
 
+class TestGameActions:
+    """Socket.IO game actions: place_tiles, exchange_tiles, pass_turn."""
+
+    def _create_started_2p_game(self, app, socketio_app):
+        """Helper: create and start a 2-player game, return (c1, c2, code)."""
+        import server
+        c1 = socketio_app.test_client(app)
+        c1.emit('set_name', {'name': 'Player1', 'is_guest': True, 'user_id': None})
+        c1.get_received()
+
+        c1.emit('create_room', {'name': 'GameRoom', 'max_players': 4})
+        received = c1.get_received()
+        code_events = [r for r in received if r['name'] == 'room_code']
+        code = code_events[0]['args'][0]['code']
+
+        c2 = socketio_app.test_client(app)
+        c2.emit('set_name', {'name': 'Player2', 'is_guest': True, 'user_id': None})
+        c2.get_received()
+        c2.emit('join_room', {'code': code})
+        c2.get_received()
+
+        c1.get_received()  # Clear join notification
+
+        c1.emit('start_game')
+        c1.get_received()
+        c2.get_received()
+
+        return c1, c2, code
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_place_tiles_success(self, mock_check, app, socketio_app):
+        c1, c2, _ = self._create_started_2p_game(app, socketio_app)
+
+        import server
+        # Find the room and set up player hand
+        room = list(server.rooms.values())[0]
+        room.game.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+
+        c1.emit('place_tiles', {
+            'tiles': [
+                {'row': 7, 'col': 6, 'letter': 'A', 'is_blank': False},
+                {'row': 7, 'col': 7, 'letter': 'B', 'is_blank': False},
+            ]
+        })
+        received = c1.get_received()
+        action_events = [r for r in received if r['name'] == 'action_result']
+        assert len(action_events) >= 1
+        assert action_events[0]['args'][0]['success'] is True
+
+        c1.disconnect()
+        c2.disconnect()
+
+    def test_place_tiles_wrong_turn(self, app, socketio_app):
+        c1, c2, _ = self._create_started_2p_game(app, socketio_app)
+
+        c2.emit('place_tiles', {
+            'tiles': [
+                {'row': 7, 'col': 7, 'letter': 'A', 'is_blank': False},
+            ]
+        })
+        received = c2.get_received()
+        action_events = [r for r in received if r['name'] == 'action_result']
+        assert len(action_events) >= 1
+        assert action_events[0]['args'][0]['success'] is False
+
+        c1.disconnect()
+        c2.disconnect()
+
+    def test_place_tiles_empty(self, app, socketio_app):
+        c1, c2, _ = self._create_started_2p_game(app, socketio_app)
+
+        c1.emit('place_tiles', {'tiles': []})
+        received = c1.get_received()
+        action_events = [r for r in received if r['name'] == 'action_result']
+        assert len(action_events) >= 1
+        assert action_events[0]['args'][0]['success'] is False
+
+        c1.disconnect()
+        c2.disconnect()
+
+    def test_exchange_tiles_success(self, app, socketio_app):
+        c1, c2, _ = self._create_started_2p_game(app, socketio_app)
+
+        c1.emit('exchange_tiles', {'indices': [0, 1]})
+        received = c1.get_received()
+        action_events = [r for r in received if r['name'] == 'action_result']
+        assert len(action_events) >= 1
+        assert action_events[0]['args'][0]['success'] is True
+
+        c1.disconnect()
+        c2.disconnect()
+
+    def test_exchange_tiles_wrong_turn(self, app, socketio_app):
+        c1, c2, _ = self._create_started_2p_game(app, socketio_app)
+
+        c2.emit('exchange_tiles', {'indices': [0]})
+        received = c2.get_received()
+        action_events = [r for r in received if r['name'] == 'action_result']
+        assert len(action_events) >= 1
+        assert action_events[0]['args'][0]['success'] is False
+
+        c1.disconnect()
+        c2.disconnect()
+
+    def test_pass_turn_success(self, app, socketio_app):
+        c1, c2, _ = self._create_started_2p_game(app, socketio_app)
+
+        c1.emit('pass_turn')
+        received = c1.get_received()
+        action_events = [r for r in received if r['name'] == 'action_result']
+        assert len(action_events) >= 1
+        assert action_events[0]['args'][0]['success'] is True
+
+        c1.disconnect()
+        c2.disconnect()
+
+    def test_pass_turn_wrong_turn(self, app, socketio_app):
+        c1, c2, _ = self._create_started_2p_game(app, socketio_app)
+
+        c2.emit('pass_turn')
+        received = c2.get_received()
+        action_events = [r for r in received if r['name'] == 'action_result']
+        assert len(action_events) >= 1
+        assert action_events[0]['args'][0]['success'] is False
+
+        c1.disconnect()
+        c2.disconnect()
+
+    def test_place_tiles_not_in_room(self, app, socketio_app):
+        """Player not in a room should get no response (silently ignored)."""
+        c = socketio_app.test_client(app)
+        c.emit('set_name', {'name': 'LostPlayer', 'is_guest': True, 'user_id': None})
+        c.get_received()
+
+        c.emit('place_tiles', {'tiles': [{'row': 7, 'col': 7, 'letter': 'A', 'is_blank': False}]})
+        received = c.get_received()
+        # Server silently returns when player is not in a room
+        action_events = [r for r in received if r['name'] == 'action_result']
+        assert len(action_events) == 0
+        c.disconnect()
+
+    def test_exchange_tiles_invalid_indices(self, app, socketio_app):
+        c1, c2, _ = self._create_started_2p_game(app, socketio_app)
+
+        c1.emit('exchange_tiles', {'indices': [99]})
+        received = c1.get_received()
+        action_events = [r for r in received if r['name'] == 'action_result']
+        assert len(action_events) >= 1
+        assert action_events[0]['args'][0]['success'] is False
+
+        c1.disconnect()
+        c2.disconnect()
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_game_state_broadcast_after_place(self, mock_check, app, socketio_app):
+        """After placing tiles, game_state should be broadcast to all players."""
+        c1, c2, _ = self._create_started_2p_game(app, socketio_app)
+
+        import server
+        room = list(server.rooms.values())[0]
+        room.game.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+
+        c1.emit('place_tiles', {
+            'tiles': [
+                {'row': 7, 'col': 6, 'letter': 'A', 'is_blank': False},
+                {'row': 7, 'col': 7, 'letter': 'B', 'is_blank': False},
+            ]
+        })
+        c1.get_received()
+
+        received2 = c2.get_received()
+        state_events = [r for r in received2 if r['name'] == 'game_state']
+        assert len(state_events) >= 1
+
+        c1.disconnect()
+        c2.disconnect()
+
+
 class TestOwnerLeaveDisband:
     """When the owner leaves an active game, all players should be kicked."""
 

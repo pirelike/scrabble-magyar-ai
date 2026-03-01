@@ -268,3 +268,296 @@ class TestCleanup:
 
         auth.cleanup_expired()
         assert auth.validate_session(token) is None
+
+
+class TestSaveGame:
+    def test_save_game_new(self):
+        import auth
+        game_id = auth.save_game('room-1', 'TestRoom', '{"state": 1}', False, owner_name='Alice')
+        assert isinstance(game_id, int)
+        game = auth.get_game_by_id(game_id)
+        assert game is not None
+        assert game['room_id'] == 'room-1'
+        assert game['room_name'] == 'TestRoom'
+        assert game['status'] == 'active'
+        assert game['owner_name'] == 'Alice'
+
+    def test_save_game_upsert(self):
+        import auth
+        game_id1 = auth.save_game('room-1', 'TestRoom', '{"state": 1}', False)
+        game_id2 = auth.save_game('room-1', 'TestRoom', '{"state": 2}', False)
+        assert game_id1 == game_id2
+        game = auth.get_game_by_id(game_id1)
+        assert game['state_json'] == '{"state": 2}'
+
+    def test_save_game_with_players(self):
+        import auth
+        players = [
+            {'player_name': 'Alice', 'user_id': None, 'score': 50},
+            {'player_name': 'Bob', 'user_id': None, 'score': 30},
+        ]
+        game_id = auth.save_game('room-1', 'TestRoom', '{}', False, players_data=players)
+        game_players = auth.get_game_players(game_id)
+        assert len(game_players) == 2
+        names = [p['player_name'] for p in game_players]
+        assert 'Alice' in names
+        assert 'Bob' in names
+
+    def test_save_game_challenge_mode(self):
+        import auth
+        game_id = auth.save_game('room-1', 'TestRoom', '{}', True)
+        game = auth.get_game_by_id(game_id)
+        assert game['challenge_mode'] == 1
+
+    def test_save_game_upsert_players(self):
+        """Saving twice with same player should update score, not duplicate."""
+        import auth
+        players = [{'player_name': 'Alice', 'user_id': None, 'score': 50}]
+        game_id = auth.save_game('room-1', 'Room', '{}', False, players_data=players)
+
+        players2 = [{'player_name': 'Alice', 'user_id': None, 'score': 80}]
+        auth.save_game('room-1', 'Room', '{}', False, players_data=players2)
+
+        game_players = auth.get_game_players(game_id)
+        assert len(game_players) == 1
+        assert game_players[0]['final_score'] == 80
+
+
+class TestFinishGame:
+    def test_finish_game_creates_entry(self):
+        import auth
+        players = [
+            {'player_name': 'Alice', 'user_id': None, 'final_score': 100, 'is_winner': True},
+            {'player_name': 'Bob', 'user_id': None, 'final_score': 80, 'is_winner': False},
+        ]
+        game_id = auth.finish_game('room-1', '{}', players)
+        game = auth.get_game_by_id(game_id)
+        assert game['status'] == 'finished'
+
+    def test_finish_game_updates_existing(self):
+        import auth
+        # First save as active
+        game_id = auth.save_game('room-1', 'Room', '{"active": true}', False)
+        # Then finish
+        players = [
+            {'player_name': 'Alice', 'user_id': None, 'final_score': 100, 'is_winner': True},
+        ]
+        finished_id = auth.finish_game('room-1', '{"finished": true}', players)
+        assert game_id == finished_id
+        game = auth.get_game_by_id(game_id)
+        assert game['status'] == 'finished'
+
+    def test_finish_game_updates_user_stats(self):
+        import auth
+        _, user_id = auth.create_user('alice@example.com', 'Alice', 'pass123')
+        players = [
+            {'player_name': 'Alice', 'user_id': user_id, 'final_score': 150, 'is_winner': True},
+        ]
+        auth.finish_game('room-1', '{}', players)
+        user = auth.get_user_by_id(user_id)
+        assert user['games_played'] == 1
+        assert user['games_won'] == 1
+        assert user['total_score'] == 150
+
+    def test_finish_game_loser_stats(self):
+        import auth
+        _, user_id = auth.create_user('bob@example.com', 'Bob', 'pass123')
+        players = [
+            {'player_name': 'Bob', 'user_id': user_id, 'final_score': 80, 'is_winner': False},
+        ]
+        auth.finish_game('room-1', '{}', players)
+        user = auth.get_user_by_id(user_id)
+        assert user['games_played'] == 1
+        assert user['games_won'] == 0
+        assert user['total_score'] == 80
+
+    def test_finish_game_upsert_players(self):
+        """Finish should update existing player rows, not duplicate."""
+        import auth
+        # Save game with player first
+        players_save = [{'player_name': 'Alice', 'user_id': None, 'score': 50}]
+        game_id = auth.save_game('room-1', 'Room', '{}', False, players_data=players_save)
+
+        # Finish with same player
+        players_finish = [
+            {'player_name': 'Alice', 'user_id': None, 'final_score': 100, 'is_winner': True},
+        ]
+        auth.finish_game('room-1', '{}', players_finish)
+
+        game_players = auth.get_game_players(game_id)
+        assert len(game_players) == 1
+        assert game_players[0]['final_score'] == 100
+
+
+class TestGameMoves:
+    def test_add_and_get_moves(self):
+        import auth
+        game_id = auth.save_game('room-1', 'Room', '{}', False)
+        auth.add_game_move(game_id, 1, 'Alice', 'place', '{"tiles": []}', '{}')
+        auth.add_game_move(game_id, 2, 'Bob', 'pass', '{}', '{}')
+
+        moves = auth.get_game_moves(game_id)
+        assert len(moves) == 2
+        assert moves[0]['move_number'] == 1
+        assert moves[0]['player_name'] == 'Alice'
+        assert moves[0]['action_type'] == 'place'
+        assert moves[1]['move_number'] == 2
+        assert moves[1]['player_name'] == 'Bob'
+
+    def test_get_moves_empty(self):
+        import auth
+        game_id = auth.save_game('room-1', 'Room', '{}', False)
+        moves = auth.get_game_moves(game_id)
+        assert moves == []
+
+    def test_moves_ordered_by_number(self):
+        import auth
+        game_id = auth.save_game('room-1', 'Room', '{}', False)
+        auth.add_game_move(game_id, 3, 'C', 'pass', '{}', '{}')
+        auth.add_game_move(game_id, 1, 'A', 'place', '{}', '{}')
+        auth.add_game_move(game_id, 2, 'B', 'exchange', '{}', '{}')
+        moves = auth.get_game_moves(game_id)
+        assert [m['move_number'] for m in moves] == [1, 2, 3]
+
+
+class TestLoadActiveGames:
+    def test_load_active(self):
+        import auth
+        auth.save_game('room-1', 'Room1', '{}', False)
+        auth.save_game('room-2', 'Room2', '{}', True)
+        games = auth.load_active_games()
+        assert len(games) == 2
+
+    def test_load_active_excludes_finished(self):
+        import auth
+        auth.save_game('room-1', 'Room1', '{}', False)
+        auth.finish_game('room-1', '{}', [])
+        games = auth.load_active_games()
+        assert len(games) == 0
+
+
+class TestGetGameById:
+    def test_existing(self):
+        import auth
+        game_id = auth.save_game('room-1', 'Room', '{}', False)
+        game = auth.get_game_by_id(game_id)
+        assert game is not None
+        assert game['id'] == game_id
+
+    def test_nonexistent(self):
+        import auth
+        assert auth.get_game_by_id(99999) is None
+
+
+class TestGetUserGameHistory:
+    def test_history(self):
+        import auth
+        _, uid = auth.create_user('test@example.com', 'Test', 'pass')
+        players = [
+            {'player_name': 'Test', 'user_id': uid, 'final_score': 100, 'is_winner': True},
+            {'player_name': 'Bot', 'user_id': None, 'final_score': 50, 'is_winner': False},
+        ]
+        auth.finish_game('room-1', '{}', players)
+
+        history = auth.get_user_game_history(uid)
+        assert len(history) == 1
+        assert history[0]['final_score'] == 100
+        assert history[0]['is_winner'] == 1
+        assert len(history[0]['opponents']) == 1
+        assert history[0]['opponents'][0]['player_name'] == 'Bot'
+
+    def test_history_empty(self):
+        import auth
+        _, uid = auth.create_user('test@example.com', 'Test', 'pass')
+        assert auth.get_user_game_history(uid) == []
+
+    def test_history_limit(self):
+        import auth
+        _, uid = auth.create_user('test@example.com', 'Test', 'pass')
+        for i in range(25):
+            players = [{'player_name': 'Test', 'user_id': uid, 'final_score': i, 'is_winner': False}]
+            auth.finish_game(f'room-{i}', '{}', players)
+        history = auth.get_user_game_history(uid, limit=10)
+        assert len(history) == 10
+
+
+class TestGetUserActiveGames:
+    def test_active_games(self):
+        import auth
+        _, uid = auth.create_user('test@example.com', 'Test', 'pass')
+        players = [{'player_name': 'Test', 'user_id': uid, 'score': 50}]
+        auth.save_game('room-1', 'Room', '{}', False, players_data=players)
+        active = auth.get_user_active_games(uid)
+        assert len(active) == 1
+        assert active[0]['player_name'] == 'Test'
+
+    def test_active_excludes_finished(self):
+        import auth
+        _, uid = auth.create_user('test@example.com', 'Test', 'pass')
+        players_save = [{'player_name': 'Test', 'user_id': uid, 'score': 50}]
+        auth.save_game('room-1', 'Room', '{}', False, players_data=players_save)
+        players_finish = [{'player_name': 'Test', 'user_id': uid, 'final_score': 50, 'is_winner': False}]
+        auth.finish_game('room-1', '{}', players_finish)
+        assert auth.get_user_active_games(uid) == []
+
+
+class TestIsUserInGame:
+    def test_user_in_game(self):
+        import auth
+        _, uid = auth.create_user('test@example.com', 'Test', 'pass')
+        players = [{'player_name': 'Test', 'user_id': uid, 'score': 0}]
+        game_id = auth.save_game('room-1', 'Room', '{}', False, players_data=players)
+        assert auth.is_user_in_game(game_id, uid) is True
+
+    def test_user_not_in_game(self):
+        import auth
+        _, uid = auth.create_user('test@example.com', 'Test', 'pass')
+        game_id = auth.save_game('room-1', 'Room', '{}', False)
+        assert auth.is_user_in_game(game_id, uid) is False
+
+
+class TestGetGamePlayers:
+    def test_get_players(self):
+        import auth
+        players = [
+            {'player_name': 'Alice', 'user_id': None, 'score': 100},
+            {'player_name': 'Bob', 'user_id': None, 'score': 80},
+        ]
+        game_id = auth.save_game('room-1', 'Room', '{}', False, players_data=players)
+        result = auth.get_game_players(game_id)
+        assert len(result) == 2
+
+    def test_get_players_empty(self):
+        import auth
+        game_id = auth.save_game('room-1', 'Room', '{}', False)
+        assert auth.get_game_players(game_id) == []
+
+
+class TestAbandonGame:
+    def test_abandon_by_room_id(self):
+        import auth
+        game_id = auth.save_game('room-1', 'Room', '{}', False)
+        auth.abandon_game('room-1')
+        game = auth.get_game_by_id(game_id)
+        assert game['status'] == 'abandoned'
+
+    def test_abandon_by_game_id(self):
+        import auth
+        game_id = auth.save_game('room-1', 'Room', '{}', False)
+        auth.abandon_game_by_id(game_id)
+        game = auth.get_game_by_id(game_id)
+        assert game['status'] == 'abandoned'
+
+    def test_abandon_only_active(self):
+        """Abandoning a finished game should have no effect."""
+        import auth
+        players = [{'player_name': 'A', 'user_id': None, 'final_score': 0, 'is_winner': False}]
+        game_id = auth.finish_game('room-1', '{}', players)
+        auth.abandon_game('room-1')
+        game = auth.get_game_by_id(game_id)
+        assert game['status'] == 'finished'
+
+    def test_abandon_nonexistent(self):
+        """Abandoning a nonexistent room should not raise."""
+        import auth
+        auth.abandon_game('nonexistent')  # Should not raise
