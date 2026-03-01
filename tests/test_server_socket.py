@@ -662,3 +662,101 @@ class TestChat:
         registered_client.get_received()
 
         assert len(server.rooms) == 0
+
+
+class TestOwnerLeaveDisband:
+    """When the owner leaves an active game, all players should be kicked."""
+
+    def test_owner_leave_active_game_disbands_room(self, app, socketio_app, registered_client):
+        """Owner leaving during active game should disband the room."""
+        # Create room and have P2 join
+        registered_client.emit('create_room', {'name': 'DisbandTest', 'max_players': 4})
+        received = registered_client.get_received()
+        code_events = [r for r in received if r['name'] == 'room_code']
+        code = code_events[0]['args'][0]['code']
+
+        c2 = socketio_app.test_client(app)
+        c2.emit('set_name', {'name': 'P2Disband', 'is_guest': True, 'user_id': None})
+        c2.get_received()
+        c2.emit('join_room', {'code': code})
+        c2.get_received()
+
+        # Start game
+        registered_client.emit('start_game')
+        registered_client.get_received()
+        c2.get_received()
+
+        import server
+        assert len(server.rooms) == 1
+
+        # Owner leaves
+        registered_client.emit('leave_room')
+        registered_client.get_received()
+
+        # Room should be disbanded
+        assert len(server.rooms) == 0
+
+        # P2 should receive room_disbanded and room_left
+        p2_received = c2.get_received()
+        disbanded_events = [r for r in p2_received if r['name'] == 'room_disbanded']
+        assert len(disbanded_events) >= 1
+        assert 'tulajdonosa kilépett' in disbanded_events[0]['args'][0]['message']
+
+        c2.disconnect()
+
+    def test_non_owner_leave_active_game_does_not_disband(self, app, socketio_app, registered_client):
+        """Non-owner leaving during active game should NOT disband the room."""
+        registered_client.emit('create_room', {'name': 'NoDisband', 'max_players': 4})
+        received = registered_client.get_received()
+        code_events = [r for r in received if r['name'] == 'room_code']
+        code = code_events[0]['args'][0]['code']
+
+        c2 = socketio_app.test_client(app)
+        c2.emit('set_name', {'name': 'P2NoDis', 'is_guest': True, 'user_id': None})
+        c2.get_received()
+        c2.emit('join_room', {'code': code})
+        c2.get_received()
+
+        # Start game
+        registered_client.emit('start_game')
+        registered_client.get_received()
+        c2.get_received()
+
+        import server
+        assert len(server.rooms) == 1
+
+        # Non-owner (P2) leaves
+        c2.emit('leave_room')
+        c2.get_received()
+
+        # Room should still exist
+        assert len(server.rooms) == 1
+
+        registered_client.disconnect()
+
+    def test_owner_leave_waiting_room_transfers_ownership(self, app, socketio_app, registered_client):
+        """Owner leaving a waiting room (not started game) should transfer ownership, not disband."""
+        registered_client.emit('create_room', {'name': 'TransferTest', 'max_players': 4})
+        received = registered_client.get_received()
+        code_events = [r for r in received if r['name'] == 'room_code']
+        code = code_events[0]['args'][0]['code']
+
+        c2 = socketio_app.test_client(app)
+        c2.emit('set_name', {'name': 'P2Transfer', 'is_guest': True, 'user_id': None})
+        c2.get_received()
+        c2.emit('join_room', {'code': code})
+        c2.get_received()
+
+        import server
+        assert len(server.rooms) == 1
+
+        # Owner leaves BEFORE starting game
+        registered_client.emit('leave_room')
+        registered_client.get_received()
+
+        # Room should still exist with transferred ownership
+        assert len(server.rooms) == 1
+        room = list(server.rooms.values())[0]
+        assert room.owner_name == 'P2Transfer'
+
+        c2.disconnect()

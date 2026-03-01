@@ -182,6 +182,8 @@ const AppState = {
         this.gameStarted = false;
         this.isRestoreLobby = false;
         this.expectedPlayers = [];
+        // Clear saved rejoin info
+        localStorage.removeItem('scrabble-rejoin');
         // Hide room tab
         const roomTab = document.getElementById('nav-tab-room');
         if (roomTab) {
@@ -511,6 +513,10 @@ const Lobby = {
         }
 
         socket.on('rooms_list', (rooms) => this.renderRoomsList(rooms));
+
+        // Rejoin banner buttons
+        document.getElementById('btn-rejoin-game').addEventListener('click', () => this.tryRejoin());
+        document.getElementById('btn-rejoin-dismiss').addEventListener('click', () => this.dismissRejoin());
     },
 
     switchTab(tabId) {
@@ -570,6 +576,59 @@ const Lobby = {
         // Reset to home tab
         this.switchTab('home');
         showScreen('lobby-screen');
+
+        // Check for active game to rejoin
+        this.checkRejoin();
+    },
+
+    checkRejoin() {
+        const banner = document.getElementById('rejoin-banner');
+        const saved = localStorage.getItem('scrabble-rejoin');
+        if (!saved) {
+            banner.classList.add('hidden');
+            return;
+        }
+        try {
+            const info = JSON.parse(saved);
+            if (!info.token) {
+                localStorage.removeItem('scrabble-rejoin');
+                banner.classList.add('hidden');
+                return;
+            }
+            const text = document.getElementById('rejoin-banner-text');
+            text.textContent = info.roomName
+                ? `Folyamatban lévő játékod van: ${info.roomName}`
+                : 'Folyamatban lévő játékod van';
+            banner.classList.remove('hidden');
+        } catch {
+            localStorage.removeItem('scrabble-rejoin');
+            banner.classList.add('hidden');
+        }
+    },
+
+    tryRejoin() {
+        const saved = localStorage.getItem('scrabble-rejoin');
+        if (!saved) {
+            showMessage('Nincs aktív játék a visszacsatlakozáshoz.', true);
+            this.dismissRejoin();
+            return;
+        }
+        try {
+            const info = JSON.parse(saved);
+            if (!info.token) {
+                this.dismissRejoin();
+                return;
+            }
+            AppState.reconnectToken = info.token;
+            socket.emit('rejoin_room', { token: info.token });
+        } catch {
+            this.dismissRejoin();
+        }
+    },
+
+    dismissRejoin() {
+        localStorage.removeItem('scrabble-rejoin');
+        document.getElementById('rejoin-banner').classList.add('hidden');
     },
 
     createRoom() {
@@ -835,7 +894,14 @@ const WaitingRoom = {
     onJoined(data) {
         AppState.isOwner = data.is_owner;
         AppState.currentRoomId = data.room_id;
-        if (data.reconnect_token) AppState.reconnectToken = data.reconnect_token;
+        if (data.reconnect_token) {
+            AppState.reconnectToken = data.reconnect_token;
+            // Persist rejoin info for page reload recovery
+            localStorage.setItem('scrabble-rejoin', JSON.stringify({
+                token: data.reconnect_token,
+                roomName: data.room_name,
+            }));
+        }
         AppState.challengeModeEnabled = data.challenge_mode || false;
         AppState.roomName = data.room_name;
         AppState.gameStarted = false;
@@ -912,6 +978,13 @@ const GameBoard = {
     init() {
         socket.on('game_started', () => {
             AppState.gameStarted = true;
+            // Save rejoin info to localStorage for page reload recovery
+            if (AppState.reconnectToken) {
+                localStorage.setItem('scrabble-rejoin', JSON.stringify({
+                    token: AppState.reconnectToken,
+                    roomName: AppState.roomName,
+                }));
+            }
             // Update game topbar + panel room name
             const gameRoomName = document.getElementById('game-room-name');
             if (gameRoomName) gameRoomName.textContent = AppState.roomName || 'Szoba';
@@ -971,6 +1044,7 @@ const GameBoard = {
 
             if (state.finished) {
                 ChallengeUI.stopCountdown();
+                localStorage.removeItem('scrabble-rejoin');
                 GameOver.show();
             }
         } else {
@@ -1746,11 +1820,14 @@ const Reconnection = {
             }
         });
 
-        socket.on('rejoin_failed', () => {
+        socket.on('rejoin_failed', (data) => {
             AppState.reset();
             ChallengeUI.stopCountdown();
+            // Hide rejoin banner if visible
+            document.getElementById('rejoin-banner').classList.add('hidden');
             showScreen('lobby-screen');
             socket.emit('get_rooms');
+            if (data && data.message) showMessage(data.message, true);
         });
 
         socket.on('player_disconnected', (data) => {
@@ -1759,6 +1836,15 @@ const Reconnection = {
 
         socket.on('player_reconnected', (data) => {
             showMessage(`${data.name} újracsatlakozott!`, false);
+        });
+
+        socket.on('room_disbanded', (data) => {
+            AppState.reset();
+            ChallengeUI.stopCountdown();
+            localStorage.removeItem('scrabble-rejoin');
+            showScreen('lobby-screen');
+            socket.emit('get_rooms');
+            showMessage(data.message || 'A szoba megszűnt.', true);
         });
 
         document.addEventListener('visibilitychange', () => {

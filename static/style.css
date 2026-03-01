@@ -684,6 +684,60 @@ button.link-btn:hover {
     flex: 1;
 }
 
+/* Rejoin banner */
+.rejoin-banner {
+    background: var(--accent-primary);
+    border-radius: var(--radius-lg);
+    padding: var(--space-3) var(--space-4);
+    margin-bottom: var(--space-4);
+}
+
+.rejoin-banner-content {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+}
+
+.rejoin-banner-content span {
+    flex: 1;
+    color: var(--bg-primary);
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+.btn-rejoin {
+    background: var(--bg-primary);
+    color: var(--accent-primary);
+    border: none;
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-md);
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 0.85rem;
+    white-space: nowrap;
+    transition: opacity var(--transition-fast);
+}
+
+.btn-rejoin:hover {
+    opacity: 0.9;
+}
+
+.btn-rejoin-dismiss {
+    background: none;
+    border: none;
+    color: var(--bg-primary);
+    font-size: 1.3rem;
+    cursor: pointer;
+    padding: 0 var(--space-1);
+    opacity: 0.7;
+    line-height: 1;
+    transition: opacity var(--transition-fast);
+}
+
+.btn-rejoin-dismiss:hover {
+    opacity: 1;
+}
+
 .lobby-section {
     background: var(--bg-card);
     border-radius: var(--radius-lg);

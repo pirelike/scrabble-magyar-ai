@@ -157,9 +157,9 @@ Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztésh
 | `tests/test_auth.py` | 33 | DB, user CRUD, jelszó hash, verifikációs kódok, session kezelés |
 | `tests/test_game_logic.py` | 93 | TileBag, Board, Player, Game, Challenge szavazásos rendszer |
 | `tests/test_server_auth.py` | 28 | HTTP auth route-ok, cookie flow |
-| `tests/test_server_socket.py` | 46 | Socket.IO eventek, lobby, szobák, privát szobák, challenge szavazás, chat |
+| `tests/test_server_socket.py` | 49 | Socket.IO eventek, lobby, szobák, privát szobák, challenge szavazás, chat, owner kilépés |
 
-**Összesen: 200 teszt**
+**Összesen: 203 teszt**
 
 ## Challenge (megtámadás) rendszer — szavazásos
 
@@ -262,6 +262,7 @@ Játék közben a side panelen chat szekció érhető el:
 | `player_left` | szerver→szoba | Játékos kilépett |
 | `player_disconnected` | szerver→szoba | Játékos kapcsolata megszakadt |
 | `player_reconnected` | szerver→szoba | Játékos visszacsatlakozott |
+| `room_disbanded` | szerver→szoba | Owner kilépett aktív játékból, szoba feloszlatva |
 | `rejoin_failed` | szerver→kliens | Újracsatlakozás sikertelen |
 | `error` | szerver→kliens | Hibaüzenet |
 
@@ -371,6 +372,14 @@ Játék közben a side panelen chat szekció érhető el:
 - Visszajátszás: lépésenkénti navigáció board snapshot-okkal
 
 ## Legutóbbi javítások
+
+### Owner kilépés = szoba feloszlatás, visszacsatlakozás gomb (2026-03-01)
+- **Owner kilépés feloszlatja a szobát**: ha az owner kilép egy aktív játékból (mentéssel vagy anélkül), az összes többi játékost visszadobja a lobbyba (`room_disbanded` event)
+- **Visszacsatlakozás gomb a lobbyban**: localStorage-ban mentett reconnect token, banner a lobbyban "Visszacsatlakozás" gombbal
+- **Reconnect token perzisztencia**: `localStorage('scrabble-rejoin')` tartalmazza a tokent és szoba nevét, oldal újratöltés után is elérhető
+- **Owner disconnect timeout**: ha az owner grace period-ja lejár (120 mp), a szoba szintén feloszlik
+- **finish_game duplikáció fix**: game_players upsert logika a `finish_game`-ben, megelőzve a duplikált játékos bejegyzéseket
+- **3 új teszt**: owner leave disband, non-owner leave no disband, owner leave waiting room transfers ownership
 
 ### Manuális mentés, lobby-first restore (2026-03-01)
 - **Autosave eltávolítva**: mentés kizárólag az owner kilépés menüjéből ("Mentés és kilépés")

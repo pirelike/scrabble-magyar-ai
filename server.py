@@ -755,6 +755,42 @@ def _finalize_player_disconnect(token):
 
     room = rooms[room_id]
     game = room.game
+    is_owner = room.owner == old_sid
+    is_active_game = game.started and not game.finished
+
+    # Owner disconnect timeout during active game: disband room
+    if is_owner and is_active_game and game.players:
+        socketio.emit('room_disbanded', {
+            'message': 'A szoba tulajdonosa végleg lecsatlakozott, a játék véget ért.',
+        }, room=room_id)
+
+        # Clean up all remaining players
+        for p in list(game.players):
+            p_sid = p.id
+            if p_sid != old_sid:
+                player_rooms.pop(p_sid, None)
+                p_token = _sid_to_token.pop(p_sid, None)
+                if p_token:
+                    _reconnect_tokens.pop(p_token, None)
+                    _disconnected_players.pop(p_token, None)
+                socketio.emit('room_left', {}, room=p_sid)
+
+        # Also clean up other disconnected players in this room
+        tokens_to_remove = [
+            t for t, dc_info in _disconnected_players.items()
+            if dc_info['room_id'] == room_id
+        ]
+        for t in tokens_to_remove:
+            dc = _disconnected_players.pop(t)
+            _sid_to_token.pop(dc['sid'], None)
+            _reconnect_tokens.pop(t, None)
+
+        if is_active_game:
+            abandon_game(room_id)
+        _cleanup_room(room_id)
+        socketio.emit('rooms_list', get_rooms_list())
+        return
+
     game.remove_player(old_sid)
 
     if not game.players:
@@ -1015,7 +1051,55 @@ def handle_leave_room(data=None):
     room = rooms[room_id]
     game = room.game
     player_name = player_names.get(sid, '?')
+    is_owner = room.owner == sid
+    is_active_game = game.started and not game.finished
 
+    # Owner leaving an active game: kick all players and disband room
+    if is_owner and is_active_game:
+        # Notify all other players that the room is disbanded
+        emit('room_disbanded', {
+            'message': 'A szoba tulajdonosa kilépett, a játék véget ért.',
+        }, room=room_id)
+
+        # Remove all players from the room
+        for p in list(game.players):
+            p_sid = p.id
+            if p_sid != sid:
+                leave_room(room_id, sid=p_sid)
+                player_rooms.pop(p_sid, None)
+                p_token = _sid_to_token.pop(p_sid, None)
+                if p_token:
+                    _reconnect_tokens.pop(p_token, None)
+                    _disconnected_players.pop(p_token, None)
+                # Send room_left to each player individually
+                emit('room_left', {}, room=p_sid)
+
+        # Also clean up disconnected players in this room
+        tokens_to_remove = [
+            t for t, info in _disconnected_players.items()
+            if info['room_id'] == room_id
+        ]
+        for t in tokens_to_remove:
+            dc = _disconnected_players.pop(t)
+            _sid_to_token.pop(dc['sid'], None)
+            _reconnect_tokens.pop(t, None)
+
+        # Remove the owner
+        game.remove_player(sid)
+        leave_room(room_id)
+        del player_rooms[sid]
+
+        token = _sid_to_token.pop(sid, None)
+        if token:
+            _reconnect_tokens.pop(token, None)
+            _disconnected_players.pop(token, None)
+
+        _cleanup_room(room_id)
+        emit('room_left', {})
+        emit('rooms_list', get_rooms_list(), broadcast=True)
+        return
+
+    # Normal leave (not owner of active game)
     game.remove_player(sid)
     leave_room(room_id)
     del player_rooms[sid]

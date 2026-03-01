@@ -377,12 +377,24 @@ def finish_game(room_id, state_json, players_data):
         )
 
     for pd in players_data:
-        conn.execute(
-            'INSERT INTO game_players (game_id, user_id, player_name, final_score, is_winner) '
-            'VALUES (?, ?, ?, ?, ?)',
-            (game_id, pd.get('user_id'), pd['player_name'], pd['final_score'],
-             1 if pd.get('is_winner') else 0)
-        )
+        existing = conn.execute(
+            'SELECT id FROM game_players WHERE game_id = ? AND player_name = ?',
+            (game_id, pd['player_name'])
+        ).fetchone()
+        if existing:
+            conn.execute(
+                'UPDATE game_players SET final_score = ?, is_winner = ?, '
+                'user_id = COALESCE(?, user_id) WHERE id = ?',
+                (pd['final_score'], 1 if pd.get('is_winner') else 0,
+                 pd.get('user_id'), existing['id'])
+            )
+        else:
+            conn.execute(
+                'INSERT INTO game_players (game_id, user_id, player_name, final_score, is_winner) '
+                'VALUES (?, ?, ?, ?, ?)',
+                (game_id, pd.get('user_id'), pd['player_name'], pd['final_score'],
+                 1 if pd.get('is_winner') else 0)
+            )
         if pd.get('user_id'):
             conn.execute(
                 'UPDATE users SET games_played = games_played + 1, '
