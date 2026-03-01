@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 
 # Szótár fájlok helye (a projektben a dict/ mappában)
@@ -45,6 +46,11 @@ def _init_checker():
     _checker_type = None
 
 
+# Érvényes magyar szó karakterek (nagybetűk + ékezetes betűk)
+_VALID_WORD_RE = re.compile(r'^[A-ZÁÉÍÓÖŐÚÜŰ]+$')
+_MAX_WORD_LENGTH = 15  # A tábla 15x15, szó nem lehet hosszabb
+
+
 def check_words(words):
     """
     Ellenőrzi a szavak helyességét a magyar szótárral.
@@ -55,6 +61,13 @@ def check_words(words):
 
     if not words:
         return True, []
+
+    # Input sanitizálás: csak érvényes magyar betűkből álló szavakat engedünk
+    for word in words:
+        if not isinstance(word, str):
+            return False, [str(word)]
+        if len(word) > _MAX_WORD_LENGTH or not _VALID_WORD_RE.match(word):
+            return False, [word]
 
     if _checker_type is None:
         _init_checker()

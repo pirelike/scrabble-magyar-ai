@@ -54,17 +54,18 @@ class TileBag:
     """Betűzseton zsák kezelése."""
 
     def __init__(self):
-        self.tiles = []
-        for letter, value, count in TILE_DISTRIBUTION:
-            for _ in range(count):
-                self.tiles.append(letter)
+        self.tiles = [
+            letter
+            for letter, value, count in TILE_DISTRIBUTION
+            for _ in range(count)
+        ]
         random.shuffle(self.tiles)
 
     def draw(self, count):
         """Húz count darab zsetont a zsákból."""
-        drawn = []
-        for _ in range(min(count, len(self.tiles))):
-            drawn.append(self.tiles.pop())
+        n = min(count, len(self.tiles))
+        drawn = self.tiles[-n:] if n else []
+        del self.tiles[-n:]
         return drawn
 
     def put_back(self, tiles):
