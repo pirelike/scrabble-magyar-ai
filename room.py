@@ -19,6 +19,9 @@ class Room:
         self.is_restored = False
         self.chat_messages = []
         self._challenge_timer_id = 0
+        # Persistence tracking (korábban a Game-ben volt)
+        self.db_game_id = None
+        self.last_saved_move_count = 0
 
     def add_chat_message(self, name, message):
         """Chat üzenet hozzáadása (max 100 darab)."""
@@ -39,6 +42,11 @@ class Room:
         """Tulajdonjog átadása."""
         self.owner = new_owner_sid
         self.owner_name = new_owner_name
+
+    @property
+    def is_lobby_visible(self):
+        """Megjelenik-e a szoba a nyilvános lobby listában."""
+        return not self.is_private and not self.is_restored and not self.game.finished
 
     def to_lobby_dict(self):
         """Lobby listához szükséges adatok (publikus szobákhoz)."""

@@ -52,8 +52,6 @@ class Game:
         self.challenge_mode = challenge_mode
         self.pending_challenge = None  # Challenge instance or None
         self.move_log = []  # Lépések listája
-        self._db_game_id = None  # DB ID a mentés után
-        self._last_saved_move_count = 0  # Utolsó mentéskor hány lépés volt
 
     def add_player(self, player_id, name):
         if len(self.players) >= 4:
