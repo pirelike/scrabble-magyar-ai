@@ -1,3 +1,5 @@
+from contextlib import contextmanager
+
 from tiles import TILE_VALUES
 from dictionary import check_words
 
@@ -216,6 +218,56 @@ class Board:
 
         return formed_words
 
+    @contextmanager
+    def _temporary_placement(self, tiles_placed):
+        """Ideiglenes betű elhelyezés validáláshoz. Finally-ben visszaállít."""
+        placed = []
+        try:
+            for r, c, letter, is_blank in tiles_placed:
+                self.cells[r][c] = (letter, is_blank)
+                placed.append((r, c))
+            yield
+        finally:
+            for r, c in placed:
+                self.cells[r][c] = None
+
+    def _validate_first_move(self, tiles_placed, new_positions):
+        """Első lerakás: legalább 2 betű, középső mező."""
+        if (CENTER, CENTER) not in new_positions:
+            return "Az első szónak a középső mezőt (csillagot) kell fednie."
+        if len(tiles_placed) < 2:
+            return "Az első szónak legalább 2 betűből kell állnia."
+        return None
+
+    def _validate_words(self, positions, new_positions, horizontal, tiles_placed,
+                        skip_dictionary):
+        """Szavak gyűjtése, folytonosság, csatlakozás, szótár ellenőrzés.
+        Visszatér: (valid, formed_words, error_message)
+        """
+        fixed, start, end = self._get_main_bounds(positions, horizontal)
+        start, end = self._find_word_bounds(fixed, start, end, horizontal)
+
+        if not self._check_continuity(fixed, start, end, horizontal):
+            return False, [], "A betűknek folytonos sort kell alkotniuk."
+
+        if not self.is_empty and not self._check_adjacency(positions, new_positions):
+            return False, [], "A szónak csatlakoznia kell meglévő betűkhöz."
+
+        formed_words = self._collect_words(
+            positions, new_positions, horizontal, fixed, start, end
+        )
+
+        if not formed_words:
+            return False, [], "Legalább egy szót kell alkotni."
+
+        if not skip_dictionary:
+            word_strings = [w for w, _, _ in formed_words]
+            all_valid, invalid = check_words(word_strings)
+            if not all_valid:
+                return False, [], f"Érvénytelen szó(k): {', '.join(invalid)}"
+
+        return True, formed_words, ""
+
     def validate_placement(self, tiles_placed, skip_dictionary=False):
         """Ellenőrzi a lerakott zsetonokat.
         Visszatér: (valid, formed_words, error_message)
@@ -234,56 +286,20 @@ class Board:
         if not ok:
             return False, [], err
 
-        # Ideiglenesen lerakjuk a betűket
-        for r, c, letter, is_blank in tiles_placed:
-            self.cells[r][c] = (letter, is_blank)
-
-        try:
-            # Első lépés ellenőrzés
+        with self._temporary_placement(tiles_placed):
             if self.is_empty:
-                if (CENTER, CENTER) not in new_positions:
-                    return False, [], "Az első szónak a középső mezőt (csillagot) kell fednie."
-                if len(tiles_placed) < 2:
-                    return False, [], "Az első szónak legalább 2 betűből kell állnia."
+                err = self._validate_first_move(tiles_placed, new_positions)
+                if err:
+                    return False, [], err
 
-            # Egy betűnél irány meghatározása szomszédok alapján
             if len(tiles_placed) == 1:
                 horizontal, has_neighbor = self._determine_direction_single(*positions[0])
                 if not self.is_empty and not has_neighbor:
                     return False, [], "A betűnek csatlakoznia kell meglévő szóhoz."
 
-            # Fő irány határai
-            fixed, start, end = self._get_main_bounds(positions, horizontal)
-            start, end = self._find_word_bounds(fixed, start, end, horizontal)
-
-            # Folytonosság
-            if not self._check_continuity(fixed, start, end, horizontal):
-                return False, [], "A betűknek folytonos sort kell alkotniuk."
-
-            # Csatlakozás meglévőkhöz
-            if not self.is_empty and not self._check_adjacency(positions, new_positions):
-                return False, [], "A szónak csatlakoznia kell meglévő betűkhöz."
-
-            # Szavak gyűjtése
-            formed_words = self._collect_words(
-                positions, new_positions, horizontal, fixed, start, end
+            return self._validate_words(
+                positions, new_positions, horizontal, tiles_placed, skip_dictionary
             )
-
-            if not formed_words:
-                return False, [], "Legalább egy szót kell alkotni."
-
-            # Szótár-ellenőrzés
-            if not skip_dictionary:
-                word_strings = [w for w, _, _ in formed_words]
-                all_valid, invalid = check_words(word_strings)
-                if not all_valid:
-                    return False, [], f"Érvénytelen szó(k): {', '.join(invalid)}"
-
-            return True, formed_words, ""
-
-        finally:
-            for r, c, _, _ in tiles_placed:
-                self.cells[r][c] = None
 
     def apply_placement(self, tiles_placed):
         """Véglegesen lerakja a betűket."""

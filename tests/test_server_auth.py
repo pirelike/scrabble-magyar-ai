@@ -6,16 +6,6 @@ import json
 
 
 @pytest.fixture(autouse=True)
-def temp_db(monkeypatch, tmp_path):
-    db_path = str(tmp_path / 'test.db')
-    monkeypatch.setattr('config.DB_PATH', db_path)
-    import auth
-    monkeypatch.setattr(auth, 'DB_PATH', db_path)
-    auth.init_db()
-    yield db_path
-
-
-@pytest.fixture(autouse=True)
 def clear_rate_limits():
     """Clear IP rate limits between tests."""
     import server

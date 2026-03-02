@@ -4,17 +4,6 @@ import sys
 import tempfile
 import pytest
 
-# Use a temporary DB for each test
-@pytest.fixture(autouse=True)
-def temp_db(monkeypatch, tmp_path):
-    db_path = str(tmp_path / 'test.db')
-    monkeypatch.setattr('config.DB_PATH', db_path)
-    # Re-import auth module to pick up new DB_PATH
-    import auth
-    monkeypatch.setattr(auth, 'DB_PATH', db_path)
-    auth.init_db()
-    yield db_path
-
 
 class TestInitDB:
     def test_creates_tables(self):
