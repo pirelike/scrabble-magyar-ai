@@ -44,10 +44,8 @@ _SOCKET_RATE_LIMITS = {
     'exchange_tiles': (5, 10),
     'pass_turn': (5, 10),
     'get_rooms': (10, 5),
-    'challenge': (5, 10),
     'accept_words': (5, 10),
     'reject_words': (5, 10),
-    'cast_vote': (5, 10),
     'send_chat': (10, 10),
     'rejoin_room': (5, 10),
     'save_game': (3, 30),
@@ -964,29 +962,6 @@ def handle_pass_turn():
         emit('action_result', {'success': False, 'message': msg})
 
 
-@socketio.on('challenge')
-def handle_challenge():
-    sid = request.sid
-    room_id, room, game = _get_room_context(sid, 'challenge')
-    if not room:
-        return
-
-    success, result, msg = game.challenge(sid)
-
-    if success:
-        room.invalidate_challenge_timer()
-        if result == 'voting':
-            _start_challenge_timer(room_id)
-        _emit_all_states(game)
-        if result in ('vote_accepted', 'vote_rejected'):
-            emit('challenge_result', {
-                'challenge_won': result == 'vote_rejected',
-                'message': msg,
-            }, room=room_id)
-    else:
-        emit('action_result', {'success': False, 'message': msg})
-
-
 @socketio.on('accept_words')
 def handle_accept_words():
     sid = request.sid
@@ -1009,32 +984,6 @@ def handle_reject_words():
         return
 
     success, result, msg = game.reject_pending_by_player(sid)
-    if success:
-        room.invalidate_challenge_timer()
-        _emit_all_states(game)
-        emit('challenge_result', {
-            'challenge_won': True,
-            'message': msg,
-        }, room=room_id)
-    else:
-        emit('action_result', {'success': False, 'message': msg})
-
-
-@socketio.on('cast_vote')
-def handle_cast_vote(data):
-    sid = request.sid
-    room_id, room, game = _get_room_context(sid, 'cast_vote')
-    if not room:
-        return
-    if not isinstance(data, dict):
-        return
-
-    vote = data.get('vote')
-    if vote not in ('accept', 'reject'):
-        emit('action_result', {'success': False, 'message': 'Érvénytelen szavazat.'})
-        return
-
-    success, result, msg = game.cast_vote(sid, vote)
     if success:
         _handle_challenge_result(room_id, room, game, result, msg)
     else:

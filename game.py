@@ -195,26 +195,23 @@ class Game:
                 player_idx=self.current_player_idx,
                 removed_from_hand=removed,
             )
-            self.last_action = f"{player.name}: {', '.join(word_strs)} ({total_score} pont) — megtámadható!"
-            return True, f"Szavak: {', '.join(word_strs)} — megtámadható!", total_score
+            self.last_action = f"{player.name}: {', '.join(word_strs)} ({total_score} pont) — szavazásra vár"
+            return True, f"Szavak: {', '.join(word_strs)} — szavazásra vár!", total_score
 
         # Normál mód (vagy egyjátékos challenge módban): azonnal véglegesít
         self._finalize_placement(player, tiles_placed, total_score, word_strs,
                                  formed_words=formed_words)
         return True, f"Szavak: {', '.join(word_strs)}", total_score
 
-    # --- Challenge system ---
+    # --- Challenge system (voting) ---
 
     def _get_voter_ids(self):
-        """Szavazásra jogosult játékosok (nem lerakó, nem megtámadó)."""
+        """Szavazásra jogosult játékosok (a lerakón kívül mindenki)."""
         if not self.pending_challenge:
             return set()
         pc = self.pending_challenge
         placer_id = self.players[pc.player_idx].id
-        return {
-            p.id for p in self.players
-            if p.id != placer_id and p.id != pc.challenger_id
-        }
+        return {p.id for p in self.players if p.id != placer_id}
 
     def _finalize_accept(self):
         """Lerakás véglegesítése (elfogadva)."""
@@ -268,99 +265,8 @@ class Game:
             return "A szavak elfogadva szavazással."
         return "A szavak elutasítva szavazással!"
 
-    def challenge(self, challenger_id):
-        """Megtámadás: szavazás indítása (csak 3+ játékos).
-        Visszatér: (success, result, message)
-        """
-        if not self.pending_challenge:
-            return False, None, "Nincs megtámadható lerakás."
-
-        pc = self.pending_challenge
-        placer = self.players[pc.player_idx]
-
-        if placer.id == challenger_id:
-            return False, None, "Saját lerakásodat nem támadhatod meg."
-        if len(self.players) <= 2:
-            return False, None, "Két játékos módban nincs megtámadás."
-        if pc.voting_phase:
-            return False, None, "Már folyamatban van a szavazás."
-
-        challenger = self._find_player(challenger_id)
-        if not challenger:
-            return False, None, "Nem vagy a játék résztvevője."
-
-        pc.start_voting(challenger_id)
-
-        # Ha már minden szavazó szavazott, azonnal kiértékeljük
-        voter_ids = self._get_voter_ids()
-        if pc.all_voted(voter_ids):
-            result = self._resolve_and_finalize()
-            return True, result, self._make_vote_message(result)
-
-        self.last_action = (
-            f"{challenger.name} megtámadta {placer.name} szavait — szavazás!"
-        )
-        return True, 'voting', "Szavazás indult!"
-
-    def cast_vote(self, player_id, vote):
-        """Szavazat leadása a szavazási fázisban.
-        Visszatér: (success, result, message)
-        """
-        if not self.pending_challenge:
-            return False, None, "Nincs függő lerakás."
-
-        pc = self.pending_challenge
-        if not pc.voting_phase:
-            return False, None, "Nincs szavazás folyamatban."
-
-        placer = self.players[pc.player_idx]
-        if placer.id == player_id:
-            return False, None, "A lerakó nem szavazhat."
-        if pc.challenger_id == player_id:
-            return False, None, "A megtámadó nem szavazhat."
-
-        voter_ids = self._get_voter_ids()
-        if player_id not in voter_ids:
-            return False, None, "Nem szavazhatsz."
-        if player_id in pc.votes:
-            return False, None, "Már szavaztál."
-
-        voter = self._find_player(player_id)
-        if not voter:
-            return False, None, "Nem vagy a játék résztvevője."
-
-        pc.add_vote(player_id, vote)
-
-        if pc.all_voted(voter_ids):
-            result = self._resolve_and_finalize()
-            return True, result, self._make_vote_message(result)
-
-        self.last_action = f"{voter.name} szavazott."
-        return True, 'vote_recorded', f"{voter.name} szavazott."
-
-    def reject_pending_by_player(self, player_id):
-        """Játékos elutasítja a függő lerakást (2 játékos mód).
-        Visszatér: (success, result, message)
-        """
-        if not self.pending_challenge:
-            return False, None, "Nincs függő lerakás."
-
-        pc = self.pending_challenge
-        placer = self.players[pc.player_idx]
-
-        if placer.id == player_id:
-            return False, None, "Saját lerakásodat nem utasíthatod el."
-        if len(self.players) > 2:
-            return False, None, "3+ játékos módban használd a szavazást."
-        if pc.voting_phase:
-            return False, None, "Szavazás folyamatban."
-
-        self._finalize_reject()
-        return True, 'rejected', "Lerakás elutasítva."
-
     def accept_pending_by_player(self, player_id):
-        """Játékos elfogadja a függő lerakást.
-        2 játékosnál azonnali elfogadás, 3+-nál elfogadás rögzítése vagy szavazat.
+        """Játékos elfogadja a függő lerakást (elfogadó szavazat).
         Visszatér: (success, result, message)
         """
         if not self.pending_challenge:
@@ -372,27 +278,56 @@ class Game:
         if placer.id == player_id:
             return False, None, "Saját lerakásodat nem fogadhatod el."
 
-        # Szavazási fázisban: elfogadó szavazat
-        if pc.voting_phase:
-            return self.cast_vote(player_id, 'accept')
+        voter_ids = self._get_voter_ids()
+        if player_id not in voter_ids:
+            return False, None, "Nem szavazhatsz."
+        if player_id in pc.votes:
+            return False, None, "Már szavaztál."
 
-        # 2 játékos: azonnali elfogadás
-        if len(self.players) <= 2:
-            self._finalize_accept()
-            return True, 'accepted', "Lerakás elfogadva."
+        voter = self._find_player(player_id)
+        if not voter:
+            return False, None, "Nem vagy a játék résztvevője."
 
-        # 3+ játékos: elfogadás rögzítése
-        if player_id in pc.accepted_players:
-            return False, None, "Már elfogadtad."
+        pc.add_vote(player_id, 'accept')
 
-        pc.add_accept(player_id)
+        if pc.all_voted(voter_ids):
+            result = self._resolve_and_finalize()
+            return True, result, self._make_vote_message(result)
 
-        non_placer_ids = {p.id for p in self.players if p.id != placer.id}
-        if pc.all_accepted(non_placer_ids):
-            self._finalize_accept()
-            return True, 'accepted', "Lerakás elfogadva."
+        self.last_action = f"{voter.name} elfogadta."
+        return True, 'vote_recorded', f"{voter.name} elfogadta."
 
-        return True, 'recorded', "Elfogadva, várakozás a többi játékosra."
+    def reject_pending_by_player(self, player_id):
+        """Játékos elutasítja a függő lerakást (elutasító szavazat).
+        Visszatér: (success, result, message)
+        """
+        if not self.pending_challenge:
+            return False, None, "Nincs függő lerakás."
+
+        pc = self.pending_challenge
+        placer = self.players[pc.player_idx]
+
+        if placer.id == player_id:
+            return False, None, "Saját lerakásodat nem utasíthatod el."
+
+        voter_ids = self._get_voter_ids()
+        if player_id not in voter_ids:
+            return False, None, "Nem szavazhatsz."
+        if player_id in pc.votes:
+            return False, None, "Már szavaztál."
+
+        voter = self._find_player(player_id)
+        if not voter:
+            return False, None, "Nem vagy a játék résztvevője."
+
+        pc.add_vote(player_id, 'reject')
+
+        if pc.all_voted(voter_ids):
+            result = self._resolve_and_finalize()
+            return True, result, self._make_vote_message(result)
+
+        self.last_action = f"{voter.name} elutasította."
+        return True, 'vote_recorded', f"{voter.name} elutasította."
 
     def accept_pending(self):
         """Függő lerakás elfogadása (timeout).
@@ -401,14 +336,10 @@ class Game:
         if not self.pending_challenge:
             return False, None, "Nincs függő lerakás."
 
-        if self.pending_challenge.voting_phase:
-            result = self._resolve_and_finalize()
-            msg = ("Szavak elfogadva (szavazás lejárt)." if result == 'vote_accepted'
-                   else "Szavak elutasítva (szavazás lejárt).")
-            return True, result, msg
-
-        self._finalize_accept()
-        return True, 'accepted', "Lerakás elfogadva."
+        result = self._resolve_and_finalize()
+        msg = ("Szavak elfogadva (időtúllépés)." if result == 'vote_accepted'
+               else "Szavak elutasítva (időtúllépés).")
+        return True, result, msg
 
     # --- Other actions ---
 

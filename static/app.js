@@ -1346,19 +1346,21 @@ const GameBoard = {
 
     onCellClick(row, col) {
         const gs = AppState.gameState;
-        if (!gs || gs.current_player !== AppState.myPlayerId) return;
+        if (!gs || gs.finished) return;
 
-        if (BoardState.selectedTileIdx !== null) {
-            this.placeTileOnBoard(BoardState.selectedTileIdx, row, col);
-            return;
-        }
-
+        // Clicking a placed tile always removes it (even if another tile is selected)
         const placedIdx = BoardState.placedTiles.findIndex(t => t.row === row && t.col === col);
         if (placedIdx !== -1) {
             BoardState.placedTiles.splice(placedIdx, 1);
             this.renderBoard();
             this.renderHand();
             this.updateButtons();
+            return;
+        }
+
+        if (BoardState.selectedTileIdx !== null) {
+            this.placeTileOnBoard(BoardState.selectedTileIdx, row, col);
+            return;
         }
     },
 
@@ -1489,30 +1491,21 @@ const ChallengeUI = {
         if (!gs.pending_challenge) {
             section.classList.add('hidden');
             if (this.timer) this.stopCountdown();
-            this.wasVotingPhase = false;
             return;
         }
 
         section.classList.remove('hidden');
         const pc = gs.pending_challenge;
         const isMyPlacement = pc.player_id === AppState.myPlayerId;
-        const isVotingPhase = pc.voting_phase || false;
-        const playerCount = pc.player_count || 0;
-        const myAccepted = (pc.accepted_players || []).includes(AppState.myPlayerId);
         const myVote = (pc.votes || {})[AppState.myPlayerId];
-        const isChallenger = pc.challenger_id === AppState.myPlayerId;
 
         // Timer management
         if (!this.timer) {
             this.startCountdown();
-            this.wasVotingPhase = isVotingPhase;
-        } else if (isVotingPhase && !this.wasVotingPhase) {
-            this.startCountdown();
-            this.wasVotingPhase = true;
         }
 
         // Info
-        this._renderInfo(infoEl, pc, gs, isVotingPhase);
+        this._renderInfo(infoEl, pc, gs);
 
         // Timer display
         timerEl.textContent = this.timeLeft > 0 ? `${this.timeLeft} mp` : '';
@@ -1520,33 +1513,27 @@ const ChallengeUI = {
         // Buttons
         buttonsEl.innerHTML = '';
         if (isMyPlacement) {
-            this._addWaitText(buttonsEl, isVotingPhase ? 'Szavazás folyamatban...' : 'Várakozás elfogadásra...');
-        } else if (isVotingPhase) {
-            this._renderVotingButtons(buttonsEl, isChallenger, myVote);
-        } else if (playerCount <= 2) {
-            this._render2PlayerButtons(buttonsEl, myAccepted);
+            this._addWaitText(buttonsEl, 'Szavazás folyamatban...');
+        } else if (myVote) {
+            this._addWaitText(buttonsEl, myVote === 'accept' ? 'Elfogadtad — várakozás...' : 'Elutasítottad — várakozás...');
         } else {
-            this._render3PlusButtons(buttonsEl, myAccepted);
+            this._renderVoteButtons(buttonsEl);
         }
     },
 
-    _renderInfo(infoEl, pc, gs, isVotingPhase) {
+    _renderInfo(infoEl, pc, gs) {
         infoEl.innerHTML = '';
         const infoText = document.createElement('div');
         infoText.textContent = `${escapeHtml(pc.player_name)}: ${pc.words.join(', ')} (${pc.score} pont)`;
         infoEl.appendChild(infoText);
 
-        if (isVotingPhase) {
-            const voteStatus = document.createElement('div');
-            voteStatus.className = 'vote-status';
-            voteStatus.textContent = `${escapeHtml(pc.challenger_name || '?')} megtámadta — szavazás folyamatban`;
-            infoEl.appendChild(voteStatus);
-
+        // Show vote status for all players (3+ players)
+        if ((pc.player_count || 0) > 2) {
             const voteList = document.createElement('div');
             voteList.className = 'vote-list';
             const votes = pc.votes || {};
             for (const player of gs.players) {
-                if (player.id === pc.player_id || player.id === pc.challenger_id) continue;
+                if (player.id === pc.player_id) continue;
                 const vote = votes[player.id];
                 const item = document.createElement('span');
                 item.className = 'vote-item';
@@ -1573,63 +1560,17 @@ const ChallengeUI = {
         container.appendChild(el);
     },
 
-    _renderVotingButtons(buttonsEl, isChallenger, myVote) {
-        if (isChallenger) {
-            this._addWaitText(buttonsEl, 'Te megtámadtad — várakozás a szavazásra...');
-        } else if (myVote) {
-            this._addWaitText(buttonsEl, myVote === 'accept' ? 'Elfogadtad — várakozás...' : 'Elutasítottad — várakozás...');
-        } else {
-            this._addAcceptRejectButtons(buttonsEl, 'cast_vote');
-        }
-    },
-
-    _render2PlayerButtons(buttonsEl, myAccepted) {
-        if (myAccepted) {
-            this._addWaitText(buttonsEl, 'Elfogadva — várakozás...');
-        } else {
-            const rejectBtn = document.createElement('button');
-            rejectBtn.className = 'btn-challenge';
-            rejectBtn.textContent = 'Elutasít';
-            rejectBtn.addEventListener('click', () => socket.emit('reject_words'));
-            buttonsEl.appendChild(rejectBtn);
-
-            const acceptBtn = document.createElement('button');
-            acceptBtn.className = 'btn-accept';
-            acceptBtn.textContent = 'Elfogad';
-            acceptBtn.addEventListener('click', () => socket.emit('accept_words'));
-            buttonsEl.appendChild(acceptBtn);
-        }
-    },
-
-    _render3PlusButtons(buttonsEl, myAccepted) {
-        if (myAccepted) {
-            this._addWaitText(buttonsEl, 'Elfogadtad — várakozás...');
-        } else {
-            const challengeBtn = document.createElement('button');
-            challengeBtn.className = 'btn-challenge';
-            challengeBtn.textContent = 'Megtámad';
-            challengeBtn.addEventListener('click', () => socket.emit('challenge'));
-            buttonsEl.appendChild(challengeBtn);
-
-            const acceptBtn = document.createElement('button');
-            acceptBtn.className = 'btn-accept';
-            acceptBtn.textContent = 'Elfogad';
-            acceptBtn.addEventListener('click', () => socket.emit('accept_words'));
-            buttonsEl.appendChild(acceptBtn);
-        }
-    },
-
-    _addAcceptRejectButtons(buttonsEl, eventType) {
+    _renderVoteButtons(buttonsEl) {
         const acceptBtn = document.createElement('button');
         acceptBtn.className = 'btn-accept';
-        acceptBtn.textContent = 'Elfogad';
-        acceptBtn.addEventListener('click', () => socket.emit(eventType, { vote: 'accept' }));
+        acceptBtn.textContent = 'Elfogadom';
+        acceptBtn.addEventListener('click', () => socket.emit('accept_words'));
         buttonsEl.appendChild(acceptBtn);
 
         const rejectBtn = document.createElement('button');
         rejectBtn.className = 'btn-challenge';
-        rejectBtn.textContent = 'Elutasít';
-        rejectBtn.addEventListener('click', () => socket.emit(eventType, { vote: 'reject' }));
+        rejectBtn.textContent = 'Elutasítom';
+        rejectBtn.addEventListener('click', () => socket.emit('reject_words'));
         buttonsEl.appendChild(rejectBtn);
     },
 };
