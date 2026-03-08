@@ -1406,7 +1406,7 @@ def handle_respond_invite(data):
 if __name__ == '__main__':
     from auth import cleanup_expired
 
-    port = int(os.environ.get('PORT', 5555))
+    port = int(os.environ.get('PORT', 5000))
     use_tunnel = '--no-tunnel' not in sys.argv
 
     cleanup_expired()
