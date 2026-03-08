@@ -2,4 +2,5 @@ flask>=3.0
 flask-socketio>=5.3
 python-engineio>=4.8
 python-socketio>=5.10
+eventlet>=0.35
 pyenchant>=3.2

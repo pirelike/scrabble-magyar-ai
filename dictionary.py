@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 
 # Szótár fájlok helye (a projektben a dict/ mappában)
@@ -28,12 +29,14 @@ def _init_checker():
 
     # 2. Próbáljuk a hunspell CLI-t (Linux/macOS)
     try:
+        dict_path = os.path.join(_DICT_DIR, 'hu_HU') if os.path.isdir(_DICT_DIR) else 'hu_HU'
         result = subprocess.run(
-            ['hunspell', '-d', 'hu_HU', '-l'],
+            ['hunspell', '-d', dict_path, '-l'],
             input='teszt',
             capture_output=True,
             text=True,
             timeout=5,
+            env={**os.environ, 'DICPATH': _DICT_DIR},
         )
         _checker_type = 'cli'
         print("Szótár: hunspell CLI (hu_HU)")
@@ -43,6 +46,11 @@ def _init_checker():
 
     print("FIGYELEM: Szótár-ellenőrzés nem elérhető! Telepítsd a pyenchant csomagot és a dict/ mappa szótárfájljait.")
     _checker_type = None
+
+
+# Érvényes magyar szó karakterek (nagybetűk + ékezetes betűk)
+_VALID_WORD_RE = re.compile(r'^[A-ZÁÉÍÓÖŐÚÜŰ]+$')
+_MAX_WORD_LENGTH = 15  # A tábla 15x15, szó nem lehet hosszabb
 
 
 def check_words(words):
@@ -56,6 +64,13 @@ def check_words(words):
     if not words:
         return True, []
 
+    # Input sanitizálás: csak érvényes magyar betűkből álló szavakat engedünk
+    for word in words:
+        if not isinstance(word, str):
+            return False, [str(word)]
+        if len(word) > _MAX_WORD_LENGTH or not _VALID_WORD_RE.match(word):
+            return False, [word]
+
     if _checker_type is None:
         _init_checker()
 
@@ -66,12 +81,14 @@ def check_words(words):
     if _checker_type == 'cli':
         try:
             input_text = '\n'.join(words)
+            dict_path = os.path.join(_DICT_DIR, 'hu_HU') if os.path.isdir(_DICT_DIR) else 'hu_HU'
             result = subprocess.run(
-                ['hunspell', '-d', 'hu_HU', '-l'],
+                ['hunspell', '-d', dict_path, '-l'],
                 input=input_text,
                 capture_output=True,
                 text=True,
                 timeout=5,
+                env={**os.environ, 'DICPATH': _DICT_DIR},
             )
             invalid = [w.strip() for w in result.stdout.strip().split('\n') if w.strip()]
             return len(invalid) == 0, invalid
