@@ -243,13 +243,18 @@ def _start_challenge_timer(room_id):
         game = r.game
         if game.pending_challenge:
             success, result, msg = game.accept_pending()
-            expires_at = r.turn_timer_expires_at
-            for pid, gs in game.get_all_states().items():
-                gs['turn_timer_expires_at'] = expires_at
-                socketio.emit('game_state', gs, room=pid)
             _broadcast_challenge_result(room_id, result, msg)
-            if not game.finished:
+            if game.finished:
+                for pid, gs in game.get_all_states().items():
+                    gs['turn_timer_expires_at'] = None
+                    socketio.emit('game_state', gs, room=pid)
+                _save_game_to_db(room_id)
+            else:
                 _start_turn_timer(room_id)
+                new_expires_at = r.turn_timer_expires_at
+                for pid, gs in game.get_all_states().items():
+                    gs['turn_timer_expires_at'] = new_expires_at
+                    socketio.emit('game_state', gs, room=pid)
 
     socketio.start_background_task(timeout_callback)
 
@@ -282,17 +287,21 @@ def _start_turn_timer(room_id):
         # Auto-passz a jelenlegi játékos nevében
         success, msg = game.pass_turn(current.id)
         if success:
-            r.invalidate_turn_timer()
-            for pid, gs in game.get_all_states().items():
-                gs['turn_timer_expires_at'] = None
-                socketio.emit('game_state', gs, room=pid)
             socketio.emit('action_result',
                           {'success': True, 'message': f'Időtúllépés: {current.name} passzolt.'},
                           room=room_id)
             if game.finished:
+                r.invalidate_turn_timer()
+                for pid, gs in game.get_all_states().items():
+                    gs['turn_timer_expires_at'] = None
+                    socketio.emit('game_state', gs, room=pid)
                 _save_game_to_db(room_id)
             else:
-                _start_turn_timer(room_id)  # következő kör timere
+                _start_turn_timer(room_id)  # következő kör timere, sets new expires_at
+                new_expires_at = r.turn_timer_expires_at
+                for pid, gs in game.get_all_states().items():
+                    gs['turn_timer_expires_at'] = new_expires_at
+                    socketio.emit('game_state', gs, room=pid)
 
     socketio.start_background_task(timeout_callback)
 
@@ -310,10 +319,12 @@ def _handle_challenge_result(room_id, room, game, result, msg):
     """Challenge/szavazás eredmény feldolgozása: timer és broadcast."""
     if result in ('accepted', 'vote_accepted', 'vote_rejected'):
         room.invalidate_challenge_timer()
-    _emit_all_states(game, room_id)
     _broadcast_challenge_result(room_id, result, msg)
-    if not game.finished:
+    if game.finished:
+        _save_game_to_db(room_id)
+    else:
         _start_turn_timer(room_id)
+    _emit_all_states(game, room_id)
 
 
 # --- Game persistence ---
@@ -907,10 +918,10 @@ def handle_start_game():
             abandon_game_by_id(save_data['id'])
             room.db_game_id = None
 
+            _start_turn_timer(room_id)
             _emit_all_states(restored_game, room_id)
             emit('game_started', {}, room=room_id)
             emit('rooms_list', state.get_rooms_list(), broadcast=True)
-            _start_turn_timer(room_id)
         except Exception as e:
             print(f"[restore] Hiba a visszaállításnál: {e}")
             emit('error', {'message': 'Hiba a játék visszaállításánál.'})
@@ -923,11 +934,11 @@ def handle_start_game():
         return
 
     state.remove_invites_for_room(room_id)
+    _start_turn_timer(room_id)
     _emit_all_states(game, room_id)
     emit('game_started', {}, room=room_id)
     emit('rooms_list', state.get_rooms_list(), broadcast=True)
-    _start_turn_timer(room_id)
-    
+
     # Kezdeti mentés, hogy a játékos lista perzisztens legyen
     _save_game_to_db(room_id)
 
@@ -1070,14 +1081,14 @@ def handle_place_tiles(data):
 
     if success:
         room.invalidate_turn_timer()
-        _emit_all_states(game, room_id)
         emit('action_result', {'success': True, 'message': msg, 'score': score})
         if game.pending_challenge:
             _start_challenge_timer(room_id)
-        elif not game.finished:
-            _start_turn_timer(room_id)
-        if game.finished:
+        elif game.finished:
             _save_game_to_db(room_id)
+        else:
+            _start_turn_timer(room_id)
+        _emit_all_states(game, room_id)
     else:
         emit('action_result', {'success': False, 'message': msg})
 
@@ -1105,9 +1116,9 @@ def handle_exchange_tiles(data):
 
     if success:
         room.invalidate_turn_timer()
-        _emit_all_states(game, room_id)
         emit('action_result', {'success': True, 'message': msg})
         _start_turn_timer(room_id)
+        _emit_all_states(game, room_id)
     else:
         emit('action_result', {'success': False, 'message': msg})
 
@@ -1123,12 +1134,12 @@ def handle_pass_turn():
 
     if success:
         room.invalidate_turn_timer()
-        _emit_all_states(game, room_id)
         emit('action_result', {'success': True, 'message': msg})
         if game.finished:
             _save_game_to_db(room_id)
         else:
             _start_turn_timer(room_id)
+        _emit_all_states(game, room_id)
     else:
         emit('action_result', {'success': False, 'message': msg})
 
