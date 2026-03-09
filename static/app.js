@@ -2667,6 +2667,14 @@ const Friends = {
             this.load();
         });
 
+        socket.on('friend_presence_changed', (data) => {
+            if (!data || typeof data.friend_id !== 'number') return;
+            const friend = this.friendsList.find(f => f.id === data.friend_id);
+            if (!friend) return;
+            friend.online = !!data.online;
+            this.renderList();
+        });
+
         socket.on('invite_sent', (data) => {
             showMessage(data.message, !data.success);
         });
