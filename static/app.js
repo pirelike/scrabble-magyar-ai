@@ -2852,7 +2852,7 @@ const Friends = {
         this.load().then(() => {
             const onlineFriends = this.friendsList.filter(f => f.online);
             if (onlineFriends.length === 0) {
-                container.innerHTML = '<p class="empty-msg">Nincs elérhető barátod jelenleg.</p>';
+                container.innerHTML = '<div class="empty-state"><p class="empty-msg">Nincs elérhető barátod jelenleg.</p></div>';
             } else {
                 container.innerHTML = onlineFriends.map(f => `
                     <div class="friend-item">
