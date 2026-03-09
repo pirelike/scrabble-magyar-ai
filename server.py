@@ -470,6 +470,7 @@ def handle_disconnect():
             state.cleanup_player_token(sid)
 
     state.player_names.pop(sid, None)
+    state.remove_online_user(sid)
     # player_auth törlése: csak ha NEM grace period-ban van (aktív játék disconnect)
     # Grace period esetén az auth info a _disconnected_players-ben van mentve,
     # és a _finalize_player_disconnect fogja törölni.
@@ -615,7 +616,13 @@ def handle_rejoin_room(data):
     state.player_names[sid] = player_name
     # Visszaállítjuk az auth info-t is ha van
     if 'auth_info' in token_info:
-        state.player_auth[sid] = token_info['auth_info']
+        auth_info = token_info['auth_info']
+        state.player_auth[sid] = auth_info
+        # Online tracking visszaállítása (register_player logikája)
+        user_id = auth_info.get('user_id') if auth_info else None
+        if user_id and not auth_info.get('is_guest'):
+            state._sid_to_user_id[sid] = user_id
+            state._online_users.setdefault(user_id, set()).add(sid)
 
     join_room(room_id)
 
