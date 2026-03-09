@@ -455,3 +455,155 @@ class TestReplayDbFunctions:
         }])
 
         assert is_user_in_game(game_id, None) is False
+
+
+# ===========================================================================
+# End-to-end: socket game → profile HTTP API (game history)
+# ===========================================================================
+
+class TestGameHistoryE2E:
+    """Full end-to-end tests: socket game finishes → profile API returns history.
+
+    These tests confirm that after a complete game played via Socket.IO,
+    the registered user sees the game in their profile history.
+    The key invariant: game_players.user_id must be persisted for the
+    history JOIN to find the row.
+    """
+
+    @pytest.fixture
+    def http_client(self, app):
+        return app.test_client()
+
+    def _login_cookie(self, http_client, user_id):
+        """Set a valid session cookie on the HTTP test client."""
+        from auth import create_session
+        token = create_session(user_id)
+        http_client.set_cookie('session_token', token, domain='localhost')
+        return token
+
+    def test_registered_player_game_appears_in_history(self, app, socketio_app, http_client):
+        """After a non-challenge game ends, registered player sees it in profile history."""
+        from auth import create_user, get_user_game_history
+
+        _, uid = create_user('hist1@x.com', 'HistP1', 'pass123!')
+
+        c1, c2, room_id = _create_started_game(app, socketio_app)
+
+        import server
+        room = server.rooms[room_id]
+        # Re-register c1 as registered user so player_auth has user_id
+        sid1 = room.game.players[0].id
+        server.player_auth[sid1] = {'user_id': uid, 'is_guest': False}
+
+        # End game via 4 passes
+        c1.emit('pass_turn'); c1.get_received(); c2.get_received()
+        c2.emit('pass_turn'); c2.get_received(); c1.get_received()
+        c1.emit('pass_turn'); c1.get_received(); c2.get_received()
+        c2.emit('pass_turn'); c2.get_received(); c1.get_received()
+
+        assert room.game.finished
+        history = get_user_game_history(uid)
+        assert len(history) == 1, (
+            "Registered player's game must appear in profile history after game ends"
+        )
+        assert history[0]['final_score'] == room.game.players[0].score
+        c1.disconnect(); c2.disconnect()
+
+    def test_profile_api_returns_history_for_registered_user(self, app, socketio_app, http_client):
+        """The /api/auth/profile endpoint returns history entries after a game."""
+        from auth import create_user
+
+        _, uid = create_user('hist2@x.com', 'HistP2', 'pass123!')
+        self._login_cookie(http_client, uid)
+
+        c1, c2, room_id = _create_started_game(app, socketio_app)
+
+        import server
+        room = server.rooms[room_id]
+        sid1 = room.game.players[0].id
+        server.player_auth[sid1] = {'user_id': uid, 'is_guest': False}
+
+        # End game via passes
+        c1.emit('pass_turn'); c1.get_received(); c2.get_received()
+        c2.emit('pass_turn'); c2.get_received(); c1.get_received()
+        c1.emit('pass_turn'); c1.get_received(); c2.get_received()
+        c2.emit('pass_turn'); c2.get_received(); c1.get_received()
+
+        assert room.game.finished
+
+        res = http_client.get('/api/auth/profile')
+        data = res.get_json()
+        assert data['success'] is True
+        assert len(data['history']) == 1, (
+            "Profile API must return 1 history entry after game ends"
+        )
+        assert data['history'][0]['game_id'] == room.db_game_id
+        c1.disconnect(); c2.disconnect()
+
+    def test_challenge_mode_game_appears_in_history_after_accept(self, app, socketio_app, http_client):
+        """Challenge-mode game appears in history after ending via accept_words."""
+        from auth import create_user, get_user_game_history
+
+        _, uid = create_user('hist3@x.com', 'HistP3', 'pass123!')
+
+        c1, c2, room_id = _create_started_game(
+            app, socketio_app, challenge_mode=True
+        )
+        import server
+        room = server.rooms[room_id]
+        sid1 = room.game.players[0].id
+        server.player_auth[sid1] = {'user_id': uid, 'is_guest': False}
+
+        # End game via 4 passes (challenge mode, no tiles placed)
+        c1.emit('pass_turn'); c1.get_received(); c2.get_received()
+        c2.emit('pass_turn'); c2.get_received(); c1.get_received()
+        c1.emit('pass_turn'); c1.get_received(); c2.get_received()
+        c2.emit('pass_turn'); c2.get_received(); c1.get_received()
+
+        assert room.game.finished
+        history = get_user_game_history(uid)
+        assert len(history) == 1, (
+            "Challenge-mode game must appear in history after ending "
+            "(fix: _save_game_to_db called in challenge result handler)"
+        )
+        c1.disconnect(); c2.disconnect()
+
+    def test_guest_game_does_not_appear_in_registered_user_history(self, app, socketio_app):
+        """A guest player's games must NOT appear in a registered user's history."""
+        from auth import create_user, get_user_game_history
+
+        _, uid = create_user('hist4@x.com', 'HistP4', 'pass123!')
+
+        # Both players are guests (no user_id)
+        c1, c2, room_id = _create_started_game(app, socketio_app)
+
+        c1.emit('pass_turn'); c1.get_received(); c2.get_received()
+        c2.emit('pass_turn'); c2.get_received(); c1.get_received()
+        c1.emit('pass_turn'); c1.get_received(); c2.get_received()
+        c2.emit('pass_turn'); c2.get_received(); c1.get_received()
+
+        history = get_user_game_history(uid)
+        assert len(history) == 0, "Guest games must not appear in registered user history"
+        c1.disconnect(); c2.disconnect()
+
+    def test_stats_updated_after_game_ends(self, app, socketio_app):
+        """games_played stat is updated in the users table after game ends."""
+        from auth import create_user, get_user_by_id
+
+        _, uid = create_user('hist5@x.com', 'HistP5', 'pass123!')
+
+        c1, c2, room_id = _create_started_game(app, socketio_app)
+        import server
+        room = server.rooms[room_id]
+        sid1 = room.game.players[0].id
+        server.player_auth[sid1] = {'user_id': uid, 'is_guest': False}
+
+        c1.emit('pass_turn'); c1.get_received(); c2.get_received()
+        c2.emit('pass_turn'); c2.get_received(); c1.get_received()
+        c1.emit('pass_turn'); c1.get_received(); c2.get_received()
+        c2.emit('pass_turn'); c2.get_received(); c1.get_received()
+
+        assert room.game.finished
+        user = get_user_by_id(uid)
+        assert user['games_played'] == 1, "games_played must be incremented after game ends"
+        c1.disconnect(); c2.disconnect()
