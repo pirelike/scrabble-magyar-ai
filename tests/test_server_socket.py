@@ -887,6 +887,72 @@ class TestOwnerLeaveDisband:
 
         c2.disconnect()
 
+    def test_new_owner_receives_room_code_after_transfer(self, app, socketio_app, registered_client):
+        """After ownership transfer the new owner must receive room_code.
+
+        This is the server-side contract that the frontend relies on to set
+        AppState.isOwner = true and reveal the start-game / invite buttons.
+        Regression test for: new leader buttons not visible after transfer.
+        """
+        registered_client.emit('create_room', {'name': 'CodeTransfer', 'max_players': 4})
+        received = registered_client.get_received()
+        code = next(r for r in received if r['name'] == 'room_code')['args'][0]['code']
+
+        c2 = socketio_app.test_client(app)
+        c2.emit('set_name', {'name': 'NewLeader', 'is_guest': True, 'user_id': None})
+        c2.get_received()
+        c2.emit('join_room', {'code': code})
+        c2.get_received()  # clear join events
+
+        # Original owner leaves → triggers _transfer_ownership on the server
+        registered_client.emit('leave_room')
+        registered_client.get_received()
+
+        # New owner MUST receive room_code so the frontend can set isOwner=True
+        c2_received = c2.get_received()
+        code_events = [r for r in c2_received if r['name'] == 'room_code']
+        assert len(code_events) == 1, (
+            "New owner did not receive room_code after ownership transfer; "
+            "frontend would never set AppState.isOwner=true and buttons stay hidden"
+        )
+
+        c2.disconnect()
+
+    def test_new_owner_can_start_game_after_transfer(self, app, socketio_app, registered_client):
+        """After ownership transfer the new owner must be able to start the game.
+
+        Verifies the full ownership transfer: server state + permission check.
+        Regression test for: new leader buttons not visible after transfer.
+        """
+        registered_client.emit('create_room', {'name': 'StartTransfer', 'max_players': 4})
+        received = registered_client.get_received()
+        code = next(r for r in received if r['name'] == 'room_code')['args'][0]['code']
+
+        c2 = socketio_app.test_client(app)
+        c2.emit('set_name', {'name': 'NewLeaderStart', 'is_guest': True, 'user_id': None})
+        c2.get_received()
+        c2.emit('join_room', {'code': code})
+        c2.get_received()
+
+        # Original owner leaves
+        registered_client.emit('leave_room')
+        registered_client.get_received()
+        c2.get_received()  # clear transfer events
+
+        # New owner starts the game — must succeed, not return an error
+        c2.emit('start_game')
+        c2_received = c2.get_received()
+
+        error_events = [r for r in c2_received if r['name'] == 'error']
+        assert len(error_events) == 0, (
+            f"New owner got an error when trying to start the game: "
+            f"{error_events[0]['args'][0]['message'] if error_events else ''}"
+        )
+        started_events = [r for r in c2_received if r['name'] == 'game_started']
+        assert len(started_events) >= 1, "game_started event not received by new owner"
+
+        c2.disconnect()
+
 
 class TestTurnTimeLimit:
     """Turn time limit feature tests."""
