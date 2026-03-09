@@ -1007,6 +1007,8 @@ const WaitingRoom = {
         AppState.currentRoomCode = data.code;
         document.getElementById('room-code-value').textContent = data.code;
         document.getElementById('room-code-display').classList.remove('hidden');
+        AppState.isOwner = true;
+        this.update();
     },
 
     onLeft() {

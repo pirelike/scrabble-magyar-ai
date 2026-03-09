@@ -2977,6 +2977,10 @@ button.link-btn:hover {
     margin-top: var(--space-4);
 }
 
+.waiting-actions button {
+    flex: 1;
+}
+
 
 
 
