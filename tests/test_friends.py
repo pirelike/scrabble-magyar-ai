@@ -375,3 +375,84 @@ def test_multiple_sids_one_user(client, app, socketio_app, temp_db):
     # Másik is kilép
     st.unregister_player(sids[1])
     assert not st.is_user_online(u1_id)
+
+
+def test_online_status_cleared_on_real_disconnect(app, socketio_app, temp_db):
+    """handle_disconnect() eltávolítja a felhasználót az _online_users-ből.
+
+    Regressziós teszt: korábban a _sid_to_user_id és _online_users soha nem
+    tisztult le disconnect-kor (unregister_player nem volt meghívva), ezért
+    böngészőzárás után a játékos örökre online-nak látszott a barátok számára
+    és meghívható maradt.
+    """
+    from server import state as st
+
+    _, u1_id = create_user('disc_real@test.com', 'DiscReal', 'pwd')
+
+    c = create_registered_client(app, socketio_app, 'DiscReal', u1_id)
+    assert st.is_user_online(u1_id), "set_name után online kell legyen"
+
+    # Valódi disconnect — lefuttatja a szerver handle_disconnect handler-t
+    c.disconnect()
+
+    assert not st.is_user_online(u1_id), (
+        "Disconnectelés után nem szabad online-nak látszani; "
+        "a handle_disconnect-nek hívnia kell remove_online_user(sid)-t"
+    )
+    assert u1_id not in st._online_users, "_online_users-ben sem maradhat bejegyzés"
+    # _sid_to_user_id is tisztának kell lennie
+    for sid, uid in st._sid_to_user_id.items():
+        assert uid != u1_id, "_sid_to_user_id-ban sem maradhat a felhasználó"
+
+
+def test_online_status_restored_on_rejoin(app, socketio_app, temp_db):
+    """rejoin_room visszaveszi a felhasználót az _online_users-be.
+
+    Regressziós teszt: korábban a rejoin handler nem állította vissza az
+    online tracking-et, ezért a visszacsatlakozó játékos offline-nak látszott
+    a barátai számára a játék teljes hátralévő ideje alatt.
+    """
+    from server import state as st
+
+    _, u1_id = create_user('rejoin_onl@test.com', 'RejoinOnl', 'pwd')
+    _, u2_id = create_user('rejoin_p2@test.com', 'RejoinP2', 'pwd')
+
+    c1 = create_registered_client(app, socketio_app, 'RejoinOnl', u1_id)
+    c2 = create_registered_client(app, socketio_app, 'RejoinP2', u2_id)
+
+    # c1 szobát hoz létre, elkéri a reconnect tokent a room_joined eventből
+    c1.emit('create_room', {'name': 'RejoinRoom', 'max_players': 2})
+    received = c1.get_received()
+    token = next(r for r in received if r['name'] == 'room_joined')['args'][0]['reconnect_token']
+    code = next(r for r in received if r['name'] == 'room_code')['args'][0]['code']
+
+    c2.emit('join_room', {'code': code})
+    c2.get_received()
+    c1.get_received()
+
+    c1.emit('start_game')
+    c1.get_received()
+    c2.get_received()
+
+    assert st.is_user_online(u1_id), "Játék elején online kell legyen"
+
+    # c1 lecsatlakozik aktív játék közben → grace period indul,
+    # de remove_online_user(sid) azonnal meghívódik (a fix után)
+    c1.disconnect()
+    assert not st.is_user_online(u1_id), "Disconnect után offline kell legyen"
+
+    # c1 visszacsatlakozik tokennel (új socket kapcsolat)
+    c1_new = socketio_app.test_client(app)
+    c1_new.emit('rejoin_room', {'token': token})
+    received_new = c1_new.get_received()
+
+    rejoin_ok = any(r['name'] == 'room_joined' for r in received_new)
+    assert rejoin_ok, "A rejoin_room eseménynek room_joined választ kell adnia"
+
+    assert st.is_user_online(u1_id), (
+        "Visszacsatlakozás után ismét online-nak kell látszani; "
+        "a rejoin_room handler-nek vissza kell venni a felhasználót _online_users-be"
+    )
+
+    c1_new.disconnect()
+    c2.disconnect()
