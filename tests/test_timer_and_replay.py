@@ -540,8 +540,11 @@ class TestGameHistoryE2E:
         assert data['history'][0]['game_id'] == room.db_game_id
         c1.disconnect(); c2.disconnect()
 
-    def test_challenge_mode_game_appears_in_history_after_accept(self, app, socketio_app, http_client):
-        """Challenge-mode game appears in history after ending via accept_words."""
+    @patch('board.check_words', return_value=(True, []))
+    def test_challenge_mode_game_ends_via_accept_words_saves_to_db(self, mock_check, app, socketio_app, http_client):
+        """The actual fixed path: challenge mode, P1 places last tiles,
+        P2 accepts → game.finished → _save_game_to_db called via
+        _handle_challenge_result (this was the broken path before the fix)."""
         from auth import create_user, get_user_game_history
 
         _, uid = create_user('hist3@x.com', 'HistP3', 'pass123!')
@@ -551,10 +554,55 @@ class TestGameHistoryE2E:
         )
         import server
         room = server.rooms[room_id]
+        game = room.game
+
+        # Register P1 as a proper user
+        sid1 = game.players[0].id
+        server.player_auth[sid1] = {'user_id': uid, 'is_guest': False}
+
+        # Force end-game conditions: P1 has exactly 2 tiles, bag is empty.
+        # After placing those 2 tiles, hand is empty + bag empty → game ends on accept.
+        game.bag.tiles.clear()
+        game.players[0].hand = ['A', 'B']
+
+        c1.emit('place_tiles', {'tiles': [
+            {'row': 7, 'col': 6, 'letter': 'A', 'is_blank': False},
+            {'row': 7, 'col': 7, 'letter': 'B', 'is_blank': False},
+        ]})
+        c1.get_received(); c2.get_received()
+
+        # P1's tiles are placed, pending_challenge is set
+        assert game.pending_challenge is not None, "pending_challenge must be set after placement"
+
+        # P2 accepts → _finalize_accept → hand empty + bag empty → game.finished
+        c2.emit('accept_words')
+        c1.get_received(); c2.get_received()
+
+        assert game.finished, "Game must be finished after P2 accepts P1's last tiles"
+
+        history = get_user_game_history(uid)
+        assert len(history) == 1, (
+            "Challenge-mode game ending via accept_words must appear in history. "
+            "This was the broken path fixed by calling _save_game_to_db in "
+            "_handle_challenge_result when game.finished is True."
+        )
+        c1.disconnect(); c2.disconnect()
+
+    def test_challenge_mode_game_via_passes_also_saves(self, app, socketio_app):
+        """2x2 passes in challenge mode saves correctly (this path was never broken,
+        since handle_pass_turn always called _save_game_to_db)."""
+        from auth import create_user, get_user_game_history
+
+        _, uid = create_user('hist3b@x.com', 'HistP3b', 'pass123!')
+
+        c1, c2, room_id = _create_started_game(
+            app, socketio_app, challenge_mode=True
+        )
+        import server
+        room = server.rooms[room_id]
         sid1 = room.game.players[0].id
         server.player_auth[sid1] = {'user_id': uid, 'is_guest': False}
 
-        # End game via 4 passes (challenge mode, no tiles placed)
         c1.emit('pass_turn'); c1.get_received(); c2.get_received()
         c2.emit('pass_turn'); c2.get_received(); c1.get_received()
         c1.emit('pass_turn'); c1.get_received(); c2.get_received()
@@ -562,10 +610,7 @@ class TestGameHistoryE2E:
 
         assert room.game.finished
         history = get_user_game_history(uid)
-        assert len(history) == 1, (
-            "Challenge-mode game must appear in history after ending "
-            "(fix: _save_game_to_db called in challenge result handler)"
-        )
+        assert len(history) == 1, "2x2 pass game in challenge mode must save to DB"
         c1.disconnect(); c2.disconnect()
 
     def test_guest_game_does_not_appear_in_registered_user_history(self, app, socketio_app):
