@@ -652,3 +652,158 @@ class TestGameHistoryE2E:
         user = get_user_by_id(uid)
         assert user['games_played'] == 1, "games_played must be incremented after game ends"
         c1.disconnect(); c2.disconnect()
+
+
+# ===========================================================================
+# All game-ending paths: verify _save_game_to_db is called in each scenario
+# ===========================================================================
+
+class TestAllGameEndPaths:
+    """Verify _save_game_to_db is called in every possible game-ending scenario.
+
+    There are exactly 5 paths where game.finished can become True:
+      1. handle_place_tiles  → non-challenge → hand+bag empty
+      2. handle_pass_turn    → all consecutive_passes >= 2
+      3. _handle_challenge_result (accept_words) → challenge accepts → hand+bag empty
+      4. _start_challenge_timer timeout → auto-accept → hand+bag empty
+      5. _start_turn_timer timeout → auto-pass → all consecutive_passes >= 2
+
+    Paths 2 and 3 are covered by other test classes.  This class adds explicit
+    tests for paths 1, 4, and 5 which use background tasks or direct game-end.
+    """
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_non_challenge_place_tiles_end_saves_to_db(self, mock_check, app, socketio_app):
+        """Path 1: non-challenge place_tiles, hand empties + bag empty → game ends.
+        server.py line 1087-1088: elif game.finished: _save_game_to_db(room_id)"""
+        from auth import get_game_moves
+
+        c1, c2, room_id = _create_started_game(
+            app, socketio_app, challenge_mode=False
+        )
+        import server
+        room = server.rooms[room_id]
+        game = room.game
+
+        # Force end-game conditions: empty bag, P1 has exactly 2 tiles
+        game.bag.tiles.clear()
+        game.players[0].hand = ['A', 'B']
+
+        c1.emit('place_tiles', {'tiles': [
+            {'row': 7, 'col': 6, 'letter': 'A', 'is_blank': False},
+            {'row': 7, 'col': 7, 'letter': 'B', 'is_blank': False},
+        ]})
+        rcv = c1.get_received()
+        c2.get_received()
+
+        action = next((m for m in rcv if m['name'] == 'action_result'), None)
+        assert action is not None and action['args'][0]['success'], (
+            "place_tiles must succeed for this test to be meaningful"
+        )
+        assert game.pending_challenge is None, "non-challenge mode: no pending_challenge"
+        assert game.finished, "Game must be finished (hand empty + bag empty)"
+        assert room.db_game_id is not None, "_save_game_to_db must have been called"
+
+        moves = get_game_moves(room.db_game_id)
+        assert any(m['action_type'] == 'place' for m in moves), (
+            "The winning place move must be persisted to DB for replay"
+        )
+        c1.disconnect(); c2.disconnect()
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_challenge_timer_timeout_game_end_saves_to_db(self, mock_check, app, socketio_app):
+        """Path 4: challenge timer times out, auto-accept fires, hand+bag empty → game ends.
+        server.py _start_challenge_timer line 247-251: if game.finished: _save_game_to_db"""
+        from auth import get_game_moves
+
+        # Capture the background task so we can fire it manually
+        bg_tasks = []
+
+        def capture_bg_task(fn, *args, **kwargs):
+            bg_tasks.append(fn)
+
+        import server
+        with patch.object(server.socketio, 'start_background_task',
+                          side_effect=capture_bg_task):
+            c1, c2, room_id = _create_started_game(
+                app, socketio_app, challenge_mode=True
+            )
+            room = server.rooms[room_id]
+            game = room.game
+
+            # Force end-game conditions: empty bag, P1 has exactly 2 tiles
+            game.bag.tiles.clear()
+            game.players[0].hand = ['A', 'B']
+
+            c1.emit('place_tiles', {'tiles': [
+                {'row': 7, 'col': 6, 'letter': 'A', 'is_blank': False},
+                {'row': 7, 'col': 7, 'letter': 'B', 'is_blank': False},
+            ]})
+            c1.get_received(); c2.get_received()
+
+        assert game.pending_challenge is not None, "pending_challenge must be set"
+        # The last background task captured is the challenge timer callback
+        challenge_cb = bg_tasks[-1]
+
+        # Fire the timeout callback (skip actual sleep)
+        with patch('time.sleep'):
+            challenge_cb()
+
+        assert game.finished, "Game must be finished after challenge timer auto-accept"
+        assert room.db_game_id is not None, "_save_game_to_db must have been called"
+
+        moves = get_game_moves(room.db_game_id)
+        # In challenge mode, accepted placements are recorded as 'challenge_accept'
+        # (see game.py _finalize_accept → _record_move(..., 'challenge_accept', ...))
+        assert any(m['action_type'] == 'challenge_accept' for m in moves), (
+            "The winning placement must be persisted as 'challenge_accept' when "
+            "challenge timer auto-accepts"
+        )
+        c1.disconnect(); c2.disconnect()
+
+    def test_turn_timer_autopass_game_end_saves_to_db(self, app, socketio_app):
+        """Path 5: turn timer fires, auto-pass triggers game end (all passed >= 2x).
+        server.py _start_turn_timer line 293-298: if game.finished: _save_game_to_db"""
+        from auth import get_game_moves
+
+        bg_tasks = []
+
+        def capture_bg_task(fn, *args, **kwargs):
+            bg_tasks.append(fn)
+
+        import server
+        with patch.object(server.socketio, 'start_background_task',
+                          side_effect=capture_bg_task):
+            c1, c2, room_id = _create_started_game(
+                app, socketio_app, turn_time_limit=60
+            )
+            room = server.rooms[room_id]
+            game = room.game
+
+            # Pre-set consecutive_passes so P1's one auto-pass triggers game end:
+            # P1 (current player): 1 → auto-pass → 2
+            # P2: already at 2
+            # → all([2, 2]) = True → _end_game called
+            game.players[0].consecutive_passes = 1
+            game.players[1].consecutive_passes = 2
+
+        # The last background task is the timer callback for P1's turn
+        assert bg_tasks, "A turn timer background task must have been registered"
+        timer_cb = bg_tasks[-1]
+
+        # Fire the timeout callback (skip actual sleep)
+        with patch('time.sleep'):
+            timer_cb()
+
+        assert game.finished, (
+            "Game must be finished: P2 already passed 2x, P1 auto-passed once more"
+        )
+        assert room.db_game_id is not None, (
+            "_save_game_to_db must be called when turn timer auto-pass ends the game"
+        )
+
+        moves = get_game_moves(room.db_game_id)
+        assert any(m['action_type'] == 'pass' for m in moves), (
+            "The auto-pass move must be persisted when turn timer ends the game"
+        )
+        c1.disconnect(); c2.disconnect()
