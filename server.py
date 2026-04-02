@@ -421,6 +421,10 @@ def handle_disconnect():
     sid = request.sid
     room_id = state.player_rooms.get(sid)
     token = state.get_reconnect_token_for_sid(sid)
+    auth_info = state.player_auth.get(sid, {})
+    user_id = auth_info.get('user_id') if isinstance(auth_info, dict) else None
+    is_registered_user = bool(user_id and not auth_info.get('is_guest')) if isinstance(auth_info, dict) else False
+    was_online = state.is_user_online(user_id) if is_registered_user else False
 
     if room_id and room_id in state.rooms:
         room = state.rooms[room_id]
@@ -471,6 +475,8 @@ def handle_disconnect():
 
     state.player_names.pop(sid, None)
     state.remove_online_user(sid)
+    if is_registered_user and was_online and not state.is_user_online(user_id):
+        _notify_friends_presence_change(user_id, False)
     # player_auth törlése: csak ha NEM grace period-ban van (aktív játék disconnect)
     # Grace period esetén az auth info a _disconnected_players-ben van mentve,
     # és a _finalize_player_disconnect fogja törölni.
@@ -481,6 +487,17 @@ def handle_disconnect():
     rate_limiter.clear_sid(sid)
 
     emit('rooms_list', state.get_rooms_list(), broadcast=True)
+
+
+def _notify_friends_presence_change(user_id, online):
+    """Értesíti az online barátokat, ha egy felhasználó státusza változott."""
+    for friend in auth_get_friends(user_id):
+        friend_sids = state.get_user_sids(friend['id'])
+        for fsid in friend_sids:
+            emit('friend_presence_changed', {
+                'friend_id': user_id,
+                'online': online,
+            }, room=fsid)
 
 
 def _finalize_player_disconnect(token):
@@ -560,10 +577,17 @@ def handle_set_name(data):
     if not name:
         name = 'Névtelen'
 
+    user_id = data.get('user_id')
+    is_guest = data.get('is_guest', True)
+    was_online = bool(user_id and not is_guest and state.is_user_online(user_id))
+
     state.register_player(sid, name, {
-        'user_id': data.get('user_id'),
-        'is_guest': data.get('is_guest', True),
+        'user_id': user_id,
+        'is_guest': is_guest,
     })
+
+    if user_id and not is_guest and not was_online and state.is_user_online(user_id):
+        _notify_friends_presence_change(user_id, True)
 
 
 @socketio.on('rejoin_room')

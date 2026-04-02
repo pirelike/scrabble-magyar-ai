@@ -456,3 +456,50 @@ def test_online_status_restored_on_rejoin(app, socketio_app, temp_db):
 
     c1_new.disconnect()
     c2.disconnect()
+
+
+def test_friend_presence_change_emitted_on_login(app, socketio_app, temp_db):
+    _, u1_id = create_user('pres_login_1@test.com', 'PresLogin1', 'pwd')
+    _, u2_id = create_user('pres_login_2@test.com', 'PresLogin2', 'pwd')
+    send_friend_request(u1_id, u2_id)
+    accept_friend_request(u2_id, u1_id)
+
+    observer = create_registered_client(app, socketio_app, 'PresLogin1', u1_id)
+    observer.get_received()
+
+    subject = create_registered_client(app, socketio_app, 'PresLogin2', u2_id)
+    events = observer.get_received()
+
+    assert any(
+        e['name'] == 'friend_presence_changed' and
+        e['args'][0]['friend_id'] == u2_id and
+        e['args'][0]['online'] is True
+        for e in events
+    )
+
+    subject.disconnect()
+    observer.disconnect()
+
+
+def test_friend_presence_change_emitted_on_logout(app, socketio_app, temp_db):
+    _, u1_id = create_user('pres_logout_1@test.com', 'PresLogout1', 'pwd')
+    _, u2_id = create_user('pres_logout_2@test.com', 'PresLogout2', 'pwd')
+    send_friend_request(u1_id, u2_id)
+    accept_friend_request(u2_id, u1_id)
+
+    observer = create_registered_client(app, socketio_app, 'PresLogout1', u1_id)
+    subject = create_registered_client(app, socketio_app, 'PresLogout2', u2_id)
+    observer.get_received()
+    subject.get_received()
+
+    subject.disconnect()
+    events = observer.get_received()
+
+    assert any(
+        e['name'] == 'friend_presence_changed' and
+        e['args'][0]['friend_id'] == u2_id and
+        e['args'][0]['online'] is False
+        for e in events
+    )
+
+    observer.disconnect()
