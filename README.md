@@ -33,8 +33,9 @@ Open http://localhost:5000 in your browser.
 - **Drag & drop és kattintásos** betűelhelyezés
 - **Joker** — üres zseton bármely betűként használható
 - **Betűcsere és passz**
-- **Körönkénti időlimit** — opcionális (60/90/120/180/300 mp), lejáratkor automatikus passz
+- **Körönkénti időlimit** — opcionális (0/60/90/120/180/300 mp), lejáratkor automatikus passz
 - **Megtámadás (challenge) mód** — szobánként bekapcsolható; 2 játékosnál kötelező elfogadás/elutasítás, 3+ játékosnál szavazásos rendszer (nincs szótár-ellenőrzés, kizárólag a játékosok döntése számít)
+- **Barátlista és szobameghívó** — regisztrált játékosok egymást barátnak jelölhetik (kérés küldés/elfogadás/elutasítás, barát eltávolítás), online státusz jelzővel; a várakozó szoba tulajdonosa barátait közvetlenül meghívhatja a szobába
 - **In-game chat** — játék közbeni szöveges üzenetküldés a szobában lévő játékosok között
 - **Játék mentés / visszatöltés** — manuális mentés (owner-only); lobby-first restore flow: a tulajdonos visszaállítja a mentést, várakozó szoba jön létre ahová az eredeti játékosok csatlakozhatnak
 - **Visszajátszás** — befejezett játékok lépésről lépésre visszanézhetők (board snapshot-okkal)
@@ -262,7 +263,7 @@ templates/
 static/
   app.js           — Kliens logika, drag & drop, pinch-to-zoom, Socket.IO, auth, téma, hang
   style.css        — Stílusok, sötét/világos téma (Slate+Gold paletta), reszponzív layout
-tests/             — Tesztek (pytest, 363 teszt)
+tests/             — Tesztek (pytest, 413 teszt)
 ```
 
 ---
@@ -307,8 +308,10 @@ A játék kiemelt figyelmet fordít a multiplayer sessionök stabilitására:
 | `tests/test_dictionary.py` | 19 | Szótár-ellenőrzés |
 | `tests/test_email_service.py` | 4 | Email küldés |
 | `tests/test_room.py` | 12 | Room osztály |
+| `tests/test_friends.py` | 23 | Barát CRUD, kérések, felhasználókeresés, szobameghívó, online státusz |
+| `tests/test_timer_and_replay.py` | 27 | Körszámláló UI, kör időlimit, replay perzisztencia |
 
-**Összesen: 363 teszt**
+**Összesen: 413 teszt**
 
 ---
 
@@ -383,9 +386,9 @@ Ha nem telepítetted, használd a `--no-tunnel` kapcsolót a helyi futtatáshoz.
 - [x] Chat — játék közbeni üzenetküldés a szobában
 - [x] Privát szobák — 6-jegyű kóddal csatlakozás, lobby-ban nem listázott szobák
 - [x] Játékos profil oldal — statisztikák, játékelőzmények, visszajátszás
+- [x] Barátlista / meghívó rendszer — barátnak jelölés, online státusz, szobameghívó
 - [ ] Spectator mód
 - [ ] Ranglista / leaderboard
-- [ ] Barátlista / meghívó rendszer
 
 ### Hálózat
 - [x] Újracsatlakozás (grace period) — 120 mp-es ablak a visszacsatlakozásra játék közben
