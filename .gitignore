@@ -4,4 +4,10 @@ __pycache__/
 .pytest_cache/
 scrabble.db
 *.db
+__pycache__/
+*.py[cod]
+*.db
+*.db-shm
+*.db-wal
+.venv/
 .env

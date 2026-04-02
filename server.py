@@ -243,13 +243,18 @@ def _start_challenge_timer(room_id):
         game = r.game
         if game.pending_challenge:
             success, result, msg = game.accept_pending()
-            expires_at = r.turn_timer_expires_at
-            for pid, gs in game.get_all_states().items():
-                gs['turn_timer_expires_at'] = expires_at
-                socketio.emit('game_state', gs, room=pid)
             _broadcast_challenge_result(room_id, result, msg)
-            if not game.finished:
+            if game.finished:
+                for pid, gs in game.get_all_states().items():
+                    gs['turn_timer_expires_at'] = None
+                    socketio.emit('game_state', gs, room=pid)
+                _save_game_to_db(room_id)
+            else:
                 _start_turn_timer(room_id)
+                new_expires_at = r.turn_timer_expires_at
+                for pid, gs in game.get_all_states().items():
+                    gs['turn_timer_expires_at'] = new_expires_at
+                    socketio.emit('game_state', gs, room=pid)
 
     socketio.start_background_task(timeout_callback)
 
@@ -282,17 +287,21 @@ def _start_turn_timer(room_id):
         # Auto-passz a jelenlegi játékos nevében
         success, msg = game.pass_turn(current.id)
         if success:
-            r.invalidate_turn_timer()
-            for pid, gs in game.get_all_states().items():
-                gs['turn_timer_expires_at'] = None
-                socketio.emit('game_state', gs, room=pid)
             socketio.emit('action_result',
                           {'success': True, 'message': f'Időtúllépés: {current.name} passzolt.'},
                           room=room_id)
             if game.finished:
+                r.invalidate_turn_timer()
+                for pid, gs in game.get_all_states().items():
+                    gs['turn_timer_expires_at'] = None
+                    socketio.emit('game_state', gs, room=pid)
                 _save_game_to_db(room_id)
             else:
-                _start_turn_timer(room_id)  # következő kör timere
+                _start_turn_timer(room_id)  # következő kör timere, sets new expires_at
+                new_expires_at = r.turn_timer_expires_at
+                for pid, gs in game.get_all_states().items():
+                    gs['turn_timer_expires_at'] = new_expires_at
+                    socketio.emit('game_state', gs, room=pid)
 
     socketio.start_background_task(timeout_callback)
 
@@ -310,10 +319,12 @@ def _handle_challenge_result(room_id, room, game, result, msg):
     """Challenge/szavazás eredmény feldolgozása: timer és broadcast."""
     if result in ('accepted', 'vote_accepted', 'vote_rejected'):
         room.invalidate_challenge_timer()
-    _emit_all_states(game, room_id)
     _broadcast_challenge_result(room_id, result, msg)
-    if not game.finished:
+    if game.finished:
+        _save_game_to_db(room_id)
+    else:
         _start_turn_timer(room_id)
+    _emit_all_states(game, room_id)
 
 
 # --- Game persistence ---
@@ -410,6 +421,10 @@ def handle_disconnect():
     sid = request.sid
     room_id = state.player_rooms.get(sid)
     token = state.get_reconnect_token_for_sid(sid)
+    auth_info = state.player_auth.get(sid, {})
+    user_id = auth_info.get('user_id') if isinstance(auth_info, dict) else None
+    is_registered_user = bool(user_id and not auth_info.get('is_guest')) if isinstance(auth_info, dict) else False
+    was_online = state.is_user_online(user_id) if is_registered_user else False
 
     if room_id and room_id in state.rooms:
         room = state.rooms[room_id]
@@ -459,6 +474,9 @@ def handle_disconnect():
             state.cleanup_player_token(sid)
 
     state.player_names.pop(sid, None)
+    state.remove_online_user(sid)
+    if is_registered_user and was_online and not state.is_user_online(user_id):
+        _notify_friends_presence_change(user_id, False)
     # player_auth törlése: csak ha NEM grace period-ban van (aktív játék disconnect)
     # Grace period esetén az auth info a _disconnected_players-ben van mentve,
     # és a _finalize_player_disconnect fogja törölni.
@@ -469,6 +487,17 @@ def handle_disconnect():
     rate_limiter.clear_sid(sid)
 
     emit('rooms_list', state.get_rooms_list(), broadcast=True)
+
+
+def _notify_friends_presence_change(user_id, online):
+    """Értesíti az online barátokat, ha egy felhasználó státusza változott."""
+    for friend in auth_get_friends(user_id):
+        friend_sids = state.get_user_sids(friend['id'])
+        for fsid in friend_sids:
+            emit('friend_presence_changed', {
+                'friend_id': user_id,
+                'online': online,
+            }, room=fsid)
 
 
 def _finalize_player_disconnect(token):
@@ -548,10 +577,17 @@ def handle_set_name(data):
     if not name:
         name = 'Névtelen'
 
+    user_id = data.get('user_id')
+    is_guest = data.get('is_guest', True)
+    was_online = bool(user_id and not is_guest and state.is_user_online(user_id))
+
     state.register_player(sid, name, {
-        'user_id': data.get('user_id'),
-        'is_guest': data.get('is_guest', True),
+        'user_id': user_id,
+        'is_guest': is_guest,
     })
+
+    if user_id and not is_guest and not was_online and state.is_user_online(user_id):
+        _notify_friends_presence_change(user_id, True)
 
 
 @socketio.on('rejoin_room')
@@ -604,7 +640,13 @@ def handle_rejoin_room(data):
     state.player_names[sid] = player_name
     # Visszaállítjuk az auth info-t is ha van
     if 'auth_info' in token_info:
-        state.player_auth[sid] = token_info['auth_info']
+        auth_info = token_info['auth_info']
+        state.player_auth[sid] = auth_info
+        # Online tracking visszaállítása (register_player logikája)
+        user_id = auth_info.get('user_id') if auth_info else None
+        if user_id and not auth_info.get('is_guest'):
+            state._sid_to_user_id[sid] = user_id
+            state._online_users.setdefault(user_id, set()).add(sid)
 
     join_room(room_id)
 
@@ -907,10 +949,10 @@ def handle_start_game():
             abandon_game_by_id(save_data['id'])
             room.db_game_id = None
 
+            _start_turn_timer(room_id)
             _emit_all_states(restored_game, room_id)
             emit('game_started', {}, room=room_id)
             emit('rooms_list', state.get_rooms_list(), broadcast=True)
-            _start_turn_timer(room_id)
         except Exception as e:
             print(f"[restore] Hiba a visszaállításnál: {e}")
             emit('error', {'message': 'Hiba a játék visszaállításánál.'})
@@ -923,11 +965,11 @@ def handle_start_game():
         return
 
     state.remove_invites_for_room(room_id)
+    _start_turn_timer(room_id)
     _emit_all_states(game, room_id)
     emit('game_started', {}, room=room_id)
     emit('rooms_list', state.get_rooms_list(), broadcast=True)
-    _start_turn_timer(room_id)
-    
+
     # Kezdeti mentés, hogy a játékos lista perzisztens legyen
     _save_game_to_db(room_id)
 
@@ -1070,14 +1112,14 @@ def handle_place_tiles(data):
 
     if success:
         room.invalidate_turn_timer()
-        _emit_all_states(game, room_id)
         emit('action_result', {'success': True, 'message': msg, 'score': score})
         if game.pending_challenge:
             _start_challenge_timer(room_id)
-        elif not game.finished:
-            _start_turn_timer(room_id)
-        if game.finished:
+        elif game.finished:
             _save_game_to_db(room_id)
+        else:
+            _start_turn_timer(room_id)
+        _emit_all_states(game, room_id)
     else:
         emit('action_result', {'success': False, 'message': msg})
 
@@ -1105,9 +1147,9 @@ def handle_exchange_tiles(data):
 
     if success:
         room.invalidate_turn_timer()
-        _emit_all_states(game, room_id)
         emit('action_result', {'success': True, 'message': msg})
         _start_turn_timer(room_id)
+        _emit_all_states(game, room_id)
     else:
         emit('action_result', {'success': False, 'message': msg})
 
@@ -1123,12 +1165,12 @@ def handle_pass_turn():
 
     if success:
         room.invalidate_turn_timer()
-        _emit_all_states(game, room_id)
         emit('action_result', {'success': True, 'message': msg})
         if game.finished:
             _save_game_to_db(room_id)
         else:
             _start_turn_timer(room_id)
+        _emit_all_states(game, room_id)
     else:
         emit('action_result', {'success': False, 'message': msg})
 

@@ -209,6 +209,14 @@ class ServerState:
 
     # --- Online tracking & Invites ---
 
+    def remove_online_user(self, sid):
+        """Online tracking eltávolítása SID alapján (disconnect-kor)."""
+        user_id = self._sid_to_user_id.pop(sid, None)
+        if user_id and user_id in self._online_users:
+            self._online_users[user_id].discard(sid)
+            if not self._online_users[user_id]:
+                del self._online_users[user_id]
+
     def is_user_online(self, user_id):
         """Ellenőrzi, hogy a felhasználó online-e."""
         return user_id in self._online_users
