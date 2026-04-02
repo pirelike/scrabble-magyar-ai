@@ -1007,6 +1007,8 @@ const WaitingRoom = {
         AppState.currentRoomCode = data.code;
         document.getElementById('room-code-value').textContent = data.code;
         document.getElementById('room-code-display').classList.remove('hidden');
+        AppState.isOwner = true;
+        this.update();
     },
 
     onLeft() {
@@ -2850,7 +2852,7 @@ const Friends = {
         this.load().then(() => {
             const onlineFriends = this.friendsList.filter(f => f.online);
             if (onlineFriends.length === 0) {
-                container.innerHTML = '<div class="padding-3 text-muted text-center text-sm">Nincs elérhető barátod jelenleg.</div>';
+                container.innerHTML = '<div class="empty-state"><p class="empty-msg">Nincs elérhető barátod jelenleg.</p></div>';
             } else {
                 container.innerHTML = onlineFriends.map(f => `
                     <div class="friend-item">
