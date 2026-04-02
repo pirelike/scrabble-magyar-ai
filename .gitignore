@@ -1,3 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+scrabble.db
+*.db
 __pycache__/
 *.py[cod]
 *.db
