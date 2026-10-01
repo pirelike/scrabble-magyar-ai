@@ -15,6 +15,7 @@ DB_PATH = os.environ.get('SCRABBLE_DB_PATH', 'scrabble.db')
 SESSION_MAX_AGE_DAYS = 30
 VERIFICATION_CODE_EXPIRY_MINUTES = 10
 VERIFICATION_MAX_ATTEMPTS = 5
+EMAIL_VERIFIED_WINDOW_MINUTES = 30  # ennyi ideig regisztrálható a kóddal megerősített email
 
 # --- Rate limiting (IP-alapú, auth endpointokra) ---
 AUTH_RATE_LIMITS = {

@@ -9,9 +9,11 @@ def reset_checker():
     import dictionary
     dictionary._checker = None
     dictionary._checker_type = None
+    dictionary._init_attempted = False
     yield
     dictionary._checker = None
     dictionary._checker_type = None
+    dictionary._init_attempted = False
 
 
 class TestCheckWordsInputValidation:
@@ -107,7 +109,7 @@ class TestCheckWordsWithEnchant:
         from dictionary import check_words
         import dictionary
         mock_checker = MagicMock()
-        mock_checker.check.side_effect = lambda w: w != 'XYZZY'
+        mock_checker.check.side_effect = lambda w: w != 'xyzzy'
         dictionary._checker = mock_checker
         dictionary._checker_type = 'enchant'
 
@@ -199,3 +201,54 @@ class TestInitChecker:
             with patch('dictionary.subprocess.run', side_effect=FileNotFoundError()):
                 dictionary._init_checker()
                 assert dictionary._checker_type is None
+
+
+class TestProperNounsAndLookup:
+    """A tábla nagybetűs szavait kisbetűvel keressük: tulajdonnév nem érvényes Scrabble-szó."""
+
+    def test_enchant_is_queried_with_lowercase_words(self):
+        from dictionary import check_words
+        import dictionary
+        mock_checker = MagicMock()
+        mock_checker.check.return_value = True
+        dictionary._checker = mock_checker
+        dictionary._checker_type = 'enchant'
+
+        check_words(['ÁLMOK', 'SZÉK'])
+        asked = [c.args[0] for c in mock_checker.check.call_args_list]
+        assert asked == ['álmok', 'szék']
+
+    def test_proper_noun_is_rejected_by_enchant(self):
+        from dictionary import check_words
+        import dictionary
+        known = {'alma', 'duna'.capitalize()}  # a szótárban a tulajdonnév nagy kezdőbetűs
+        mock_checker = MagicMock()
+        mock_checker.check.side_effect = lambda w: w in known
+        dictionary._checker = mock_checker
+        dictionary._checker_type = 'enchant'
+
+        valid, invalid = check_words(['ALMA', 'DUNA'])
+        assert valid is False
+        assert invalid == ['DUNA']
+
+    def test_cli_receives_lowercase_and_reports_original_words(self):
+        from dictionary import check_words
+        import dictionary
+        dictionary._checker_type = 'cli'
+        mock_result = MagicMock()
+        mock_result.stdout = 'duna\n'  # a hunspell kisbetűs bemenetre kisbetűvel válaszol
+        with patch('dictionary.subprocess.run', return_value=mock_result) as run:
+            valid, invalid = check_words(['ALMA', 'DUNA'])
+        assert run.call_args.kwargs['input'] == 'alma\nduna'
+        assert valid is False
+        assert invalid == ['DUNA']
+
+    def test_missing_dictionary_is_initialised_only_once(self):
+        import dictionary
+        with patch('dictionary.subprocess.run', side_effect=FileNotFoundError), \
+                patch.dict('sys.modules', {'enchant': None}), \
+                patch('dictionary._init_checker', wraps=dictionary._init_checker) as init:
+            dictionary.check_words(['ALMA'])
+            dictionary.check_words(['KUTYA'])
+            dictionary.check_words(['MACSKA'])
+        assert init.call_count == 1

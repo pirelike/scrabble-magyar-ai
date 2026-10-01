@@ -84,10 +84,11 @@ def test_search_users(temp_db):
     assert len(results) == 1
     assert results[0]['id'] == u3  # u1 is excluded
     
-    # Keresés email alapján
-    results = search_users('bob@test', exclude_user_id=u1)
+    # Keresés email alapján: csak pontos egyezés (részlet nem szivárogtat ki címeket)
+    results = search_users('bob@test.com', exclude_user_id=u1)
     assert len(results) == 1
     assert results[0]['id'] == u2
+    assert search_users('bob@test', exclude_user_id=u1) == []
     
     # Rövid keresés
     assert len(search_users('a', exclude_user_id=u1)) == 0
@@ -185,7 +186,8 @@ def test_http_search_users_short_query(client, temp_db):
 # Helper for Socket.IO clients
 def create_registered_client(app, socketio_app, name, user_id):
     c = socketio_app.test_client(app)
-    c.emit('set_name', {'name': name, 'is_guest': False, 'user_id': user_id})
+    from helpers import registered_set_name_payload
+    c.emit('set_name', registered_set_name_payload(user_id, name=name))
     c.get_received()
     return c
 

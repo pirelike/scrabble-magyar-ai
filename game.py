@@ -132,6 +132,23 @@ class Game:
                 break
         self.turn_number += 1
 
+    def skip_disconnected_current(self):
+        """Ha a soron lévő játékos lecsatlakozott, tovább lépteti a kört.
+
+        Függő megtámadás alatt nem lép: a lerakás lezárása (`_finalize_accept` /
+        `_finalize_reject`) úgyis továbbadja a kört, itt a léptetés dupla ugrást okozna.
+        Visszatér True-val, ha a kör tényleg továbblépett.
+        """
+        if not self.started or self.finished or self.pending_challenge:
+            return False
+        current = self.current_player()
+        if not current or not current.disconnected:
+            return False
+        if all(p.disconnected for p in self.players):
+            return False
+        self._next_turn()
+        return True
+
     # --- Tile placement ---
 
     def _validate_hand(self, player, tiles_placed):
@@ -267,6 +284,10 @@ class Game:
             f"{', '.join(pc.word_strs)}. Betűk visszavéve, újra ő következik."
         )
         self._record_move(player.name, 'challenge_reject')
+
+        if player.disconnected:
+            # A lecsatlakozott lerakó nem tud újra lépni, ne akadjon el a játék.
+            self._next_turn()
 
     def _resolve_and_finalize(self):
         """Szavazás kiértékelése és véglegesítése. Visszatér: result string."""
@@ -416,7 +437,9 @@ class Game:
         self.last_action = f"{player.name} passzolt"
         self._record_move(player.name, 'pass')
 
-        if all(p.consecutive_passes >= 2 for p in self.players):
+        # A lecsatlakozott játékosok nem tudnak passzolni, ők nem számítanak bele.
+        active = [p for p in self.players if not p.disconnected] or self.players
+        if all(p.consecutive_passes >= 2 for p in active):
             self._end_game(None)
         else:
             self._next_turn()
@@ -478,7 +501,20 @@ class Game:
         })
 
     def to_save_dict(self):
-        """Teljes játékállapot szerializálása mentéshez."""
+        """Teljes játékállapot szerializálása mentéshez.
+
+        Függő (szavazásra váró) lerakás nem menthető: a lerakó betűit ilyenkor
+        visszaírjuk a kezébe, így a mentésből betöltve nem vesznek el zsetonok.
+        """
+        pending_idx = None
+        returned_tiles = []
+        last_action = self.last_action
+        if self.pending_challenge:
+            pending_idx = self.pending_challenge.player_idx
+            returned_tiles = list(self.pending_challenge.removed_from_hand)
+            placer = self.players[pending_idx]
+            last_action = f"{placer.name} lerakása a mentés miatt visszavonva."
+
         return {
             'id': self.id,
             'challenge_mode': self.challenge_mode,
@@ -487,7 +523,7 @@ class Game:
             'finished': self.finished,
             'current_player_idx': self.current_player_idx,
             'turn_number': self.turn_number,
-            'last_action': self.last_action,
+            'last_action': last_action,
             'board': self.board.to_dict(),
             'board_is_empty': self.board.is_empty,
             'bag_tiles': list(self.bag.tiles),
@@ -495,13 +531,13 @@ class Game:
                 {
                     'id': p.id,
                     'name': p.name,
-                    'hand': list(p.hand),
+                    'hand': list(p.hand) + (returned_tiles if i == pending_idx else []),
                     'score': p.score,
                     'consecutive_passes': p.consecutive_passes,
                     'skip_next_turn': p.skip_next_turn,
                     'disconnected': p.disconnected,
                 }
-                for p in self.players
+                for i, p in enumerate(self.players)
             ],
             'winner_name': self.winner.name if self.winner else None,
         }

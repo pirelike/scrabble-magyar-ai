@@ -154,6 +154,34 @@ function showAuthError(el, msg) {
 
 const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
 
+// JSON POST, a szerver hibaüzenetét (401/409/429...) is visszaadja a hívónak.
+// Csak akkor dob hibát, ha a válasz nem JSON (valódi hálózati/szerver hiba).
+async function postJson(url, body) {
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+    let data = null;
+    try { data = await res.json(); } catch { /* nem JSON válasz */ }
+    if (!data) throw new Error('Server error');
+    return data;
+}
+
+// A szerver UTC időbélyegei ("YYYY-MM-DD HH:MM:SS") nem tartalmaznak időzónát,
+// ezért kézzel jelöljük UTC-nek, különben a böngészők eltérően (Safari: hibásan) értelmezik.
+function parseServerDate(value) {
+    if (!value) return null;
+    const iso = /(Z|[+-]\d{2}:?\d{2})$/.test(value) ? value : value.replace(' ', 'T') + 'Z';
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? null : d;
+}
+
+function formatServerDate(value, options) {
+    const d = parseServerDate(value);
+    return d ? d.toLocaleString('hu-HU', options) : '';
+}
+
 // ===== APP STATE =====
 // Consolidated game & session state
 
@@ -163,6 +191,7 @@ const AppState = {
     isOwner: false,
     isGuest: true,
     currentUser: null,
+    displayName: null,        // a szervernek bemutatkozáskor használt név
     currentRoomCode: null,
     currentRoomId: null,
     reconnectToken: null,
@@ -296,13 +325,7 @@ const Auth = {
 
         btn.disabled = true;
         try {
-            const res = await fetch('/api/auth/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, password }),
-            });
-            if (!res.ok) throw new Error('Server error');
-            const data = await res.json();
+            const data = await postJson('/api/auth/login', { email, password });
 
             if (data.success) {
                 AppState.currentUser = data.user;
@@ -331,13 +354,7 @@ const Auth = {
 
         if (btn) btn.disabled = true;
         try {
-            const res = await fetch('/api/auth/request-code', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email }),
-            });
-            if (!res.ok) throw new Error('Server error');
-            const data = await res.json();
+            const data = await postJson('/api/auth/request-code', { email });
 
             if (data.success) {
                 this.regEmail = email;
@@ -363,13 +380,7 @@ const Auth = {
         errorEl.classList.add('hidden');
 
         try {
-            const res = await fetch('/api/auth/request-code', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: this.regEmail }),
-            });
-            if (!res.ok) throw new Error('Server error');
-            const data = await res.json();
+            const data = await postJson('/api/auth/request-code', { email: this.regEmail });
             if (data.success) {
                 showAuthError(errorEl, 'Új kód elküldve!');
                 errorEl.classList.remove('hidden');
@@ -397,13 +408,7 @@ const Auth = {
         }
 
         try {
-            const res = await fetch('/api/auth/verify-code', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: this.regEmail, code }),
-            });
-            if (!res.ok) throw new Error('Server error');
-            const data = await res.json();
+            const data = await postJson('/api/auth/verify-code', { email: this.regEmail, code });
 
             if (data.success) {
                 document.getElementById('reg-step-2').classList.add('hidden');
@@ -439,13 +444,9 @@ const Auth = {
 
         if (btn) btn.disabled = true;
         try {
-            const res = await fetch('/api/auth/register', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: this.regEmail, password, display_name: displayName }),
+            const data = await postJson('/api/auth/register', {
+                email: this.regEmail, password, display_name: displayName,
             });
-            if (!res.ok) throw new Error('Server error');
-            const data = await res.json();
 
             if (data.success) {
                 AppState.currentUser = data.user;
@@ -469,18 +470,37 @@ const Auth = {
             if (errorEl) showAuthError(errorEl, 'Add meg a neved a belépéshez.');
             return;
         }
+        // Ugyanaz a szabály, mint a szerveren: különben a szerver csendben "Névtelen"-re cserélné
+        if (!/^[\p{L}\p{N}_\s.-]{1,20}$/u.test(name)) {
+            if (errorEl) showAuthError(errorEl, 'A név 1–20 karakter lehet: betű, szám, szóköz, pont, kötőjel vagy alsóvonal.');
+            return;
+        }
         AppState.currentUser = null;
         AppState.isGuest = true;
         Lobby.enter(name);
     },
 
     async logout() {
+        if (AppState.currentRoomId) {
+            showConfirm('Kijelentkezés',
+                'A kijelentkezéssel kilépsz a szobából / játékból is. Biztosan kijelentkezel?',
+                'Kijelentkezés', () => this._doLogout());
+            return;
+        }
+        await this._doLogout();
+    },
+
+    async _doLogout() {
+        // A szerver is felejtse el az azonosságot (online státusz, szoba, auth)
+        socket.emit('logout');
         if (!AppState.isGuest) {
             try { await fetch('/api/auth/logout', { method: 'POST' }); } catch { /* ignore */ }
         }
         AppState.currentUser = null;
         AppState.isGuest = true;
-        AppState.currentRoomCode = null;
+        AppState.displayName = null;
+        AppState.reset();
+        ChallengeUI.stopCountdown(); TurnTimerUI._stop();
         // Reset regisztráció
         document.getElementById('reg-step-1').classList.remove('hidden');
         document.getElementById('reg-step-2').classList.add('hidden');
@@ -566,12 +586,33 @@ const Lobby = {
         }
     },
 
-    enter(displayName) {
-        socket.emit('set_name', {
-            name: displayName,
+    _identitySentForSid: null,
+
+    // A szerver SID-hez köti a nevet és az azonosságot, ezért minden új kapcsolatnál
+    // (újracsatlakozás után is) újra be kell mutatkozni. Regisztrált felhasználónál a
+    // szerver által kiadott aláírt tokent is küldjük, a user_id önmagában nem elég.
+    async sendIdentity() {
+        if (!AppState.displayName) return;
+        const payload = {
+            name: AppState.displayName,
             is_guest: AppState.isGuest,
             user_id: AppState.currentUser ? AppState.currentUser.id : null,
-        });
+        };
+        if (!AppState.isGuest) {
+            try {
+                const res = await fetch('/api/auth/socket-token');
+                const data = await res.json();
+                if (data.success) payload.auth_token = data.token;
+            } catch { /* a szerver vendégként kezeli, és hibát jelez */ }
+        }
+        if (!AppState.displayName) return;  // közben kijelentkezett
+        socket.emit('set_name', payload);
+        if (socket.connected) this._identitySentForSid = socket.id;
+    },
+
+    enter(displayName) {
+        AppState.displayName = displayName;
+        this.sendIdentity();
         AppState.myPlayerId = socket.id;
 
         document.getElementById('lobby-user-name').textContent =
@@ -667,7 +708,7 @@ const Lobby = {
 
             const date = document.createElement('span');
             date.className = 'history-date';
-            date.textContent = new Date(h.created_at).toLocaleDateString('hu-HU');
+            date.textContent = formatServerDate(h.created_at, { year: 'numeric', month: 'numeric', day: 'numeric' });
             info.appendChild(date);
 
             const room = document.createElement('span');
@@ -744,7 +785,7 @@ const Lobby = {
 
             const details = document.createElement('div');
             details.className = 'saved-game-details';
-            details.textContent = new Date(g.updated_at || g.created_at).toLocaleDateString('hu-HU', {
+            details.textContent = formatServerDate(g.updated_at || g.created_at, {
                 year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
             });
             info.appendChild(details);
@@ -1118,6 +1159,10 @@ const GameBoard = {
         }
 
         if (state.started) {
+            // Újracsatlakozásnál nincs `game_started` esemény, de a játék már fut
+            AppState.gameStarted = true;
+            const roomTab = document.getElementById('nav-tab-room');
+            if (roomTab && !roomTab.classList.contains('hidden')) roomTab.textContent = 'Aktív játék';
             if (document.getElementById('game-screen').classList.contains('hidden')) {
                 showScreen('game-screen');
                 this.build();
@@ -1156,7 +1201,10 @@ const GameBoard = {
     onActionResult(data) {
         if (!data.success) {
             showMessage(data.message, true);
-        } else {
+            // Elutasított szavazat esetén a letiltott szavazógombok újra használhatók legyenek
+            ChallengeUI.resetButtons();
+        } else if (data.own_turn) {
+            // Csak a saját lépésünk eredménye ürítse a lerakást (mentés / időtúllépés üzenete nem)
             BoardState.clearPlacement();
             this.renderBoard();
             this.renderHand();
@@ -1558,8 +1606,11 @@ const TurnTimerUI = {
             return;
         }
 
-        this._expiresAt = gs.turn_timer_expires_at * 1000; // s → ms
-        this._warningSoundPlayed = false;
+        const newExpiresAt = gs.turn_timer_expires_at * 1000; // s → ms
+        // A figyelmeztető hang csak új visszaszámlálásnál szólaljon meg újra,
+        // ne minden game_state frissítésnél az utolsó 10 másodpercben.
+        if (newExpiresAt !== this._expiresAt) this._warningSoundPlayed = false;
+        this._expiresAt = newExpiresAt;
         el.classList.remove('hidden');
         this._stop();
         this._interval = setInterval(() => this._tick(el), 250);
@@ -1592,6 +1643,7 @@ const ChallengeUI = {
     timer: null,
     timeLeft: 0,
     wasVotingPhase: false,
+    _buttonsSig: null,   // melyik gombkészlet látszik (ne épüljön újra minden másodpercben)
 
     init() {
         socket.on('challenge_result', (data) => {
@@ -1615,6 +1667,11 @@ const ChallengeUI = {
         }, 1000);
     },
 
+    resetButtons() {
+        this._buttonsSig = null;
+        if (AppState.gameState && AppState.gameState.pending_challenge) this.render();
+    },
+
     stopCountdown() {
         if (this.timer) {
             clearInterval(this.timer);
@@ -1633,6 +1690,7 @@ const ChallengeUI = {
 
         if (!gs.pending_challenge) {
             section.classList.add('hidden');
+            this._buttonsSig = null;
             if (this.timer) this.stopCountdown();
             return;
         }
@@ -1657,21 +1715,26 @@ const ChallengeUI = {
         // Timer display
         timerEl.textContent = this.timeLeft > 0 ? `${this.timeLeft} mp` : '';
 
-        // Buttons
-        buttonsEl.innerHTML = '';
-        if (isMyPlacement) {
-            this._addWaitText(buttonsEl, 'Szavazás folyamatban...');
-        } else if (myVote) {
-            this._addWaitText(buttonsEl, myVote === 'accept' ? 'Elfogadtad — várakozás...' : 'Elutasítottad — várakozás...');
-        } else {
-            this._renderVoteButtons(buttonsEl);
+        // Buttons — csak állapotváltozáskor építjük újra: a másodpercenkénti újrarajzolás
+        // elnyelhette a kattintást és visszakapcsolta a már letiltott gombokat
+        const sig = isMyPlacement ? 'placer' : (myVote ? `voted:${myVote}` : 'vote');
+        if (this._buttonsSig !== sig) {
+            this._buttonsSig = sig;
+            buttonsEl.innerHTML = '';
+            if (isMyPlacement) {
+                this._addWaitText(buttonsEl, 'Szavazás folyamatban...');
+            } else if (myVote) {
+                this._addWaitText(buttonsEl, myVote === 'accept' ? 'Elfogadtad — várakozás...' : 'Elutasítottad — várakozás...');
+            } else {
+                this._renderVoteButtons(buttonsEl);
+            }
         }
     },
 
     _renderInfo(infoEl, pc, gs) {
         infoEl.replaceChildren();
         const infoText = document.createElement('div');
-        infoText.appendChild(document.createTextNode(`${escapeHtml(pc.player_name)}: `));
+        infoText.appendChild(document.createTextNode(`${pc.player_name}: `));
         
         pc.words.forEach((word, index) => {
             const link = document.createElement('a');
@@ -1704,13 +1767,13 @@ const ChallengeUI = {
                 const item = document.createElement('span');
                 item.className = 'vote-item';
                 if (vote === 'accept') {
-                    item.textContent = `${escapeHtml(player.name)}: Elfogad`;
+                    item.textContent = `${player.name}: Elfogad`;
                     item.classList.add('vote-accept');
                 } else if (vote === 'reject') {
-                    item.textContent = `${escapeHtml(player.name)}: Elutasít`;
+                    item.textContent = `${player.name}: Elutasít`;
                     item.classList.add('vote-reject');
                 } else {
-                    item.textContent = `${escapeHtml(player.name)}: ...`;
+                    item.textContent = `${player.name}: ...`;
                     item.classList.add('vote-pending');
                 }
                 voteList.appendChild(item);
@@ -1972,10 +2035,15 @@ const GameOver = {
 
 const Reconnection = {
     init() {
-        socket.on('connect', () => {
+        socket.on('connect', async () => {
             const banner = document.getElementById('connection-banner');
             if (banner) banner.classList.add('hidden');
-            
+
+            // Új kapcsolat = új SID: a szerver nem ismeri a nevünket, újra be kell mutatkozni
+            if (AppState.displayName && Lobby._identitySentForSid !== socket.id) {
+                await Lobby.sendIdentity();
+            }
+
             if (!AppState.reconnectToken) {
                 const saved = localStorage.getItem('scrabble-rejoin');
                 if (saved) {
@@ -2073,19 +2141,23 @@ const ExitGame = {
     saveAndLeave() {
         this.hideDialog();
         socket.emit('save_game');
-        // Wait briefly for save confirmation, then leave
-        const onResult = (data) => {
+        // Wait briefly for save confirmation, then leave (pontosan egyszer)
+        let done = false;
+        const finish = () => {
+            if (done) return;
+            done = true;
+            clearTimeout(fallbackTimer);
             socket.off('action_result', onResult);
+            this._doLeave();
+        };
+        const onResult = (data) => {
             if (data.success) showMessage('Játék mentve.');
             else showMessage(data.message || 'Mentési hiba.', true);
-            this._doLeave();
+            finish();
         };
         socket.on('action_result', onResult);
         // Fallback: leave after 3s even if no response
-        setTimeout(() => {
-            socket.off('action_result', onResult);
-            this._doLeave();
-        }, 3000);
+        const fallbackTimer = setTimeout(finish, 3000);
     },
 
     leave() {
@@ -2175,7 +2247,9 @@ const Profile = {
 
             const date = document.createElement('span');
             date.className = 'history-date';
-            date.textContent = h.created_at ? h.created_at.replace('T', ' ').substring(0, 16) : '';
+            date.textContent = formatServerDate(h.created_at, {
+                year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
+            });
 
             const name = document.createElement('span');
             name.className = 'history-room';
@@ -2939,7 +3013,7 @@ const Friends = {
 
         // Auto-dismiss after 15 seconds
         setTimeout(() => {
-            if (toast.parentElement) {
+            if (toast.parentElement && !toast.classList.contains('toast-out')) {
                 socket.emit('respond_invite', { invite_id: data.invite_id, accept: false });
                 dismiss();
             }

@@ -256,6 +256,7 @@ config.py          — Konfigurációs konstansok (SMTP, auth, DB, rate limit)
 auth.py            — SQLite DB, regisztráció, login, session, jelszó hash, játék mentés
 email_service.py   — Email verifikációs kód küldés (SMTP / konzol fallback)
 rate_limiter.py    — Generikus rate limiter (Socket.IO + HTTP)
+socket_auth.py     — Aláírt socket-token a Socket.IO identitás igazolásához
 tunnel.py          — Cloudflare tunnel subprocess kezelés
 dict/              — Beágyazott hu_HU hunspell szótár fájlok
 templates/
@@ -263,7 +264,7 @@ templates/
 static/
   app.js           — Kliens logika, drag & drop, pinch-to-zoom, Socket.IO, auth, téma, hang
   style.css        — Stílusok, sötét/világos téma (Slate+Gold paletta), reszponzív layout
-tests/             — Tesztek (pytest, 413 teszt)
+tests/             — Tesztek (pytest, 500 teszt)
 ```
 
 ---
@@ -302,16 +303,17 @@ A játék kiemelt figyelmet fordít a multiplayer sessionök stabilitására:
 |---|---|---|
 | `tests/test_auth.py` | 63 | DB, user CRUD, jelszó hash, verifikációs kódok, session kezelés |
 | `tests/test_game_logic.py` | 138 | TileBag, Board, Player, Game, Challenge, kör időlimit |
-| `tests/test_server_auth.py` | 48 | HTTP auth route-ok, cookie flow |
-| `tests/test_server_socket.py` | 62 | Socket.IO eventek, lobby, szobák, challenge, chat, owner kilépés |
+| `tests/test_server_auth.py` | 52 | HTTP auth route-ok, cookie flow |
+| `tests/test_server_socket.py` | 67 | Socket.IO eventek, lobby, szobák, challenge, chat, owner kilépés |
 | `tests/test_challenge.py` | 17 | Challenge szavazásos rendszer |
-| `tests/test_dictionary.py` | 19 | Szótár-ellenőrzés |
+| `tests/test_dictionary.py` | 23 | Szótár-ellenőrzés |
 | `tests/test_email_service.py` | 4 | Email küldés |
 | `tests/test_room.py` | 12 | Room osztály |
 | `tests/test_friends.py` | 23 | Barát CRUD, kérések, felhasználókeresés, szobameghívó, online státusz |
 | `tests/test_timer_and_replay.py` | 27 | Körszámláló UI, kör időlimit, replay perzisztencia |
+| `tests/test_regressions.py` | 70 | Kódátvizsgálás során talált hibák regressziós tesztjei |
 
-**Összesen: 413 teszt**
+**Összesen: 500 teszt**
 
 ---
 

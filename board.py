@@ -133,11 +133,15 @@ class Board:
         """Ellenőrzi a pozíciók érvényességét és a cellák foglaltságát.
         Visszatér: (ok, error) — ok=False esetén error az üzenet.
         """
+        seen = set()
         for r, c, letter, is_blank in tiles_placed:
             if not (0 <= r < BOARD_SIZE and 0 <= c < BOARD_SIZE):
                 return False, f"A ({r},{c}) pozíció a táblán kívül van."
             if self.cells[r][c] is not None:
                 return False, f"A ({r},{c}) mező már foglalt."
+            if (r, c) in seen:
+                return False, f"A ({r},{c}) mezőre több zseton került."
+            seen.add((r, c))
         return True, ""
 
     def _validate_alignment(self, positions):

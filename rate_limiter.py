@@ -5,6 +5,8 @@ from collections import defaultdict
 class RateLimiter:
     """Generikus rate limiter Socket.IO (SID) és HTTP (IP) kérésekhez."""
 
+    _IP_PRUNE_THRESHOLD = 1000
+
     def __init__(self, socket_limits, ip_limits):
         """
         socket_limits: {event_name: (max_requests, window_seconds)}
@@ -34,15 +36,23 @@ class RateLimiter:
             return True
         max_requests, window = self._ip_limits[action]
         now = time.time()
-        timestamps = self._ip_history[ip][action]
-        self._ip_history[ip][action] = [t for t in timestamps if now - t < window]
-        if not self._ip_history[ip][action] and not any(self._ip_history[ip].values()):
-            del self._ip_history[ip]
-            return True
-        if len(self._ip_history[ip][action]) >= max_requests:
+        if len(self._ip_history) > self._IP_PRUNE_THRESHOLD:
+            self._prune_ip_history(now)
+        history = self._ip_history[ip]
+        history[action] = [t for t in history[action] if now - t < window]
+        if len(history[action]) >= max_requests:
             return False
-        self._ip_history[ip][action].append(now)
+        history[action].append(now)
         return True
+
+    def _prune_ip_history(self, now):
+        """Törli a már lejárt időbélyegű IP bejegyzéseket (memória-növekedés ellen)."""
+        longest_window = max((w for _, w in self._ip_limits.values()), default=0)
+        for ip in list(self._ip_history):
+            actions = self._ip_history[ip]
+            if not any(t for stamps in actions.values() for t in stamps
+                       if now - t < longest_window):
+                del self._ip_history[ip]
 
     def clear_sid(self, sid):
         """SID törlése disconnect-kor."""

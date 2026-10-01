@@ -64,7 +64,10 @@ class TileBag:
     def draw(self, count):
         """Húz count darab zsetont a zsákból."""
         n = min(count, len(self.tiles))
-        drawn = self.tiles[-n:] if n else []
+        if n <= 0:
+            # Fontos: a `del self.tiles[-0:]` a teljes zsákot törölné.
+            return []
+        drawn = self.tiles[-n:]
         del self.tiles[-n:]
         return drawn
 

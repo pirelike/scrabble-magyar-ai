@@ -26,6 +26,11 @@ class Room:
         self.db_game_id = None
         self.last_saved_move_count = 0
         self.manually_saved = False
+        self.result_saved = False  # a végeredmény (statisztika) már rögzítve van
+        # Visszaállított játék: név -> user_id (None = vendég) a mentésből
+        self.known_user_ids = {}
+        # Visszaállított játékból hiányzó játékosok, akik menet közben még csatlakozhatnak
+        self.late_join_names = {}
 
     def add_chat_message(self, name, message):
         """Chat üzenet hozzáadása (max 100 darab)."""

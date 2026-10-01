@@ -17,7 +17,8 @@ from config import AUTH_RATE_LIMITS
 from auth import (
     init_db, save_game, finish_game, add_game_move,
     load_active_games, abandon_game, abandon_game_by_id,
-    is_user_in_game, get_game_by_id,
+    is_user_in_game, get_game_by_id, get_game_moves, get_game_players,
+    get_user_by_id,
     send_friend_request as auth_send_friend_request,
     accept_friend_request as auth_accept_friend_request,
     decline_friend_request as auth_decline_friend_request,
@@ -28,6 +29,7 @@ from state import ServerState
 from rate_limiter import RateLimiter
 from routes import main_bp, auth_bp, game_bp, init_routes
 from tunnel import start_tunnel
+from socket_auth import verify_socket_token
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(32).hex())
@@ -165,15 +167,31 @@ def _validate_tiles_input(tiles):
 
 # --- Room lifecycle helpers ---
 
+def _sio_leave_room(sid, room_id):
+    """leave_room kérés-/alkalmazáskontextus nélkül is (háttérszálból is hívható).
+
+    A `flask_socketio.leave_room` a `flask.current_app`-ot és a `request`-et használja,
+    ami a grace period / időzítő háttérszálakban nem elérhető.
+    """
+    socketio.server.leave_room(sid, room_id, namespace='/')
+
+
 def _transfer_ownership(room):
-    """Szoba tulajdonjogának átadása az első játékosnak."""
+    """Szoba tulajdonjogának átadása az első online játékosnak."""
     game = room.game
     if not game.players:
         return
-    first = game.players[0]
-    token = state.get_reconnect_token_for_sid(first.id)
-    room.transfer_ownership(first.id, first.name, token)
-    emit('room_code', {'code': room.join_code}, room=first.id)
+    new_owner = next((p for p in game.players if not p.disconnected), game.players[0])
+    token = state.get_reconnect_token_for_sid(new_owner.id)
+    room.transfer_ownership(new_owner.id, new_owner.name, token)
+    socketio.emit('room_code', {'code': room.join_code}, room=new_owner.id)
+
+
+def _advance_turn_if_needed(room_id, room, game):
+    """Ha a soron lévő játékos lecsatlakozott, továbbadja a kört és újraindítja az időzítőt."""
+    if game.skip_disconnected_current():
+        room.invalidate_turn_timer()
+        _start_turn_timer(room_id)
 
 
 def _emit_all_states(game, room_id=None):
@@ -209,7 +227,7 @@ def _disband_active_room(room_id, message, owner_sid=None):
     for p in list(game.players):
         p_sid = p.id
         if p_sid != owner_sid:
-            leave_room(room_id, sid=p_sid)
+            _sio_leave_room(p_sid, room_id)
             state.player_rooms.pop(p_sid, None)
             state.cleanup_player_token(p_sid)
             socketio.emit('room_left', {}, room=p_sid)
@@ -329,6 +347,16 @@ def _handle_challenge_result(room_id, room, game, result, msg):
 
 # --- Game persistence ---
 
+def _user_id_for_player(room, player):
+    """A játékos regisztrált user_id-ja: élő auth info, különben a mentésből ismert (visszaállított
+    játéknál a még meg nem érkezett játékosok is megtartják a fiókjukat)."""
+    auth_info = state.player_auth.get(player.id) or {}
+    user_id = auth_info.get('user_id')
+    if user_id is None:
+        user_id = room.known_user_ids.get(player.name)
+    return user_id
+
+
 def _save_game_to_db(room_id):
     """Játék mentése az adatbázisba (manuális mentés)."""
     room = state.rooms.get(room_id)
@@ -343,25 +371,27 @@ def _save_game_to_db(room_id):
         owner_name = state.player_names.get(room.owner, room.owner_name)
 
         if game.finished:
+            if room.result_saved:
+                # A végeredményt már rögzítettük (statisztika ne duplázódjon).
+                return True, "Játék mentve."
             players_data = []
             for p in game.players:
-                auth_info = state.player_auth.get(p.id, {})
                 players_data.append({
                     'player_name': p.name,
-                    'user_id': auth_info.get('user_id'),
+                    'user_id': _user_id_for_player(room, p),
                     'final_score': p.score,
-                    'is_winner': game.winner and game.winner.name == p.name,
+                    'is_winner': bool(game.winner and game.winner.name == p.name),
                 })
-            db_id = finish_game(room_id, state_json, players_data)
+            db_id = finish_game(room_id, state_json, players_data, room_name=room.name)
             room.db_game_id = db_id
+            room.result_saved = True
             socketio.emit('rooms_list', state.get_rooms_list())
         else:
             players_data = []
             for p in game.players:
-                auth_info = state.player_auth.get(p.id, {})
                 players_data.append({
                     'player_name': p.name,
-                    'user_id': auth_info.get('user_id'),
+                    'user_id': _user_id_for_player(room, p),
                     'score': p.score,
                 })
             db_id = save_game(room_id, room.name, state_json, game.challenge_mode,
@@ -552,13 +582,10 @@ def _finalize_player_disconnect(token):
             _transfer_ownership(room)
         
         # Ha az ő köre volt, léptetjük
-        if is_active_game and game.current_player() and game.current_player().id == old_sid:
-            game._next_turn()
-            room.invalidate_turn_timer()
-            _start_turn_timer(room_id)
+        if is_active_game:
+            _advance_turn_if_needed(room_id, room, game)
 
-        for pid, gs in game.get_all_states().items():
-            socketio.emit('game_state', gs, room=pid)
+        _emit_all_states(game, room_id)
         socketio.emit('player_left',
                       {'name': info['player_name']}, room=room_id)
 
@@ -577,17 +604,47 @@ def handle_set_name(data):
     if not name:
         name = 'Névtelen'
 
-    user_id = data.get('user_id')
-    is_guest = data.get('is_guest', True)
-    was_online = bool(user_id and not is_guest and state.is_user_online(user_id))
+    user_id = None
+    is_guest = True
+    if data.get('is_guest', True) is False:
+        # Regisztrált felhasználónak csak aláírt tokennel adhatja ki magát valaki:
+        # a kliens által küldött user_id önmagában nem bizonyít semmit.
+        verified_id = verify_socket_token(app.config['SECRET_KEY'], data.get('auth_token'))
+        user_row = get_user_by_id(verified_id) if verified_id else None
+        if user_row:
+            user_id = user_row['id']
+            is_guest = False
+            name = _sanitize_name(user_row['display_name']) or name
+        else:
+            emit('error', {'message': 'A munkamenet lejárt, jelentkezz be újra.'})
+
+    previous_user_id = state.get_user_id_for_sid(sid)
+    was_online = bool(user_id and state.is_user_online(user_id))
 
     state.register_player(sid, name, {
         'user_id': user_id,
         'is_guest': is_guest,
     })
 
-    if user_id and not is_guest and not was_online and state.is_user_online(user_id):
+    if previous_user_id and previous_user_id != user_id \
+            and not state.is_user_online(previous_user_id):
+        _notify_friends_presence_change(previous_user_id, False)
+    if user_id and not was_online and state.is_user_online(user_id):
         _notify_friends_presence_change(user_id, True)
+
+
+@socketio.on('logout')
+def handle_logout():
+    """Kijelentkezés: kilépés a szobából és az online azonosság törlése."""
+    sid = request.sid
+    if state.player_rooms.get(sid):
+        handle_leave_room()
+    previous_user_id = state.get_user_id_for_sid(sid)
+    state.remove_online_user(sid)
+    state.player_auth.pop(sid, None)
+    state.player_names.pop(sid, None)
+    if previous_user_id and not state.is_user_online(previous_user_id):
+        _notify_friends_presence_change(previous_user_id, False)
 
 
 @socketio.on('rejoin_room')
@@ -608,6 +665,13 @@ def handle_rejoin_room(data):
 
     dc_info = state.get_disconnected_info(token)
     token_info = state.get_token_info(token)
+
+    # Munkamenet-átvétel: a régi kapcsolatot a szerver még élőnek hiszi (pl. a telefon
+    # háttérbe került, vagy újratöltődött az oldal), de a token már új kapcsolatról érkezik.
+    takeover_old_sid = None
+    if not dc_info and token_info:
+        takeover_old_sid = _release_live_session(token, token_info)
+        dc_info = state.get_disconnected_info(token)
 
     if not dc_info or not token_info:
         emit('rejoin_failed', {'message': 'Érvénytelen vagy lejárt token.'})
@@ -638,9 +702,10 @@ def handle_rejoin_room(data):
     player_name = dc_info['player_name']
     state.player_rooms[sid] = room_id
     state.player_names[sid] = player_name
+    state.player_auth.pop(old_sid, None)
     # Visszaállítjuk az auth info-t is ha van
     if 'auth_info' in token_info:
-        auth_info = token_info['auth_info']
+        auth_info = token_info['auth_info'] or {'user_id': None, 'is_guest': True}
         state.player_auth[sid] = auth_info
         # Online tracking visszaállítása (register_player logikája)
         user_id = auth_info.get('user_id') if auth_info else None
@@ -668,6 +733,36 @@ def handle_rejoin_room(data):
     emit('player_reconnected', {'name': player_name}, room=room_id)
     emit('rooms_list', state.get_rooms_list(), broadcast=True)
 
+    if takeover_old_sid and takeover_old_sid != sid:
+        # A régi (elavult) kapcsolat lezárása, miután az új már átvette a helyét.
+        try:
+            socketio.server.disconnect(takeover_old_sid, namespace='/')
+        except Exception:
+            pass
+
+
+def _release_live_session(token, token_info):
+    """Aktív játékban lévő, még "élő" kapcsolatot lecsatlakozottnak jelöl, hogy a token
+    új kapcsolatról átvehető legyen. Visszaadja a régi SID-t, vagy None-t, ha nincs mit átvenni."""
+    old_sid = token_info.get('sid')
+    room_id = token_info.get('room_id')
+    room = state.rooms.get(room_id)
+    if not old_sid or not room:
+        return None
+    game = room.game
+    if not game.started or game.finished or state.player_rooms.get(old_sid) != room_id:
+        return None
+
+    game.mark_disconnected(old_sid)
+    _sio_leave_room(old_sid, room_id)
+    del state.player_rooms[old_sid]
+    state.mark_disconnected(
+        token, old_sid, room_id,
+        state.player_names.get(old_sid) or token_info.get('player_name', '?'),
+        state.player_auth.get(old_sid) or token_info.get('auth_info'),
+    )
+    return old_sid
+
 
 @socketio.on('get_rooms')
 def handle_get_rooms():
@@ -683,6 +778,9 @@ def handle_create_room(data):
         emit('error', {'message': 'Túl sok szoba létrehozás, várj egy kicsit.'})
         return
     if not isinstance(data, dict):
+        return
+    if state.player_rooms.get(sid) in state.rooms:
+        emit('error', {'message': 'Már egy szobában vagy. Előbb lépj ki belőle.'})
         return
 
     name = _sanitize_room_name(data.get('name', '')) or 'Szoba'
@@ -733,6 +831,57 @@ def handle_create_room(data):
     emit('rooms_list', state.get_rooms_list(), broadcast=True)
 
 
+_ANY_IDENTITY = object()  # a mentésből nem ismert a hely gazdája (régi mentés): név alapján enged
+
+
+def _identity_matches(expected_user_id, auth_info):
+    """A mentett játék helyét az foglalhatja el, akié volt: regisztrált játékos csak a saját
+    fiókjával, vendég hely pedig csak vendéggel (név alapú azonosításnál nincs más igazolás)."""
+    if expected_user_id is _ANY_IDENTITY:
+        return True
+    user_id = auth_info.get('user_id') if auth_info else None
+    if expected_user_id is None:
+        return not user_id
+    return user_id == expected_user_id and not auth_info.get('is_guest')
+
+
+def _try_late_join(sid, room_id, room, player_name, auth_info):
+    """Visszaállított, már elindult játékba a hiányzó játékos utólag becsatlakozik.
+
+    Visszatér: True, ha sikerült (a válaszokat is elküldte).
+    """
+    game = room.game
+    if game.finished or player_name not in room.late_join_names:
+        return False
+    player = next((p for p in game.players
+                   if p.name == player_name and p.disconnected), None)
+    if not player or not _identity_matches(room.late_join_names[player_name], auth_info):
+        return False
+
+    game.replace_player_sid(player.id, sid)
+    room.late_join_names.pop(player_name, None)
+    state.player_rooms[sid] = room_id
+    join_room(room_id)
+    token = state.generate_reconnect_token(sid, room_id, player_name,
+                                           state.player_auth.get(sid))
+
+    emit('room_joined', {
+        'room_id': room_id,
+        'room_name': room.name,
+        'is_owner': False,
+        'challenge_mode': game.challenge_mode,
+        'is_private': room.is_private,
+        'turn_time_limit': game.turn_time_limit,
+        'reconnect_token': token,
+        'chat_messages': room.chat_messages,
+    })
+    _emit_all_states(game, room_id)
+    emit('game_started', {})
+    emit('player_reconnected', {'name': player_name}, room=room_id)
+    emit('rooms_list', state.get_rooms_list(), broadcast=True)
+    return True
+
+
 @socketio.on('join_room')
 def handle_join_room(data):
     sid = request.sid
@@ -742,7 +891,12 @@ def handle_join_room(data):
     if not isinstance(data, dict):
         return
 
-    code = data.get('code', '').strip()
+    if state.player_rooms.get(sid) in state.rooms:
+        emit('error', {'message': 'Már egy szobában vagy. Előbb lépj ki belőle.'})
+        return
+
+    code = data.get('code', '')
+    code = code.strip() if isinstance(code, str) else ''
     room_id = data.get('room_id')
 
     joined_by_code = False
@@ -774,6 +928,7 @@ def handle_join_room(data):
 
     game = room.game
     player_name = state.player_names.get(sid, 'Névtelen')
+    auth_info = state.player_auth.get(sid) or {}
 
     # Restore lobby: csak az elvárt játékosok csatlakozhatnak
     if room.is_restored and hasattr(room, 'expected_players') and room.expected_players:
@@ -785,12 +940,20 @@ def handle_join_room(data):
             if p.name == player_name:
                 emit('error', {'message': 'Ezzel a névvel már csatlakozott valaki.'})
                 return
+        if not _identity_matches(room.known_user_ids.get(player_name, _ANY_IDENTITY), auth_info):
+            emit('error', {'message': 'Ez a hely egy másik játékosé a mentett játékban.'})
+            return
 
     if game.started:
+        if _try_late_join(sid, room_id, room, player_name, auth_info):
+            return
         emit('error', {'message': 'A játék már elkezdődött.'})
         return
     if len(game.players) >= room.max_players:
         emit('error', {'message': 'A szoba megtelt.'})
+        return
+    if any(p.name.casefold() == player_name.casefold() for p in game.players):
+        emit('error', {'message': 'Ilyen nevű játékos már van a szobában.'})
         return
 
     success, msg = game.add_player(sid, player_name)
@@ -865,11 +1028,8 @@ def handle_leave_room(data=None):
                                 state.player_auth.get(sid))
 
         # Ha az ő köre volt, léptetjük
-        if game.current_player() and game.current_player().id == sid:
-            game._next_turn()
-            room.invalidate_turn_timer()
-            _start_turn_timer(room_id)
-        
+        _advance_turn_if_needed(room_id, room, game)
+
         _emit_all_states(game, room_id)
         emit('player_left', {'name': player_name}, room=room_id)
     else:
@@ -940,10 +1100,30 @@ def handle_start_game():
             # current_player_idx korrekció
             if restored_game.current_player_idx >= len(restored_game.players):
                 restored_game.current_player_idx = 0
+            # Ha a soron lévő játékos nincs jelen, ne akadjon el a játék rajta
+            restored_game.skip_disconnected_current()
+
+            # A korábbi lépések átvétele, hogy a visszajátszás a teljes játékot mutassa
+            restored_game.move_log = [
+                {
+                    'move_number': m['move_number'],
+                    'player_name': m['player_name'],
+                    'action_type': m['action_type'],
+                    'details_json': m['details_json'],
+                    'board_snapshot_json': m['board_snapshot_json'],
+                }
+                for m in get_game_moves(save_data['id'])
+            ]
+            room.last_saved_move_count = 0
 
             room.game = restored_game
             room.restore_save_data = None
             room.is_restored = False
+            # A hiányzók menet közben még becsatlakozhatnak (név + fiók alapján)
+            room.late_join_names = {
+                p.name: room.known_user_ids.get(p.name, _ANY_IDENTITY)
+                for p in restored_game.players if p.disconnected
+            }
 
             # Abandon the old DB save since we're now playing in a new room
             abandon_game_by_id(save_data['id'])
@@ -953,6 +1133,9 @@ def handle_start_game():
             _emit_all_states(restored_game, room_id)
             emit('game_started', {}, room=room_id)
             emit('rooms_list', state.get_rooms_list(), broadcast=True)
+
+            # Új mentés az új szobához (játékoslista, lépések) — így nem vész el a játék
+            _save_game_to_db(room_id)
         except Exception as e:
             print(f"[restore] Hiba a visszaállításnál: {e}")
             emit('error', {'message': 'Hiba a játék visszaállításánál.'})
@@ -1010,8 +1193,11 @@ def handle_restore_game(data):
         return
 
     game_id = data.get('game_id')
-    if not isinstance(game_id, int):
+    if not isinstance(game_id, int) or isinstance(game_id, bool):
         emit('error', {'message': 'Érvénytelen játék azonosító.'})
+        return
+    if state.player_rooms.get(sid) in state.rooms:
+        emit('error', {'message': 'Már egy szobában vagy. Előbb lépj ki belőle.'})
         return
 
     # Auth ellenőrzés
@@ -1072,6 +1258,9 @@ def handle_restore_game(data):
     room.is_restored = True
     room.restore_save_data = game_row
     room.expected_players = expected_players
+    room.known_user_ids = {
+        gp['player_name']: gp['user_id'] for gp in get_game_players(game_id)
+    }
 
     state.add_room(room)
 
@@ -1112,7 +1301,7 @@ def handle_place_tiles(data):
 
     if success:
         room.invalidate_turn_timer()
-        emit('action_result', {'success': True, 'message': msg, 'score': score})
+        emit('action_result', {'success': True, 'message': msg, 'score': score, 'own_turn': True})
         if game.pending_challenge:
             _start_challenge_timer(room_id)
         elif game.finished:
@@ -1147,7 +1336,7 @@ def handle_exchange_tiles(data):
 
     if success:
         room.invalidate_turn_timer()
-        emit('action_result', {'success': True, 'message': msg})
+        emit('action_result', {'success': True, 'message': msg, 'own_turn': True})
         _start_turn_timer(room_id)
         _emit_all_states(game, room_id)
     else:
@@ -1165,7 +1354,7 @@ def handle_pass_turn():
 
     if success:
         room.invalidate_turn_timer()
-        emit('action_result', {'success': True, 'message': msg})
+        emit('action_result', {'success': True, 'message': msg, 'own_turn': True})
         if game.finished:
             _save_game_to_db(room_id)
         else:

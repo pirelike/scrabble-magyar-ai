@@ -101,7 +101,55 @@ class TestVerifyCode:
 
 
 class TestRegister:
+    def test_register_requires_verified_email(self, client):
+        """Kód megerősítés nélkül nem lehet regisztrálni (mások email címével sem)."""
+        res = client.post('/api/auth/register',
+                         json={
+                             'email': 'unverified@example.com',
+                             'password': 'password123',
+                             'display_name': 'Sneaky',
+                         })
+        assert res.status_code == 403
+        assert res.get_json()['success'] is False
+        import auth
+        assert auth.get_user_by_email('unverified@example.com') is None
+
+    def test_register_verification_is_single_use(self, client):
+        from helpers import verify_email
+        import auth
+        verify_email('once@example.com')
+        res = client.post('/api/auth/register',
+                         json={'email': 'once@example.com', 'password': 'password123',
+                               'display_name': 'Once'})
+        assert res.status_code == 200
+        # A megerősítés elhasználódott: törölt fiók után nem regisztrálható újra kód nélkül
+        with auth._db() as conn:
+            conn.execute('DELETE FROM users WHERE email_lower = ?', ('once@example.com',))
+        res = client.post('/api/auth/register',
+                         json={'email': 'once@example.com', 'password': 'password123',
+                               'display_name': 'Again'})
+        assert res.status_code == 403
+
+    def test_register_verification_is_per_email(self, client):
+        from helpers import verify_email
+        verify_email('verified@example.com')
+        res = client.post('/api/auth/register',
+                         json={'email': 'other@example.com', 'password': 'password123',
+                               'display_name': 'Other'})
+        assert res.status_code == 403
+
+    def test_register_non_string_fields_do_not_crash(self, client):
+        res = client.post('/api/auth/register', json={'email': 5, 'password': ['x'],
+                                                       'display_name': {'a': 1}})
+        assert res.status_code == 400
+        res = client.post('/api/auth/login', json={'email': 5, 'password': 7})
+        assert res.status_code == 400
+        res = client.post('/api/auth/verify-code', json={'email': 1, 'code': 2})
+        assert res.status_code == 400
+
     def test_register_success(self, client):
+        from helpers import verify_email
+        verify_email('test@example.com')
         res = client.post('/api/auth/register',
                          json={
                              'email': 'test@example.com',
