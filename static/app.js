@@ -32,6 +32,11 @@ document.addEventListener('click', (e) => {
         if (typeof Auth !== 'undefined') Auth.logout();
         return;
     }
+
+    if (e.target.closest('.btn-exit-panel')) {
+        if (typeof ExitGame !== 'undefined') ExitGame.showDialog();
+        return;
+    }
 });
 
 // ===== CONSTANTS =====
@@ -102,6 +107,11 @@ function showScreen(screenId) {
     const globalToggle = document.getElementById('theme-toggle');
     if (globalToggle) globalToggle.classList.toggle('hidden', screenId !== 'auth-screen');
     window.scrollTo(0, 0);
+}
+
+// A szoba neve a felső sávban és (telefonon) a játék menüsorában is megjelenik
+function setGameRoomName(name) {
+    document.querySelectorAll('.game-room-name').forEach(el => { el.textContent = name; });
 }
 
 function showMessage(msg, isError = false) {
@@ -1119,9 +1129,7 @@ const GameBoard = {
                     roomId: AppState.currentRoomId,
                 }));
             }
-            // Update game topbar room name
-            const gameRoomName = document.getElementById('game-room-name');
-            if (gameRoomName) gameRoomName.textContent = AppState.roomName || 'Szoba';
+            setGameRoomName(AppState.roomName || 'Szoba');
             // Update lobby room tab
             const roomTab = document.getElementById('nav-tab-room');
             if (roomTab) roomTab.textContent = 'Aktív játék';
@@ -1186,9 +1194,7 @@ const GameBoard = {
             }
             this._prevCurrentPlayer = state.current_player;
 
-            // Update game topbar room name if not set
-            const gameRoomName = document.getElementById('game-room-name');
-            if (gameRoomName && AppState.roomName) gameRoomName.textContent = AppState.roomName;
+            if (AppState.roomName) setGameRoomName(AppState.roomName);
 
             if (state.finished) {
                 ChallengeUI.stopCountdown(); TurnTimerUI._stop();
@@ -1844,10 +1850,28 @@ const Chat = {
         input.value = '';
     },
 
+    // Látszik-e a chat ablak a képernyőn, és nem takarja-e el valami (pl. a ragadós gombsor)?
+    _isVisible() {
+        const el = document.getElementById('chat-messages');
+        if (!el || el.offsetParent === null) return false;
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 || r.bottom <= 0 || r.top >= window.innerHeight) return false;
+        const x = r.left + r.width / 2;
+        const y = Math.min(Math.max(r.top + r.height / 2, 1), window.innerHeight - 1);
+        const hit = document.elementFromPoint(x, y);
+        return !!hit && el.contains(hit);
+    },
+
     onMessage(msg, skipSound = false) {
         AppState.chatMessages.push(msg);
-        if (!skipSound && (!msg.sid || msg.sid !== socket.id)) {
+        const fromOther = !msg.sid || msg.sid !== socket.id;
+        if (!skipSound && fromOther) {
             SoundManager.play('chat');
+            // Telefonon a chat gyakran a képernyőn kívül van: ilyenkor értesítésként is megjelenik
+            if (!this._isVisible()) {
+                const text = String(msg.message);
+                showMessage(`${msg.name}: ${text.length > 80 ? text.slice(0, 80) + '…' : text}`);
+            }
         }
         const container = document.getElementById('chat-messages');
         if (!container) return;

@@ -367,7 +367,7 @@
                 <button id="btn-exit-game" class="topbar-btn" type="button" aria-label="Kilépés a játékból" title="Kilépés">
                     <svg class="icon"><use href="#i-back"/></svg>
                 </button>
-                <h1 class="topbar-title" id="game-room-name">Szoba</h1>
+                <h1 class="topbar-title game-room-name" id="game-room-name">Szoba</h1>
             </div>
             <div class="topbar-right">
                 <button class="topbar-btn btn-profile-nav" type="button" aria-label="Profil" title="Profilom">
@@ -388,6 +388,28 @@
         <main class="game-layout">
             <!-- Info panel -->
             <aside class="side-panel">
+                <!-- Telefonon a felső sáv helyett: a gombok egy sorban a görgethető részben -->
+                <div class="game-nav" role="toolbar" aria-label="Menü">
+                    <button class="topbar-btn btn-exit-panel" type="button" aria-label="Kilépés a játékból" title="Kilépés">
+                        <svg class="icon"><use href="#i-back"/></svg>
+                    </button>
+                    <span class="game-nav-title game-room-name">Szoba</span>
+                    <div class="game-nav-actions">
+                        <button class="topbar-btn btn-profile-nav" type="button" aria-label="Profil" title="Profilom">
+                            <svg class="icon"><use href="#i-user"/></svg>
+                        </button>
+                        <button class="topbar-btn btn-sound-settings" type="button" aria-label="Hangbeállítások" title="Hangbeállítások">
+                            <svg class="icon"><use href="#i-volume"/></svg>
+                        </button>
+                        <button class="topbar-btn btn-theme-toggle" type="button" aria-label="Téma váltás" title="Téma váltás">
+                            <svg class="icon icon-sun"><use href="#i-sun"/></svg>
+                            <svg class="icon icon-moon"><use href="#i-moon"/></svg>
+                        </button>
+                        <button class="topbar-btn topbar-btn-danger btn-logout-nav" type="button" aria-label="Kijelentkezés" title="Kijelentkezés">
+                            <svg class="icon"><use href="#i-logout"/></svg>
+                        </button>
+                    </div>
+                </div>
                 <section class="panel-status">
                     <h2 class="panel-heading">Pontok</h2>
                     <div id="scoreboard" class="scoreboard"></div>

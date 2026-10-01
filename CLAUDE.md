@@ -332,14 +332,15 @@ Játék közben a side panelen chat szekció érhető el:
 4. **Játék képernyő**: info panel + tábla + betűtartó (lásd lent)
 5. **Profil** és **Visszajátszás**
 
-Minden képernyőn (az auth kivételével) ugyanaz a **sticky felső sáv** (`.app-topbar`) látszik: vissza gomb + cím balra, profil / hang / téma / kijelentkezés jobbra. A sáv mobilon és tableten sem tűnik el (korábban a játékban eltűnt). `env(safe-area-inset-*)` kezeli a notchot és a home indicatort (`viewport-fit=cover`).
+Minden képernyőn (az auth kivételével) ugyanaz a **sticky felső sáv** (`.app-topbar`) látszik: vissza gomb + cím balra, profil / hang / téma / kijelentkezés jobbra. **Kivétel: a játék képernyő telefonon** (álló ≤600px és fekvő érintőképernyős telefon) — ott a hely szűkös, ezért nincs felső sáv, a gombok a `.game-nav` menüsorban vannak egyetlen sorban (kilépés · szobanév · profil · hang · téma · kijelentkezés), a görgethető tartalomban. Tableten és asztali gépen a játékban is marad a felső sáv. `env(safe-area-inset-*)` kezeli a notchot és a home indicatort (`viewport-fit=cover`).
 
 ### Játék képernyő elrendezés
 Három elrendezés, CSS media query-kkel (`static/style.css` 11–13. szakasz):
 
 - **Alap (fekvő, asztali gép, fekvő tablet)** — két oszlop: bal oldali `side-panel` (300px, sticky, saját görgetéssel) + tábla és betűtartó. A tábla mérete (`--board-size`) a képernyő magasságából is számolódik, így tábla + betűtartó görgetés nélkül elfér.
-- **Álló (`orientation: portrait`: telefon, tablet álló)** — egy oszlop: állapotsor (pontszám-kártyák, zsák, kör infó, időzítő) → challenge → tábla → betűtartó → chat → **alul ragadó eszköztár** (Lerak / Csere / Passz / Visszavon). A `.side-panel` itt `display: contents`, a gyerekei `order`-rel rendeződnek.
-- **Fekvő telefon (`orientation: landscape` és `max-height: 540px`)** — kompakt két oszlop, a betűtartó függőlegesen a tábla mellett.
+- **Álló (`orientation: portrait`: telefon, tablet álló)** — egy oszlop: állapotsor (pontszám-kártyák, zsák, kör infó, időzítő) → challenge → tábla → menüsor (csak telefonon) → chat → **alul ragadó "dokk"**: betűtartó + lépés-gombok (Lerak / Csere / Passz / Visszavon, egy sorban). A betűtartó a görgethető tartalom legvégén van és ragadós (`bottom: var(--actions-h)`), így mindig a gombsor fölé tapad — a gombsor **soha nem takarhatja el a zsetonokat**. A `.side-panel` és a `.board-area` itt `display: contents`, a gyerekeik `order`-rel rendeződnek. A `--chrome-top` változó a játék feletti rögzített sáv magassága (telefonon 0).
+- **Fekvő telefon (`orientation: landscape` és `max-height: 540px`)** — kompakt két oszlop, a betűtartó függőlegesen a tábla mellett; érintőképernyős telefonon a menüsor az oldalpanel tetején van (felső sáv nélkül, így nagyobb a tábla).
+- **Chat telefonon**: a chat a görgethető részben van; ha a chat ablak nem látszik (`Chat._isVisible()`), a másik játékos üzenete értesítésként (toast) is megjelenik.
 
 A panel tartalma: pontszámok (aktív játékos kiemelve), játék infó (zsák, aktuális játékos, utolsó akció), kör visszaszámláló (`TurnTimerUI`), challenge szekció (dinamikus), akciógombok, chat.
 

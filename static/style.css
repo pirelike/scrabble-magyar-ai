@@ -1414,13 +1414,15 @@ button.btn-rejoin {
 /* Alap: két oszlop (asztali gép, fekvő tablet). A tábla magasság szerint is méreteződik,
    hogy a tábla + betűtartó mindig elférjen a képernyőn. */
 .game-layout {
+    /* A játék feletti rögzített sáv magassága: asztali gépen/tableten a felső sáv, telefonon 0 (a gombok a görgethető részben vannak) */
+    --chrome-top: var(--topbar-total);
     --panel-w: 300px;
     --gutter: var(--space-6);
     --hand-gap: 6px;
     --hand-pad: 14px;
     --board-size: clamp(
         320px,
-        min(720px, calc(var(--vh) - var(--topbar-total) - 156px), calc(100vw - var(--panel-w) - 3 * var(--gutter))),
+        min(720px, calc(var(--vh) - var(--chrome-top) - 156px), calc(100vw - var(--panel-w) - 3 * var(--gutter))),
         720px
     );
     --tile: min(64px, max(calc(var(--board-size) / 10.5), 44px));
@@ -1435,15 +1437,40 @@ button.btn-rejoin {
              max(var(--gutter), var(--safe-left));
 }
 
+/* ---- Menüsor: telefonon a felső sáv helyett (alapból rejtett) ---- */
+
+.game-nav {
+    display: none;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.game-nav-title {
+    flex: 1;
+    min-width: 0;
+    font-size: var(--text-base);
+    font-weight: 700;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.game-nav-actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 6px;
+}
+
 /* ---- Oldalsó panel ---- */
 
 .side-panel {
     position: sticky;
-    top: calc(var(--topbar-total) + var(--space-4));
+    top: calc(var(--chrome-top) + var(--space-4));
     display: flex;
     flex-direction: column;
     gap: var(--space-4);
-    max-height: calc(var(--vh) - var(--topbar-total) - var(--space-8));
+    max-height: calc(var(--vh) - var(--chrome-top) - var(--space-8));
     padding: var(--space-5);
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -2002,19 +2029,21 @@ button.btn-rejoin {
 
 
 /* ===== 12. JÁTÉK: ÁLLÓ NÉZET (telefon, tablet álló) ===== */
-/* Egy oszlop: állapot → tábla → betűk → chat → lépés-gombok (alul ragadó eszköztár).
-   A felső sáv végig látható, nincs takarás. */
+/* Egy oszlop: állapot → tábla → (menüsor) → chat → betűtartó → lépés-gombok.
+   Alul egy "dokk" ragad: a betűtartó és a lépés-gombok egymás fölött. A betűtartó a görgethető
+   tartalom legvégén van, ezért mindig a gombsor fölé tapad: a gombsor soha nem takarhatja el a zsetonokat. */
 
 @media (orientation: portrait) {
     .game-layout {
         --gutter: clamp(12px, 3vw, 24px);
         --hand-pad: 10px;
+        --actions-h: calc(60px + var(--safe-bottom));
         --board-size: min(
             calc(100vw - 2 * var(--gutter) - var(--safe-left) - var(--safe-right)),
             720px,
-            max(300px, calc(var(--vh) - var(--topbar-total) - 300px - var(--safe-bottom)))
+            max(300px, calc(var(--vh) - var(--chrome-top) - 300px - var(--safe-bottom)))
         );
-        min-height: calc(var(--vh) - var(--topbar-total));
+        min-height: calc(var(--vh) - var(--chrome-top));
         --tile: min(
             calc((100vw - 2 * var(--gutter) - 2 * var(--hand-pad) - 6 * var(--hand-gap) - var(--safe-left) - var(--safe-right)) / 7),
             64px,
@@ -2033,11 +2062,16 @@ button.btn-rejoin {
         display: contents;
     }
 
+    /* A tábla és a betűtartó külön elemként rendeződik (a betűtartó ragadós) */
+    .board-area { display: contents; }
+
     .panel-status { order: 1; }
     .challenge-section { order: 2; }
-    .board-area { order: 3; }
-    .chat-section { order: 4; flex: 1 1 0; min-height: 150px; margin-top: var(--space-2); }
-    .actions { order: 5; }
+    .board-zoom-container { order: 3; align-self: center; }
+    .game-nav { order: 4; }
+    .chat-section { order: 5; flex: 1 1 0; min-height: 150px; margin-top: var(--space-2); }
+    .hand { order: 6; }
+    .actions { order: 7; }
 
     /* Állapotsor: pontszám-kártyák + infó + időzítő */
     .panel-status {
@@ -2141,13 +2175,23 @@ button.btn-rejoin {
         padding: var(--space-3);
     }
 
-    /* A tábla és a betűk középre */
-    .board-area {
-        gap: var(--space-2);
-    }
-
+    /* Betűtartó: a gombsor fölé tapadó, teljes szélességű sáv */
     .hand {
+        position: sticky;
+        bottom: var(--actions-h);
+        z-index: var(--z-sticky);
         gap: var(--hand-gap);
+        width: auto;
+        max-width: none;
+        margin: 0 calc(-1 * max(var(--gutter), var(--safe-right))) calc(-1 * var(--space-2)) calc(-1 * max(var(--gutter), var(--safe-left)));
+        padding: var(--hand-pad) max(var(--gutter), var(--safe-right)) var(--hand-pad) max(var(--gutter), var(--safe-left));
+        background: var(--bar-bg);
+        border: none;
+        border-block: 1px solid var(--border-primary);
+        border-radius: 0;
+        box-shadow: none;
+        -webkit-backdrop-filter: saturate(180%) blur(20px);
+        backdrop-filter: saturate(180%) blur(20px);
     }
 
     /* Chat az eszköztár fölött */
@@ -2171,11 +2215,13 @@ button.btn-rejoin {
         bottom: 0;
         z-index: var(--z-sticky);
         grid-template-columns: repeat(4, 1fr);
+        grid-template-rows: 44px;
+        height: var(--actions-h);
         margin: auto calc(-1 * max(var(--gutter), var(--safe-right))) 0 calc(-1 * max(var(--gutter), var(--safe-left)));
         padding: var(--space-2) max(var(--gutter), var(--safe-right)) calc(var(--space-2) + var(--safe-bottom))
                  max(var(--gutter), var(--safe-left));
         background: var(--bar-bg);
-        border-top: 1px solid var(--border-primary);
+        border: none;
         -webkit-backdrop-filter: saturate(180%) blur(20px);
         backdrop-filter: saturate(180%) blur(20px);
     }
@@ -2197,7 +2243,10 @@ button.btn-rejoin {
         --hand-pad: 6px;
         --board-size: clamp(
             200px,
-            calc(var(--vh) - var(--topbar-total) - 3 * var(--space-2) - var(--safe-bottom)),
+            min(
+                calc(var(--vh) - var(--chrome-top) - 3 * var(--space-2) - var(--safe-bottom)),
+                calc(100vw - var(--panel-w) - 4 * var(--gutter) - 70px - var(--safe-left) - var(--safe-right))
+            ),
             560px
         );
         --tile: min(46px, calc((var(--board-size) - 2 * var(--hand-pad) - 6 * var(--hand-gap)) / 7));
@@ -2209,8 +2258,8 @@ button.btn-rejoin {
     }
 
     .side-panel {
-        top: calc(var(--topbar-total) + var(--space-2));
-        max-height: calc(var(--vh) - var(--topbar-total) - 2 * var(--space-2) - var(--safe-bottom));
+        top: calc(var(--chrome-top) + var(--space-2));
+        max-height: calc(var(--vh) - var(--chrome-top) - 2 * var(--space-2) - var(--safe-bottom));
         gap: var(--space-3);
         padding: var(--space-3);
     }
@@ -2244,6 +2293,56 @@ button.btn-rejoin {
 
     .topbar-user {
         display: none;
+    }
+}
+
+
+/* ===== 13b. JÁTÉK: TELEFON — nincs felső sáv, a gombok a görgethető részben vannak ===== */
+/* A függőleges hely telefonon szűkös: a felső sáv helyett egy menüsor van (kilépés · szobanév · profil ·
+   hang · téma · kijelentkezés), egyetlen sorban. Tableten és asztali gépen marad a felső sáv. */
+
+@media (orientation: portrait) and (max-width: 600px) {
+    #game-screen > .app-topbar {
+        display: none;
+    }
+
+    .game-layout {
+        --chrome-top: var(--safe-top);
+        padding-top: calc(var(--space-2) + var(--safe-top));
+    }
+
+    .game-nav {
+        display: flex;
+        padding: 6px var(--space-2);
+        background: var(--bg-card);
+        border: 1px solid var(--border-primary);
+        border-radius: var(--radius-md);
+    }
+}
+
+@media (orientation: landscape) and (max-height: 540px) and (pointer: coarse) {
+    #game-screen > .app-topbar {
+        display: none;
+    }
+
+    .game-layout {
+        --chrome-top: var(--safe-top);
+        padding-top: calc(var(--space-2) + var(--safe-top));
+    }
+
+    /* A menüsor az oldalpanel tetején, a szobanév nélkül (nincs rá hely) */
+    .game-nav {
+        display: flex;
+        justify-content: space-between;
+    }
+
+    .game-nav-title {
+        display: none;
+    }
+
+    .game-nav .topbar-btn {
+        width: 34px;
+        height: 34px;
     }
 }
 
