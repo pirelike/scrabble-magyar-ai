@@ -41,9 +41,9 @@ Böngészőben: http://localhost:5000
 - `socket_auth.py` — Aláírt, rövid életű token a Socket.IO identitás igazolásához (`set_name`)
 - `tunnel.py` — Cloudflare tunnel subprocess kezelés (indítás/leállítás)
 - `dict/` — Beágyazott hu_HU hunspell szótár fájlok (hu_HU.dic, hu_HU.aff)
-- `templates/index.html` — Egyoldalas UI: auth (3 tab), lobby, várakozó szoba, játék
+- `templates/index.html` — Egyoldalas UI: auth (3 tab), lobby, várakozó szoba, játék, profil, visszajátszás; közös SVG ikon-sprite, minden képernyőn egységes felső sáv (`app-topbar`)
 - `static/app.js` — Kliens logika, drag & drop, pinch-to-zoom, Socket.IO kommunikáció, auth flow, téma váltás, hang rendszer (SoundManager, SoundSettings)
-- `static/style.css` — Stílusok, sötét/világos téma (Slate+Gold paletta), reszponzív layout
+- `static/style.css` — Apple HIG ihletésű design rendszer (tokenek, iOS-szerű komponensek), sötét/világos téma, reszponzív layout (asztali / tablet / telefon, álló és fekvő)
 - `tests/` — Tesztek (pytest, 500 teszt)
 - `requirements.txt` — Python függőségek (flask, flask-socketio, pyenchant, eventlet)
 - `.venv/` — Virtual environment
@@ -62,7 +62,7 @@ Böngészőben: http://localhost:5000
 - **Körönkénti időlimit**: opcionális (0/60/90/120/180/300 mp), lejáratkor automatikus passz
 - Challenge (megtámadás) mód: 2 játékosnál kötelező elfogadás, 3+ játékosnál szavazásos rendszer (nincs szótár)
 - Játék közbeni chat: szöveges üzenetküldés a szobában
-- **Sötét / világos téma**: automatikus detektálás (`prefers-color-scheme`), manuális váltás, `localStorage`-ban mentve
+- **Sötét / világos téma**: automatikus detektálás (`prefers-color-scheme`), manuális váltás, `localStorage`-ban mentve, villanásmentes betöltés
 - **Hang effektek**: Web Audio API (nincs külső fájl), szintetizált hangok — betű lerakás, szavazás, challenge eredmény, kör értesítő, chat, játék kezdés/vége; hangerő-csúszka + kategóriánkénti kapcsolók, `localStorage`-ban mentve
 - **Újracsatlakozás (grace period)**: 120 másodperc a visszacsatlakozásra ha a kapcsolat megszakad játék közben (token alapú)
 - **Pinch-to-zoom**: mobilon a tábla nagyítható/kicsinyíthető csípő mozdulattal
@@ -326,34 +326,45 @@ Játék közben a side panelen chat szekció érhető el:
 ## UI felépítés
 
 ### Képernyők
-1. **Auth képernyő**: 3 tab (Bejelentkezés, Regisztráció, Vendég)
-2. **Lobby**: szoba létrehozás (regisztráltaknak), kóddal csatlakozás, nyilvános szobák listája
-3. **Várakozó szoba**: játékosok listája, challenge/privát/időlimit badge-ek, start gomb (owner)
-4. **Játék képernyő**: bal panel (270px) + tábla + kéz
+1. **Auth képernyő**: 3 tab (Bejelentkezés, Regisztráció, Vendég), lebegő téma gomb
+2. **Lobby**: középre igazított szegmentált navigáció (Kezdőlap / Új szoba / Mentett játékok / Barátok), szoba létrehozás (regisztráltaknak), kóddal csatlakozás, nyilvános szobák listája
+3. **Várakozó szoba**: badge-ek (challenge/privát/időlimit), csatlakozási kód, játékoslista, start gomb (owner)
+4. **Játék képernyő**: info panel + tábla + betűtartó (lásd lent)
+5. **Profil** és **Visszajátszás**
+
+Minden képernyőn (az auth kivételével) ugyanaz a **sticky felső sáv** (`.app-topbar`) látszik: vissza gomb + cím balra, profil / hang / téma / kijelentkezés jobbra. A sáv mobilon és tableten sem tűnik el (korábban a játékban eltűnt). `env(safe-area-inset-*)` kezeli a notchot és a home indicatort (`viewport-fit=cover`).
 
 ### Játék képernyő elrendezés
-- **Bal oldali panel** (`side-panel`, 270px, sticky):
-  - Pontszámok (scoreboard, aktív játékos kiemelve)
-  - Játék infó (zsákban maradt zsetonok, aktuális játékos, utolsó akció)
-  - Kör visszaszámláló (ha időlimit be van állítva, `TurnTimerUI`)
-  - Challenge szekció (gombok, időzítő, szavazás — dinamikus)
-  - Akciógombok 2×2-es rácsban: Lerak, Csere, Passz, Visszavon
-  - Chat szekció (üzenetek + input mező)
-- **Tábla terület**: 15×15 rács, premium mezők labelekkel, board-level event delegation drag & drop-hoz
-- **Kéz**: 7 zseton, drag & drop / kattintásos elhelyezés, csere mód
+Három elrendezés, CSS media query-kkel (`static/style.css` 11–13. szakasz):
+
+- **Alap (fekvő, asztali gép, fekvő tablet)** — két oszlop: bal oldali `side-panel` (300px, sticky, saját görgetéssel) + tábla és betűtartó. A tábla mérete (`--board-size`) a képernyő magasságából is számolódik, így tábla + betűtartó görgetés nélkül elfér.
+- **Álló (`orientation: portrait`: telefon, tablet álló)** — egy oszlop: állapotsor (pontszám-kártyák, zsák, kör infó, időzítő) → challenge → tábla → betűtartó → chat → **alul ragadó eszköztár** (Lerak / Csere / Passz / Visszavon). A `.side-panel` itt `display: contents`, a gyerekei `order`-rel rendeződnek.
+- **Fekvő telefon (`orientation: landscape` és `max-height: 540px`)** — kompakt két oszlop, a betűtartó függőlegesen a tábla mellett.
+
+A panel tartalma: pontszámok (aktív játékos kiemelve), játék infó (zsák, aktuális játékos, utolsó akció), kör visszaszámláló (`TurnTimerUI`), challenge szekció (dinamikus), akciógombok, chat.
+
+A tábla cellái `container-type: inline-size` + `cqw` egységekkel méreteződnek (betű, érték, premium felirat), a rövid premium felirat (`2× BETŰ`) a tábla szélességétől függően jelenik meg (`@container board`). Többkarakteres betűknél (SZ, CS...) a JS `long-letter` osztályt ad.
 
 ### Téma rendszer
-- Slate+Gold színpaletta mindkét módban
-- Automatikus detektálás: `prefers-color-scheme` media query
-- Manuális váltás: téma gomb (jobb felső sarok)
-- Mentés: `localStorage('scrabble-theme')`
-- CSS változók: `--bg-*`, `--text-*`, `--accent-*`, `--border-*` stb.
+- iOS-szerű paletta (`#007AFF` / sötét módban `#0A84FF`), rendszerfont-stack (SF Pro az Apple eszközökön, Inter fallback)
+- Automatikus detektálás: `prefers-color-scheme`; a `<head>` inline szkriptje a megjelenítés előtt beállítja a `data-theme` attribútumot a `<html>` elemen (nincs villanás)
+- Manuális váltás: `.btn-theme-toggle` osztályú gombok (egy közös, delegált kezelő: `toggleTheme()`)
+- Mentés: `localStorage('scrabble-theme')`; a `<meta name="theme-color">` is frissül
+- CSS változók: `--bg-*`, `--text-*`, `--accent*`, `--border-*`, `--color-fill*`, `--radius-*`, `--space-*`, `--text-*` méretek, `--z-*` rétegek
+
+### Komponens-konvenciók
+- Gombok: alap = kitöltött kiemelt; `.secondary` (szürke), `.tinted` (halvány kiemelt), `.danger` (piros), `.link-btn`, `.small-btn`. A változatok a `--btn-bg` / `--btn-bg-hover` / `--btn-fg` változókat állítják. A `:hover` csak `(hover: hover)` eszközön él (iPaden nincs "beragadt" hover).
+- Párbeszédek: `.dialog` + `.dialog-content`; `.dialog-sheet` telefonon (≤600px) alsó lapként (bottom sheet) jelenik meg. Esc és háttérre koppintás bezárja (`Dialogs` a `app.js`-ben). A "Mégsem" gomb mindig `.secondary`.
+- Kapcsolók: iOS-stílusú `.toggle-switch`; csoportosított beállítások `.settings-group`.
+- Listasorok (szoba, mentett játék, előzmény, barát) közös stílust kapnak; üres állapot: `.empty-state > .empty-msg`.
 
 ### Reszponzív design
-- **Desktop**: side panel bal oldalon (270px sticky) + tábla középen
-- **Tablet** (769-1024px): kisebb tábla (`min(60vw, 550px)`)
-- **Mobil portrait** (<768px): panel alulra kerül (fixed), tábla teljes szélességű, pinch-to-zoom
-- **Mobil landscape** (<768px landscape): egymás melletti elrendezés, panel 200px
+- **Asztali gép** (>900px): lobby fejléc egy sorban (cím · navigáció · gombok), játék két oszlopban
+- **Keskeny ablak / tablet** (≤900px): a lobby navigáció új sorba kerül, teljes szélességű szegmentált vezérlő
+- **Telefon** (≤600px): kompaktabb fejléc, 16px-es beviteli mezők (iOS nem nagyít rá), a nagyobb párbeszédek alsó lapok, listasorok egymás alá törnek
+- **Nagyon keskeny** (≤374px): kisebb gombok és betűméretek
+- **Pinch-to-zoom**: érintőképernyőn a tábla nagyítható/kicsinyíthető csípő mozdulattal
+- `100dvh` (mobil böngésző címsor), `prefers-reduced-motion` tiszteletben tartva
 
 ## Hang rendszer
 

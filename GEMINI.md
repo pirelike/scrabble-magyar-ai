@@ -33,9 +33,9 @@ Böngészőben: http://localhost:5000
 - `socket_auth.py` — Aláírt, rövid életű token a Socket.IO identitás igazolásához (`set_name`)
 - `tunnel.py` — Cloudflare tunnel subprocess kezelés (indítás/leállítás)
 - `dict/` — Beágyazott hu_HU hunspell szótár fájlok (hu_HU.dic, hu_HU.aff)
-- `templates/index.html` — Egyoldalas UI: auth (3 tab), lobby, várakozó szoba, játék
+- `templates/index.html` — Egyoldalas UI: auth (3 tab), lobby, várakozó szoba, játék, profil, visszajátszás; közös SVG ikon-sprite, minden képernyőn egységes felső sáv (`app-topbar`)
 - `static/app.js` — Kliens logika, drag & drop, pinch-to-zoom, Socket.IO kommunikáció, auth flow, téma váltás, hang rendszer (SoundManager, SoundSettings)
-- `static/style.css` — Stílusok, sötét/világos téma (Slate+Gold paletta), reszponzív layout
+- `static/style.css` — Apple HIG ihletésű design rendszer (tokenek, iOS-szerű komponensek), sötét/világos téma, reszponzív layout (asztali / tablet / telefon, álló és fekvő)
 - `tests/` — Tesztek (pytest, 500 teszt)
 - `requirements.txt` — Python függőségek (flask, flask-socketio, pyenchant, eventlet)
 - `.venv/` — Virtual environment
