@@ -388,13 +388,13 @@
         <main class="game-layout">
             <!-- Info panel -->
             <aside class="side-panel">
-                <!-- Telefonon a felső sáv helyett: a gombok egy sorban a görgethető részben -->
-                <div class="game-nav" role="toolbar" aria-label="Menü">
-                    <button class="topbar-btn btn-exit-panel" type="button" aria-label="Kilépés a játékból" title="Kilépés">
-                        <svg class="icon"><use href="#i-back"/></svg>
-                    </button>
+                <!-- Álló nézetben (telefon, tablet) a felső sáv helyett: szobanév + gombok egy sorban a panel alján -->
+                <div class="game-nav">
                     <span class="game-nav-title game-room-name">Szoba</span>
                     <div class="game-nav-actions">
+                        <button class="topbar-btn btn-exit-panel" type="button" aria-label="Kilépés a játékból" title="Kilépés">
+                            <svg class="icon"><use href="#i-back"/></svg>
+                        </button>
                         <button class="topbar-btn btn-profile-nav" type="button" aria-label="Profil" title="Profilom">
                             <svg class="icon"><use href="#i-user"/></svg>
                         </button>

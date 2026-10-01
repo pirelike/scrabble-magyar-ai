@@ -1713,6 +1713,9 @@ const ChallengeUI = {
         if (!this.timer) {
             this.startCountdown(pc.expires_at);
             if (!isMyPlacement) SoundManager.play('vote');
+            // Telefonon a panel görgethető: új szavazásnál a tetejére ugrik, hogy a gombok látsszanak
+            const panel = document.querySelector('.side-panel');
+            if (panel) panel.scrollTop = 0;
         } else if (pc.expires_at) {
             // Re-sync with server timestamp on each game_state update
             this.timeLeft = Math.max(0, Math.ceil((pc.expires_at * 1000 - Date.now()) / 1000));
