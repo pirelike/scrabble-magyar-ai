@@ -38,6 +38,9 @@ class ServerState:
 
     def register_player(self, sid, name, auth_info):
         """Játékos név és auth info regisztrálása (set_name)."""
+        # Ha ugyanaz a kapcsolat másik felhasználóként lép be (kijelentkezés után),
+        # az előző azonosság ne maradjon "online" bejegyzésként.
+        self.remove_online_user(sid)
         self.player_names[sid] = name
         self.player_auth[sid] = auth_info
         

@@ -38,12 +38,13 @@ Böngészőben: http://localhost:5000
 - `auth.py` — SQLite DB kezelés, regisztráció, login, session, jelszó hash (PBKDF2), játék mentés/visszatöltés/lépésnaplózás
 - `email_service.py` — 6 számjegyű kód generálás, SMTP küldés (háttérszálon)
 - `rate_limiter.py` — Generikus rate limiter Socket.IO (SID) és HTTP (IP) endpointokhoz
+- `socket_auth.py` — Aláírt, rövid életű token a Socket.IO identitás igazolásához (`set_name`)
 - `tunnel.py` — Cloudflare tunnel subprocess kezelés (indítás/leállítás)
 - `dict/` — Beágyazott hu_HU hunspell szótár fájlok (hu_HU.dic, hu_HU.aff)
 - `templates/index.html` — Egyoldalas UI: auth (3 tab), lobby, várakozó szoba, játék
 - `static/app.js` — Kliens logika, drag & drop, pinch-to-zoom, Socket.IO kommunikáció, auth flow, téma váltás, hang rendszer (SoundManager, SoundSettings)
 - `static/style.css` — Stílusok, sötét/világos téma (Slate+Gold paletta), reszponzív layout
-- `tests/` — Tesztek (pytest, 363 teszt)
+- `tests/` — Tesztek (pytest, 500 teszt)
 - `requirements.txt` — Python függőségek (flask, flask-socketio, pyenchant, eventlet)
 - `.venv/` — Virtual environment
 
@@ -66,7 +67,7 @@ Böngészőben: http://localhost:5000
 - **Újracsatlakozás (grace period)**: 120 másodperc a visszacsatlakozásra ha a kapcsolat megszakad játék közben (token alapú)
 - **Pinch-to-zoom**: mobilon a tábla nagyítható/kicsinyíthető csípő mozdulattal
 - **Szótár-böngésző (Challenge fázis)**: A megtámadás során a lerakott szavak kattintható linkek, amelyek egy új lapon indítanak Google keresést az adott szóra ("A magyar nyelv értelmező szótára" fókusszal).
-- Szótár-ellenőrzés: pyenchant + beágyazott hu_HU szótár (cross-platform, Windows-kompatibilis)
+- Szótár-ellenőrzés: pyenchant + beágyazott hu_HU szótár (cross-platform, Windows-kompatibilis). A szavakat kisbetűvel keresi, így a tulajdonnevek (pl. DUNA, BUDAPEST) nem érvényesek
 - **Játék mentés / visszatöltés**: manuális mentés (owner-only) a kilépés menüből, lobby-first restore flow
 - **Visszajátszás**: befejezett játékok lépésről lépésre visszanézhetők (board snapshot-okkal)
 - **Kilépés menü**: owner: mentés+kilépés / kilépés mentés nélkül / mégsem; nem-owner: kilépés / mégsem
@@ -141,11 +142,12 @@ Vendég mód: a régi név-megadós flow megmarad (statisztikák nem mentődnek)
 ### Auth HTTP route-ok (`routes.py` — Flask blueprint)
 - `POST /api/auth/request-code` — email validálás, kód küldés
 - `POST /api/auth/verify-code` — 6 számjegyű kód ellenőrzés
-- `POST /api/auth/register` — jelszó + név, fiók létrehozás, auto-login
+- `POST /api/auth/register` — jelszó + név, fiók létrehozás, auto-login (csak a kóddal előzőleg megerősített email címre, 30 percig érvényes, egyszer használható)
 - `POST /api/auth/login` — email + jelszó
 - `POST /api/auth/logout` — session törlés
 - `GET /api/auth/me` — session cookie ellenőrzés
 - `GET /api/auth/profile` — statisztikák és játékelőzmények (session cookie)
+- `GET /api/auth/socket-token` — rövid életű (5 perc) aláírt token a Socket.IO `set_name`-hez (session cookie)
 - `GET /api/game/<int:game_id>/moves` — lépések listája (replay-hez)
 
 Session cookie: `HttpOnly` + `SameSite=Lax` + `Secure` (Cloudflare tunnel HTTPS).
@@ -179,16 +181,20 @@ Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztésh
 |---|---|---|
 | `tests/test_auth.py` | 63 | DB, user CRUD, jelszó hash, verifikációs kódok, session kezelés |
 | `tests/test_game_logic.py` | 138 | TileBag, Board, Player, Game, Challenge szavazásos rendszer, kör időlimit |
-| `tests/test_server_auth.py` | 48 | HTTP auth route-ok, cookie flow |
-| `tests/test_server_socket.py` | 62 | Socket.IO eventek, lobby, szobák, privát szobák, challenge szavazás, chat, owner kilépés, kör időlimit |
+| `tests/test_server_auth.py` | 52 | HTTP auth route-ok, cookie flow |
+| `tests/test_server_socket.py` | 67 | Socket.IO eventek, lobby, szobák, privát szobák, challenge szavazás, chat, owner kilépés, kör időlimit |
 | `tests/test_challenge.py` | 17 | Challenge szavazásos rendszer |
-| `tests/test_dictionary.py` | 19 | Szótár-ellenőrzés |
+| `tests/test_dictionary.py` | 23 | Szótár-ellenőrzés (kisbetűs keresés, tulajdonnevek) |
 | `tests/test_email_service.py` | 4 | Email küldés |
 | `tests/test_room.py` | 12 | Room osztály |
+| `tests/test_friends.py` | 27 | Barát CRUD, kérések, felhasználókeresés, szobameghívó, online státusz |
+| `tests/test_timer_and_replay.py` | 27 | Kör időlimit, replay perzisztencia |
+| `tests/test_regressions.py` | 70 | Kódátvizsgálás során talált hibák: zsák, dupla cella, passz-végjáték, mentés szavazás közben, IP rate limit, e-mail megerősítés, socket-token, session átvétel, visszaállítás/késői csatlakozás |
 
-**Összesen: 363 teszt**
+**Összesen: 500 teszt**
 
 Fixture: `tests/conftest.py` — temp_db (auto-applied, ideiglenes SQLite DB minden teszthez)
+Segédek: `tests/helpers.py` — `registered_set_name_payload()` (érvényes socket-tokennel), `verify_email()`
 
 ## Challenge (megtámadás) rendszer — szavazásos
 
@@ -253,12 +259,13 @@ Játék közben a side panelen chat szekció érhető el:
 ### Szoba kezelés (kliens→szerver)
 | Event | Leírás |
 |---|---|
-| `set_name` | Játékosnév / auth adatok beállítása |
+| `set_name` | Játékosnév / auth adatok beállítása. Regisztrált felhasználónál az `auth_token` (lásd `/api/auth/socket-token`) kötelező: a kliens által küldött `user_id` önmagában nem elég, a név a fiókból jön. Érvénytelen token → vendég + hibaüzenet |
+| `logout` | Kijelentkezés: kilépés a szobából, online azonosság törlése |
 | `create_room` | Szoba létrehozása (név, max_players, challenge_mode, is_private, turn_time_limit) |
 | `join_room` | Csatlakozás kóddal vagy room_id-val |
 | `leave_room` | Szoba elhagyása |
 | `get_rooms` | Nyilvános szobák listázása |
-| `rejoin_room` | Újracsatlakozás tokennel (grace period alatt) |
+| `rejoin_room` | Újracsatlakozás tokennel (grace period alatt, vagy a még „élőnek” hitt régi kapcsolat átvételével — pl. háttérbe került telefon, újratöltött oldal) |
 | `start_game` | Játék indítása (owner only) |
 
 ### Játékmenet (kliens→szerver)
@@ -419,7 +426,9 @@ Játék közben a side panelen chat szekció érhető el:
 - Csak az elvárt nevű játékosok csatlakozhatnak (név-alapú validáció)
 - A várakozó szoba mutatja mely játékosok csatlakoztak és kik hiányoznak
 - Owner indítja a játékot → `Game.from_save_dict()` visszaállítja az állapotot
-- **Aki nincs ott a kezdésnél**, az `disconnected=True` státusszal kerül a játékba, és bármikor visszacsatlakozhat menet közben
+- **Aki nincs ott a kezdésnél**, az `disconnected=True` státusszal kerül a játékba, és a szoba kódjával (`join_room`) bármikor becsatlakozhat menet közben — csak a saját fiókjával (vendég hely: vendégként, azonos névvel). Ha a soron lévő játékos hiányzik, a kör továbbadódik
+- A visszaállított játék új mentést kap, a korábbi lépések átkerülnek (a visszajátszás teljes marad)
+- Szavazás közben mentett játékban a függő lerakás betűi visszakerülnek a lerakó kezébe (nem vesznek el zsetonok)
 
 ### Kilépés menü
 - Topbar-ban kilépés gomb → megerősítő dialog

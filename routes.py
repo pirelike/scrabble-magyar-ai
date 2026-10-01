@@ -1,17 +1,19 @@
 import re
 
-from flask import Blueprint, render_template, request, jsonify, make_response
+from flask import Blueprint, render_template, request, jsonify, make_response, current_app
 
 from config import SMTP_CONFIGURED
 from auth import (
     get_user_by_email, create_user, verify_password,
     create_verification_code, verify_code as auth_verify_code,
     create_session, validate_session, delete_session,
+    is_email_verified, clear_email_verification,
     get_game_moves, get_user_game_history, get_game_by_id,
     get_user_active_games, abandon_game_by_id, is_user_in_game,
     get_friends, get_pending_requests, get_sent_requests, search_users,
 )
 from email_service import send_verification_email
+from socket_auth import create_socket_token
 
 # Inicializáláskor beállítandó (server.py-ból init_routes() hívással)
 _rate_limiter = None
@@ -34,9 +36,24 @@ def init_routes(rate_limiter, state, socketio):
     _socketio = socketio
 
 
+_LOOPBACK_ADDRS = ('127.0.0.1', '::1')
+
+
 def _get_client_ip():
-    """Kliens IP cím lekérése (proxy mögötti is)."""
-    return request.headers.get('X-Forwarded-For', request.remote_addr or '127.0.0.1').split(',')[0].strip()
+    """Kliens IP cím lekérése.
+
+    A proxy fejléceket (Cloudflare tunnel) csak akkor vesszük figyelembe, ha a kérés
+    helyi (loopback) proxyról érkezett. Közvetlen eléréskor a fejléc hamisítható volna,
+    ami kiütné az IP-alapú rate limitet.
+    """
+    remote = request.remote_addr or '127.0.0.1'
+    if remote in _LOOPBACK_ADDRS:
+        forwarded = (request.headers.get('CF-Connecting-IP')
+                     or request.headers.get('X-Forwarded-For', ''))
+        candidate = forwarded.split(',')[0].strip()
+        if candidate:
+            return candidate
+    return remote
 
 
 def _set_session_cookie(response, token):
@@ -50,6 +67,12 @@ def _set_session_cookie(response, token):
         max_age=30 * 24 * 3600,
     )
     return response
+
+
+def _str_field(data, key):
+    """Biztonságosan kiolvas egy szöveges mezőt a JSON törzsből (nem szöveg → '')."""
+    value = data.get(key, '')
+    return value.strip() if isinstance(value, str) else ''
 
 
 def _sanitize_name(name, max_len=20):
@@ -80,7 +103,7 @@ def request_code():
         return jsonify({'success': False, 'message': 'Túl sok kérés. Próbáld újra 5 perc múlva.'}), 429
 
     data = request.get_json(silent=True)
-    if not data or not isinstance(data.get('email'), str):
+    if not data or not isinstance(data, dict) or not isinstance(data.get('email'), str):
         return jsonify({'success': False, 'message': 'Email cím megadása kötelező.'}), 400
 
     email = data['email'].strip().lower()
@@ -103,11 +126,11 @@ def request_code():
 @auth_bp.route('/api/auth/verify-code', methods=['POST'])
 def verify_code():
     data = request.get_json(silent=True)
-    if not data:
+    if not data or not isinstance(data, dict):
         return jsonify({'success': False, 'message': 'Érvénytelen kérés.'}), 400
 
-    email = data.get('email', '').strip().lower()
-    code = data.get('code', '').strip()
+    email = _str_field(data, 'email').lower()
+    code = _str_field(data, 'code')
 
     if not email or not code:
         return jsonify({'success': False, 'message': 'Email és kód megadása kötelező.'}), 400
@@ -126,12 +149,14 @@ def register():
         return jsonify({'success': False, 'message': 'Túl sok regisztráció. Próbáld újra később.'}), 429
 
     data = request.get_json(silent=True)
-    if not data:
+    if not data or not isinstance(data, dict):
         return jsonify({'success': False, 'message': 'Érvénytelen kérés.'}), 400
 
-    email = data.get('email', '').strip().lower()
+    email = _str_field(data, 'email').lower()
     password = data.get('password', '')
-    display_name = data.get('display_name', '').strip()
+    if not isinstance(password, str):
+        password = ''
+    display_name = _str_field(data, 'display_name')
 
     if not email or not password or not display_name:
         return jsonify({'success': False, 'message': 'Minden mező kitöltése kötelező.'}), 400
@@ -149,9 +174,19 @@ def register():
     if not name:
         return jsonify({'success': False, 'message': 'Érvénytelen megjelenítési név (1-20 karakter, betűk és számok).'}), 400
 
+    if get_user_by_email(email):
+        return jsonify({'success': False, 'message': 'Ez az email cím már regisztrálva van.'}), 409
+
+    if not is_email_verified(email):
+        return jsonify({
+            'success': False,
+            'message': 'Az email címet előbb meg kell erősíteni a kóddal.',
+        }), 403
+
     success, result = create_user(email, name, password)
     if not success:
         return jsonify({'success': False, 'message': result}), 409
+    clear_email_verification(email)
 
     user_id = result
     token = create_session(user_id)
@@ -175,11 +210,13 @@ def login():
         return jsonify({'success': False, 'message': 'Túl sok bejelentkezési kísérlet. Próbáld újra 5 perc múlva.'}), 429
 
     data = request.get_json(silent=True)
-    if not data:
+    if not data or not isinstance(data, dict):
         return jsonify({'success': False, 'message': 'Érvénytelen kérés.'}), 400
 
-    email = data.get('email', '').strip().lower()
+    email = _str_field(data, 'email').lower()
     password = data.get('password', '')
+    if not isinstance(password, str):
+        password = ''
 
     if not email or not password:
         return jsonify({'success': False, 'message': 'Email és jelszó megadása kötelező.'}), 400
@@ -231,6 +268,16 @@ def me():
             'total_score': user['total_score'],
         }
     })
+
+
+@auth_bp.route('/api/auth/socket-token', methods=['GET'])
+def socket_token():
+    """Rövid életű token a Socket.IO `set_name` identitás igazolásához."""
+    user = validate_session(request.cookies.get('session_token'))
+    if not user:
+        return jsonify({'success': False, 'message': 'Nincs érvényes session.'}), 401
+    token = create_socket_token(current_app.config['SECRET_KEY'], user['id'])
+    return jsonify({'success': True, 'token': token})
 
 
 @auth_bp.route('/api/auth/profile', methods=['GET'])

@@ -17,6 +17,9 @@ def clean_state():
     server._reconnect_tokens.clear()
     server._sid_to_token.clear()
     server._disconnected_players.clear()
+    server.state._online_users.clear()
+    server.state._sid_to_user_id.clear()
+    server.state._pending_invites.clear()
     yield
     server.rooms.clear()
     server.join_codes.clear()
@@ -26,6 +29,9 @@ def clean_state():
     server._reconnect_tokens.clear()
     server._sid_to_token.clear()
     server._disconnected_players.clear()
+    server.state._online_users.clear()
+    server.state._sid_to_user_id.clear()
+    server.state._pending_invites.clear()
 
 
 @pytest.fixture
@@ -49,8 +55,11 @@ def client(app, socketio_app):
 @pytest.fixture
 def registered_client(app, socketio_app):
     """A client that is set up as a registered user."""
+    from helpers import registered_set_name_payload
+    import auth
+    _, user_id = auth.create_user('reguser@example.com', 'RegUser', 'password123')
     c = socketio_app.test_client(app)
-    c.emit('set_name', {'name': 'RegUser', 'is_guest': False, 'user_id': 1})
+    c.emit('set_name', registered_set_name_payload(user_id))
     c.get_received()  # Clear
     return c
 
@@ -79,12 +88,54 @@ class TestSetName:
         assert 'TestPlayer' in server.player_names.values()
 
     def test_set_name_registered(self, client):
-        client.emit('set_name', {'name': 'RegPlayer', 'is_guest': False, 'user_id': 42})
+        import auth
         import server
+        from helpers import registered_set_name_payload
+        _, uid = auth.create_user('regplayer@example.com', 'RegPlayer', 'password123')
+        client.emit('set_name', registered_set_name_payload(uid, name='Hamis Név'))
+        # A név a fiókból jön, nem a kliensről
         sid = _get_sid(server, 'RegPlayer')
         assert sid is not None
         assert server.player_auth[sid]['is_guest'] is False
-        assert server.player_auth[sid]['user_id'] == 42
+        assert server.player_auth[sid]['user_id'] == uid
+
+    def test_set_name_forged_user_id_without_token_is_guest(self, client):
+        """A kliens által küldött user_id token nélkül nem ad regisztrált azonosságot."""
+        import auth
+        import server
+        _, uid = auth.create_user('victim@example.com', 'Victim', 'password123')
+        client.emit('set_name', {'name': 'Attacker', 'is_guest': False, 'user_id': uid})
+        received = client.get_received()
+        sid = _get_sid(server, 'Attacker')
+        assert sid is not None
+        assert server.player_auth[sid]['is_guest'] is True
+        assert server.player_auth[sid]['user_id'] is None
+        assert not server.state.is_user_online(uid)
+        assert any(m['name'] == 'error' for m in received)
+
+    def test_set_name_token_of_other_user_does_not_transfer(self, client):
+        """Más felhasználó tokenje sem ad át identitást: a token user_id-ja számít."""
+        import auth
+        import server
+        from helpers import registered_set_name_payload
+        _, mine = auth.create_user('mine@example.com', 'Mine', 'password123')
+        _, other = auth.create_user('other@example.com', 'Other', 'password123')
+        payload = registered_set_name_payload(mine)
+        payload['user_id'] = other
+        client.emit('set_name', payload)
+        sid = _get_sid(server, 'Mine')
+        assert server.player_auth[sid]['user_id'] == mine
+        assert not server.state.is_user_online(other)
+
+    def test_set_name_tampered_token_is_guest(self, client):
+        import auth
+        import server
+        from helpers import registered_set_name_payload
+        _, uid = auth.create_user('tamper@example.com', 'Tamper', 'password123')
+        payload = registered_set_name_payload(uid)
+        payload['auth_token'] = payload['auth_token'][:-3] + 'abc'
+        client.emit('set_name', payload)
+        assert not server.state.is_user_online(uid)
 
     def test_set_name_sanitization(self, client):
         client.emit('set_name', {'name': '', 'is_guest': True})
@@ -988,8 +1039,11 @@ class TestTurnTimeLimit:
 
     def test_game_state_has_turn_timer_fields(self, app, socketio_app):
         import server
+        from helpers import registered_set_name_payload
+        import auth
+        _, p1_id = auth.create_user('p1timed@example.com', 'P1', 'password123')
         c1 = socketio_app.test_client(app)
-        c1.emit('set_name', {'name': 'P1', 'is_guest': False, 'user_id': 1})
+        c1.emit('set_name', registered_set_name_payload(p1_id))
         c1.get_received()
         c1.emit('create_room', {
             'name': 'TimedRoom', 'max_players': 2,

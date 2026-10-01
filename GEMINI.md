@@ -30,12 +30,13 @@ Böngészőben: http://localhost:5000
 - `auth.py` — SQLite DB kezelés, regisztráció, login, session, jelszó hash (PBKDF2), játék mentés/visszatöltés/lépésnaplózás
 - `email_service.py` — 6 számjegyű kód generálás, SMTP küldés (háttérszálon)
 - `rate_limiter.py` — Generikus rate limiter Socket.IO (SID) és HTTP (IP) endpointokhoz
+- `socket_auth.py` — Aláírt, rövid életű token a Socket.IO identitás igazolásához (`set_name`)
 - `tunnel.py` — Cloudflare tunnel subprocess kezelés (indítás/leállítás)
 - `dict/` — Beágyazott hu_HU hunspell szótár fájlok (hu_HU.dic, hu_HU.aff)
 - `templates/index.html` — Egyoldalas UI: auth (3 tab), lobby, várakozó szoba, játék
 - `static/app.js` — Kliens logika, drag & drop, pinch-to-zoom, Socket.IO kommunikáció, auth flow, téma váltás, hang rendszer (SoundManager, SoundSettings)
 - `static/style.css` — Stílusok, sötét/világos téma (Slate+Gold paletta), reszponzív layout
-- `tests/` — Tesztek (pytest, 363 teszt)
+- `tests/` — Tesztek (pytest, 500 teszt)
 - `requirements.txt` — Python függőségek (flask, flask-socketio, pyenchant, eventlet)
 - `.venv/` — Virtual environment
 
@@ -137,7 +138,7 @@ _disconnected_players = {token: {room_id, sid, player_name}}
 | `tests/test_email_service.py` | 4 | Email küldés |
 | `tests/test_room.py` | 12 | Room osztály |
 
-**Összesen: 363 teszt**
+**Összesen: 500 teszt**
 
 ## Challenge (megtámadás) rendszer — szavazásos
 

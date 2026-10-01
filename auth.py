@@ -5,7 +5,10 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from config import DB_PATH, SESSION_MAX_AGE_DAYS, VERIFICATION_CODE_EXPIRY_MINUTES, VERIFICATION_MAX_ATTEMPTS
+from config import (
+    DB_PATH, SESSION_MAX_AGE_DAYS, VERIFICATION_CODE_EXPIRY_MINUTES,
+    VERIFICATION_MAX_ATTEMPTS, EMAIL_VERIFIED_WINDOW_MINUTES,
+)
 
 
 def get_db():
@@ -67,6 +70,11 @@ def init_db():
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             expires_at TEXT NOT NULL,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS verified_emails (
+            email TEXT PRIMARY KEY,
+            expires_at TEXT NOT NULL
         );
 
         CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
@@ -245,7 +253,35 @@ def verify_code(email, code):
             return False, f'Hibás kód. Még {remaining} próbálkozásod van.'
 
         conn.execute('UPDATE verification_codes SET used = 1 WHERE id = ?', (row['id'],))
+        verified_until = (datetime.now(timezone.utc).replace(tzinfo=None)
+                          + timedelta(minutes=EMAIL_VERIFIED_WINDOW_MINUTES)).strftime('%Y-%m-%d %H:%M:%S')
+        conn.execute(
+            'INSERT OR REPLACE INTO verified_emails (email, expires_at) VALUES (?, ?)',
+            (email_lower, verified_until)
+        )
         return True, 'Kód elfogadva.'
+
+
+def is_email_verified(email):
+    """Igaz, ha az email címet a közelmúltban sikeresen megerősítették kóddal."""
+    email_lower = email.lower().strip()
+    with _db() as conn:
+        row = conn.execute(
+            'SELECT expires_at FROM verified_emails WHERE email = ?', (email_lower,)
+        ).fetchone()
+        if not row:
+            return False
+        expires_at = datetime.strptime(row['expires_at'], '%Y-%m-%d %H:%M:%S')
+        if datetime.now(timezone.utc).replace(tzinfo=None) > expires_at:
+            conn.execute('DELETE FROM verified_emails WHERE email = ?', (email_lower,))
+            return False
+        return True
+
+
+def clear_email_verification(email):
+    """A megerősítés felhasználása (regisztráció után egyszer használatos)."""
+    with _db() as conn:
+        conn.execute('DELETE FROM verified_emails WHERE email = ?', (email.lower().strip(),))
 
 
 # --- Sessions ---
@@ -327,6 +363,7 @@ def cleanup_expired():
     with _db() as conn:
         conn.execute('DELETE FROM sessions WHERE expires_at < ?', (now,))
         conn.execute('DELETE FROM verification_codes WHERE expires_at < ?', (now,))
+        conn.execute('DELETE FROM verified_emails WHERE expires_at < ?', (now,))
 
 
 # --- Game persistence ---
@@ -378,7 +415,7 @@ def _upsert_game_players(conn, game_id, players_data):
             )
 
 
-def finish_game(room_id, state_json, players_data):
+def finish_game(room_id, state_json, players_data, room_name=''):
     """Játék befejezése: status='finished', game_players INSERT, users stats UPDATE.
     players_data: [{player_name, user_id (or None), final_score, is_winner}, ...]
     """
@@ -390,8 +427,8 @@ def finish_game(room_id, state_json, players_data):
         ).fetchone()
         if not row:
             cursor = conn.execute(
-                'INSERT INTO saved_games (room_id, state_json, status) VALUES (?, ?, ?)',
-                (room_id, state_json, 'finished')
+                'INSERT INTO saved_games (room_id, room_name, state_json, status) VALUES (?, ?, ?, ?)',
+                (room_id, room_name or '', state_json, 'finished')
             )
             game_id = cursor.lastrowid
         else:
@@ -736,19 +773,27 @@ def get_sent_requests(user_id):
 
 
 def search_users(query, exclude_user_id, limit=10):
-    """Felhasználók keresése."""
+    """Felhasználók keresése megjelenítési név részlet (kis/nagybetű- és
+    ékezet-egyező kisbetűsítéssel) vagy pontos email cím alapján.
+
+    Az email cím nem részletre illeszkedik: így a keresés nem szivárogtatja ki,
+    hogy kinek milyen email címe van.
+    """
+    query = (query or '').strip()
     if len(query) < 2:
         return []
-    
-    with _db() as conn:
-        search_pattern = f"%{query}%"
-        rows = conn.execute('''
-            SELECT id, display_name
-            FROM users
-            WHERE (display_name LIKE ? OR email_lower LIKE ?)
-              AND id != ?
-            ORDER BY display_name
-            LIMIT ?
-        ''', (search_pattern, search_pattern, exclude_user_id, limit)).fetchall()
-        return [dict(r) for r in rows]
 
+    escaped = query.lower().replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+    with _db() as conn:
+        # SQLite lower()/LIKE csak ASCII-ra kis/nagybetű-független: Python lower() kell az ékezetekhez
+        conn.create_function('py_lower', 1, lambda v: v.lower() if isinstance(v, str) else v)
+        rows = conn.execute(
+            "SELECT id, display_name "
+            "FROM users "
+            "WHERE (py_lower(display_name) LIKE ? ESCAPE '\\' OR email_lower = ?) "
+            "  AND id != ? "
+            "ORDER BY display_name "
+            "LIMIT ?",
+            (f"%{escaped}%", query.lower(), exclude_user_id, limit)
+        ).fetchall()
+        return [dict(r) for r in rows]

@@ -47,7 +47,7 @@ class TestSendEmail:
                 from email_service import _send_email
                 _send_email('recipient@example.com', '654321')
 
-                mock_smtp.assert_called_once_with('smtp.test.com', 587)
+                mock_smtp.assert_called_once_with('smtp.test.com', 587, timeout=15)
                 mock_server.starttls.assert_called_once()
                 mock_server.login.assert_called_once_with('user@test.com', 'secret')
                 mock_server.sendmail.assert_called_once()
