@@ -1,15 +1,3 @@
-# Erőforrás-kezelés és Subagent Delegáció
-Az iterációs ciklusok és a memóriaterhelés optimalizálása érdekében rendelkezel egy dedikált elemző eszközzel: a Gemini CLI-vel.
-
-SZABÁLYOK A GEMINI HASZNÁLATÁRA:
-- Ha egy feladat a teljes projekt áttekintését (több száz fájl) igényli, vagy "Read-Heavy" (pl. elavult kódmintázatok keresése).
-- Ha naprakész webes információra van szükséged egy új API-ról vagy CVE sebezhetőségről.
-- Ha független kód-felülvizsgálatot (Second Opinion / Code Review) szeretnél kérni a megírt kódodra.
-
-ILYENKOR HASZNÁLD AZ Gemini CLI-t a feladatok leadása érdekében és kontextusablak megtakarítás érdekében:
-
-A Gemini kimenetét tekintsd desztillált ténynek, és használd fel a saját, precíziós kódolási folyamatodban.
-
 # Magyar Scrabble Klón
 
 ## Áttekintés
@@ -24,16 +12,17 @@ cd ~/Documents/Scripts/scrabble
 Böngészőben: http://localhost:5000
 
 ## Fájlstruktúra
-- `server.py` — Flask + SocketIO szerver, lobby/szoba kezelés, Cloudflare tunnel integráció, Socket.IO event handlerek, reconnection grace period
-- `game.py` — Játéklogika (Game osztály), körök, pontozás, játék vége, challenge rendszer, kör időlimit
-- `player.py` — Player osztály (id, név, kéz, pontszám, disconnected állapot)
+- `server.py` — Flask + SocketIO szerver, lobby/szoba kezelés, Cloudflare tunnel integráció, Socket.IO event handlerek, reconnection grace period, robotlépések (`_schedule_bot_turn` / `_play_bot_turn`), megfigyelők, előnézet, tipp
+- `game.py` — Játéklogika (Game osztály), körök, pontozás, játék vége, challenge rendszer, kör időlimit, robotok (`add_bot`), szerkezetes `last_action_info`, lépéstörténet (`get_history`), előnézet (`preview_placement`)
+- `player.py` — Player osztály (id, név, kéz, pontszám, disconnected állapot, `is_bot`, `difficulty`)
+- `ai_player.py` — Robot ellenfél: szókincs (hunspell tőszavak), horgonyalapú lépésgenerátor, nehézségi szintek, tippek
 - `board.py` — 15×15 tábla, premium mezők, szó elhelyezés validáció és pontozás
-- `dictionary.py` — Magyar szótár-ellenőrzés (pyenchant / hunspell CLI fallback)
-- `tiles.py` — Magyar betűkészlet (100 zseton), TileBag osztály
+- `dictionary.py` — Magyar szótár-ellenőrzés (pyenchant / hunspell CLI fallback), tömeges `filter_valid` (gyorsítótárral), `suggest_words`
+- `tiles.py` — Magyar betűkészlet (100 zseton), TileBag osztály, `tokenize_word` (szó → zsetonok)
 - `challenge.py` — Challenge (megtámadás) logika, szavazási állapotgép, vote resolution
-- `room.py` — Room osztály (szoba állapot, owner, beállítások, chat, timer invalidálás)
-- `state.py` — ServerState singleton (szobák, játékosok, tokenek, reconnect tracking — 18 metódus)
-- `routes.py` — Flask blueprint-ek: auth (8 route), game (3 route), main (index)
+- `room.py` — Room osztály (szoba állapot, owner, beállítások, chat, timer invalidálás, megfigyelők, robotlépés-azonosító)
+- `state.py` — ServerState singleton (szobák, játékosok, tokenek, reconnect tracking, megfigyelők, élő játékok)
+- `routes.py` — Flask blueprint-ek: auth, game, public (ranglista, szótár-ellenőrző), main (index + PWA: `/manifest.webmanifest`, `/sw.js`)
 - `config.py` — SMTP, auth, DB, rate limit konfigurációs konstansok (`os.environ`-ból)
 - `auth.py` — SQLite DB kezelés, regisztráció, login, session, jelszó hash (PBKDF2), játék mentés/visszatöltés/lépésnaplózás
 - `email_service.py` — 6 számjegyű kód generálás, SMTP küldés (háttérszálon)
@@ -41,15 +30,26 @@ Böngészőben: http://localhost:5000
 - `socket_auth.py` — Aláírt, rövid életű token a Socket.IO identitás igazolásához (`set_name`)
 - `tunnel.py` — Cloudflare tunnel subprocess kezelés (indítás/leállítás)
 - `dict/` — Beágyazott hu_HU hunspell szótár fájlok (hu_HU.dic, hu_HU.aff)
-- `templates/index.html` — Egyoldalas UI: auth (3 tab), lobby, várakozó szoba, játék, profil, visszajátszás; közös SVG ikon-sprite, minden képernyőn egységes felső sáv (`app-topbar`)
-- `static/app.js` — Kliens logika, drag & drop, pinch-to-zoom, Socket.IO kommunikáció, auth flow, téma váltás, hang rendszer (SoundManager, SoundSettings)
-- `static/style.css` — Apple HIG ihletésű design rendszer (tokenek, iOS-szerű komponensek), sötét/világos téma, reszponzív layout (asztali / tablet / telefon, álló és fekvő)
-- `tests/` — Tesztek (pytest, 500 teszt)
+- `templates/index.html` — Egyoldalas UI: auth (3 tab), lobby (5 fül), várakozó szoba, játék, profil, visszajátszás; közös SVG ikon-sprite, minden képernyőn egységes felső sáv (`app-topbar`); minden szöveg `data-i18n*` jelölésű
+- `templates/sw.js` — Service worker (Jinja sablon, `VERSION` = kliens fájlok mtime-ja)
+- `static/app.js` — Kliens logika, drag & drop, pinch-to-zoom, Socket.IO kommunikáció, auth flow, téma váltás, hang rendszer (SoundManager, SoundSettings), megfigyelő mód, ranglista, szótár-böngésző, előnézet, zsetonszámláló, tipp, gyorsbillentyűk, PWA telepítés
+- `static/i18n.js` + `static/i18n-data.js` — Többnyelvű felület: `t()`, `tServer()`, `I18N.setLang()`; a fordítások (hu/en) szigorú JSON-ban
+- `static/style.css` — Apple HIG ihletésű design rendszer (tokenek, iOS-szerű komponensek), sötét/világos téma, reszponzív layout (asztali / tablet / telefon, álló és fekvő), 17. szakasz: új funkciók és animációk
+- `static/manifest.webmanifest`, `static/offline.html`, `static/icons/` — PWA
+- `tests/` — Tesztek (pytest, 802 teszt)
 - `requirements.txt` — Python függőségek (flask, flask-socketio, pyenchant, eventlet)
 - `.venv/` — Virtual environment
 
 ## Funkciók
 - 1-4 játékos (egyedül is játszható)
+- **Robot ellenfelek**: 1–3 robot, könnyű / közepes / nehéz; egyedül játszva tipp (3 legjobb lépés, szobánként állítható / kikapcsolható limit: 0/1/3/5/10); robotos játék nem számít a ranglistába
+- **Megfigyelő mód**: nyilvános, folyamatban lévő játék megfigyelése (lobby „Élő játékok”), privát játék kóddal
+- **Ranglista**: győzelmek / nyerési arány / átlagpont / legjobb játék (csak regisztrált, robot nélküli, befejezett játékok)
+- **Szótár-böngésző**: szó-ellenőrző párbeszéd (érvényes-e, pontérték, zsetonok, javaslatok)
+- **Többnyelvű felület**: magyar + angol (`localStorage('scrabble-lang')`), a szótár magyar marad
+- **PWA**: telepíthető, kapcsolat nélkül induló felület (service worker), ikonok, manifest
+- **Animációk**: lerakás, ellenfél lépése, pontszám felugró, kör váltás, drag & drop visszajelzés (foglalt mező piros)
+- **Kényelmi funkciók**: élő pontszám-előnézet · zsetonszámláló · betűtartó keverés/rendezés + gyorsbillentyűk · meghívó link (`/?join=KÓD`) · lépéstörténet + utolsó lépés kiemelése + legjobb lépés a játék végén
 - Online multiplayer: lobby, szobák, Cloudflare tunnel automatikus publikus URL
 - **Nyilvános és privát szobák**: privát szoba csak 6-jegyű kóddal csatlakozható, nyilvános szobák a lobbyban listázva
 - Felhasználói fiók rendszer: regisztráció (email verifikáció), bejelentkezés, vendég mód
@@ -149,9 +149,12 @@ Vendég mód: a régi név-megadós flow megmarad (statisztikák nem mentődnek)
 - `GET /api/auth/profile` — statisztikák és játékelőzmények (session cookie)
 - `GET /api/auth/socket-token` — rövid életű (5 perc) aláírt token a Socket.IO `set_name`-hez (session cookie)
 - `GET /api/game/<int:game_id>/moves` — lépések listája (replay-hez)
+- `GET /api/leaderboard?metric=wins|win_rate|avg_score|best_game&limit=50` — ranglista (nyilvános; bejelentkezve a saját helyezés is: `me`, `is_me`)
+- `GET|POST /api/dictionary/check` (`q` / `words`, max. 8 szó) — szó-ellenőrzés: `valid`, `tiles`, `score`, `reason`, `suggestions`
+- `GET /manifest.webmanifest`, `GET /sw.js` — PWA (a service worker a gyökérről, `Service-Worker-Allowed: /`)
 
 Session cookie: `HttpOnly` + `SameSite=Lax` + `Secure` (Cloudflare tunnel HTTPS).
-IP-alapú rate limiting (`rate_limiter.py`): kód küldés 3/5perc, login 10/5perc, regisztráció 3/óra.
+IP-alapú rate limiting (`rate_limiter.py`): kód küldés 3/5perc, login 10/5perc, regisztráció 3/óra, ranglista 30/perc, szótár 60/perc.
 
 ### Frontend auth (`index.html` + `app.js`)
 Az `auth-screen` 3 tabbal:
@@ -190,8 +193,15 @@ Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztésh
 | `tests/test_friends.py` | 27 | Barát CRUD, kérések, felhasználókeresés, szobameghívó, online státusz |
 | `tests/test_timer_and_replay.py` | 27 | Kör időlimit, replay perzisztencia |
 | `tests/test_regressions.py` | 70 | Kódátvizsgálás során talált hibák: zsák, dupla cella, passz-végjáték, mentés szavazás közben, IP rate limit, e-mail megerősítés, socket-token, session átvétel, visszaállítás/késői csatlakozás |
+| `tests/test_ai_player.py` | 39 | Robot motor: szókincs, lépésgenerátor (pontszám = játék pontozása), nehézségi szintek, csere/passz, tipp |
+| `tests/test_bots.py` | 106 | Robotok a játékmodellben (szavazás, mentés), szerver (lépés, ütemezés, tipp, előnézet), `last_action_info`, lépéstörténet |
+| `tests/test_spectator.py` | 30 | Megfigyelő mód, élő játékok, szoba életciklus |
+| `tests/test_public_api.py` | 50 | Ranglista (DB + route, robotos játékok kizárása), szótár API, PWA végpontok |
+| `tests/test_tiles_dictionary.py` | 30 | `tokenize_word`, `filter_valid`, `suggest_words` |
+| `tests/test_i18n.py` | 27 | Fordítások teljessége, szerverüzenet-lefedettség (AST), HTML lefedettség, a fordító futtatása node-ban |
+| `tests/test_frontend_consistency.py` | 20 | Kliens ↔ szerver: konstansok (TILE_VALUES, premium mezők), elem-azonosítók, Socket.IO események, API útvonalak, JS szintaxis |
 
-**Összesen: 500 teszt**
+**Összesen: 802 teszt**
 
 Fixture: `tests/conftest.py` — temp_db (auto-applied, ideiglenes SQLite DB minden teszthez)
 Segédek: `tests/helpers.py` — `registered_set_name_payload()` (érvényes socket-tokennel), `verify_email()`
@@ -261,12 +271,14 @@ Játék közben a side panelen chat szekció érhető el:
 |---|---|
 | `set_name` | Játékosnév / auth adatok beállítása. Regisztrált felhasználónál az `auth_token` (lásd `/api/auth/socket-token`) kötelező: a kliens által küldött `user_id` önmagában nem elég, a név a fiókból jön. Érvénytelen token → vendég + hibaüzenet |
 | `logout` | Kijelentkezés: kilépés a szobából, online azonosság törlése |
-| `create_room` | Szoba létrehozása (név, max_players, challenge_mode, is_private, turn_time_limit) |
+| `create_room` | Szoba létrehozása (név, max_players, challenge_mode, is_private, turn_time_limit, `ai_players`: nehézségek listája, max. 3 és `max_players-1`, `hint_limit`: 0/1/3/5/10, alapért. 3) |
 | `join_room` | Csatlakozás kóddal vagy room_id-val |
 | `leave_room` | Szoba elhagyása |
 | `get_rooms` | Nyilvános szobák listázása |
 | `rejoin_room` | Újracsatlakozás tokennel (grace period alatt, vagy a még „élőnek” hitt régi kapcsolat átvételével — pl. háttérbe került telefon, újratöltött oldal) |
 | `start_game` | Játék indítása (owner only) |
+| `spectate_room` | Megfigyelés: `{room_id}` (nyilvános) vagy `{code}` (privát is); csak folyamatban lévő játék |
+| `leave_spectate` | Kilépés a megfigyelésből |
 
 ### Játékmenet (kliens→szerver)
 | Event | Leírás |
@@ -279,14 +291,20 @@ Játék közben a side panelen chat szekció érhető el:
 | `send_chat` | Chat üzenet küldése |
 | `save_game` | Manuális mentés (owner only) |
 | `restore_game` | Mentett játék visszaállítása (várakozó szoba létrehozás) |
+| `preview_move` | Lerakás kipróbálása véglegesítés nélkül `{tiles}` → `move_preview` (csendben rate limitelt) |
+| `request_hint` | Tipp kérése (csak ha egyetlen emberi játékos van, a szobában engedélyezett és van még tipp) → `hint_result` `{success, message, hints_left, moves}`; csak akkor fogy, ha van javasolt lépés |
 
 ### Szerver broadcast (szerver→kliens)
 | Event | Leírás |
 |---|---|
 | `rooms_list` | Nyilvános szobák frissített listája |
+| `live_games` | Nyilvános, folyamatban lévő játékok (megfigyeléshez): név, játékosok pontokkal, néző-szám |
+| `spectate_joined` / `spectate_left` | Megfigyelés megkezdése / vége |
+| `move_preview` | `{valid, score, words:[{word,score}], message}` |
+| `hint_result` | `{success, message, moves:[{tiles, words, score}]}` |
 | `room_joined` | Szobához csatlakozás megerősítése |
 | `room_code` | 6-jegyű csatlakozási kód (csak a tulajdonosnak) |
-| `game_state` | Teljes játékállapot (személyre szabva) |
+| `game_state` | Teljes játékállapot (személyre szabva; megfigyelőnek kéz nélkül, `spectator: true`; `history`, `last_move_tiles`, `last_action_info`, `spectator_count`) |
 | `game_started` | Játék elindult |
 | `action_result` | Lerakás/csere/passz eredménye |
 | `challenge_result` | Challenge/szavazás eredménye |
@@ -316,6 +334,10 @@ Játék közben a side panelen chat szekció érhető el:
 'rejoin_room': (5, 10),
 'save_game': (3, 30),
 'restore_game': (3, 30),
+'preview_move': (30, 10),   # csendben eldobva
+'request_hint': (3, 30),
+'spectate_room': (5, 10),
+'leave_spectate': (5, 10),
 ```
 
 ### HTTP auth (IP-alapú, `config.py` → `AUTH_RATE_LIMITS`)
@@ -327,7 +349,7 @@ Játék közben a side panelen chat szekció érhető el:
 
 ### Képernyők
 1. **Auth képernyő**: 3 tab (Bejelentkezés, Regisztráció, Vendég), lebegő téma gomb
-2. **Lobby**: középre igazított szegmentált navigáció (Kezdőlap / Új szoba / Mentett játékok / Barátok), szoba létrehozás (regisztráltaknak), kóddal csatlakozás, nyilvános szobák listája
+2. **Lobby**: középre igazított szegmentált navigáció (Kezdőlap / Új szoba / Mentett játékok / Barátok / Ranglista), szoba létrehozás (regisztráltaknak; robotok száma + nehézsége), kóddal csatlakozás / megfigyelés, nyilvános szobák és élő játékok listája
 3. **Várakozó szoba**: badge-ek (challenge/privát/időlimit), csatlakozási kód, játékoslista, start gomb (owner)
 4. **Játék képernyő**: info panel + tábla + betűtartó (lásd lent)
 5. **Profil** és **Visszajátszás**
@@ -342,7 +364,7 @@ Három elrendezés, CSS media query-kkel (`static/style.css` 11–13. szakasz):
 - **Fekvő telefon (`orientation: landscape` és `max-height: 540px`)** — kompakt két oszlop, a betűtartó függőlegesen a tábla mellett; érintőképernyős telefonon a menüsor az oldalpanel tetején van (felső sáv nélkül, így nagyobb a tábla).
 - **Chat telefonon**: a chat a panel alján van; ha a chat ablak nem látszik (`Chat._isVisible()`), a másik játékos üzenete értesítésként (toast) is megjelenik.
 
-A panel tartalma: pontszámok (aktív játékos kiemelve), játék infó (zsák, aktuális játékos, utolsó akció), kör visszaszámláló (`TurnTimerUI`), challenge szekció (dinamikus), akciógombok, chat.
+A panel tartalma: megfigyelő sáv (csak megfigyelőnek), pontszámok (aktív játékos kiemelve, robotok ikonnal), játék infó (zsák, aktuális játékos, utolsó akció — a `last_action_info` alapján lokalizálva), kör visszaszámláló (`TurnTimerUI`), challenge szekció (dinamikus), akciógombok, élő előnézet, eszközök (keverés, rendezés, zsetonok, tipp), lépéstörténet (`<details>`), chat. Megfigyelőként (`#game-screen.spectating`) a lépés-/chatgombok és a betűtartó rejtett.
 
 A tábla cellái `container-type: inline-size` + `cqw` egységekkel méreteződnek (betű, érték, premium felirat), a rövid premium felirat (`2× BETŰ`) a tábla szélességétől függően jelenik meg (`@container board`). Többkarakteres betűknél (SZ, CS...) a JS `long-letter` osztályt ad.
 
@@ -408,6 +430,17 @@ A tábla cellái `container-type: inline-size` + `cqw` egységekkel méreteződn
 ### server.py
 - `_DISCONNECT_GRACE_PERIOD = 120` (mp)
 - `ALLOWED_TURN_TIME_LIMITS = {0, 60, 90, 120, 180, 300}`
+- `MAX_BOTS = 3`, `_BOT_THINK_DELAY` (szintenként min/max mp), `_BOT_NAMES`
+- `Room.MAX_SPECTATORS = 30`
+
+### game.py (tippek)
+- `ALLOWED_HINT_LIMITS = (0, 1, 3, 5, 10)`, `DEFAULT_HINT_LIMIT = 3`; `Game.hint_limit` / `hints_used` (mentésbe kerül, régi mentésnél az alapérték), `hints_left()`, `use_hint()`; az állapotban `hint_limit`, `hints_left`
+
+### ai_player.py
+- `DIFFICULTIES = ('easy', 'medium', 'hard')`, `_TIME_BUDGET` (1.0 / 2.0 / 3.5 mp keresési időkeret)
+
+### auth.py
+- `LEADERBOARD_METRICS`, `LEADERBOARD_MIN_GAMES` (`win_rate`, `avg_score`: 3), `LEADERBOARD_MAX_LIMIT = 100`
 
 ### config.py
 - `DB_PATH = 'scrabble.db'` (vagy `SCRABBLE_DB_PATH` env var)
@@ -420,7 +453,7 @@ A tábla cellái `container-type: inline-size` + `cqw` egységekkel méreteződn
 ## Játék mentés / visszatöltés
 
 ### Adatbázis táblák
-- **`saved_games`**: id, room_id, room_name, state_json, status ('active'/'finished'/'abandoned'), challenge_mode, owner_name, owner_token, created_at, updated_at
+- **`saved_games`**: id, room_id, room_name, state_json, status ('active'/'finished'/'abandoned'), challenge_mode, owner_name, owner_token, `has_bots` (robot is volt a játékban → a ranglista nem számolja; migrációval kerül a régi adatbázisokba), created_at, updated_at
 - **`game_players`**: id, game_id FK, user_id FK (NULL vendégnél), player_name, final_score, is_winner
 - **`game_moves`**: id, game_id FK, move_number, player_name, action_type, details_json, board_snapshot_json, created_at
 
@@ -454,6 +487,54 @@ A tábla cellái `container-type: inline-size` + `cqw` egységekkel méreteződn
 - `GET /api/game/<id>/moves` — lépések listája replay-hez
 - Visszajátszás: lépésenkénti navigáció board snapshot-okkal
 
+## Robot ellenfelek (AI)
+
+### Játékmodell
+- `Player.is_bot` / `Player.difficulty`; id: `bot-<szoba>-<n>` (nem SID, a mentésben is stabil). `Game.add_bot()` csak indítás előtt, max. 4 játékos összesen.
+- A robotok **nem szavaznak** (`_get_voter_ids`): a megtámadás (`_challenge_applies`) csak akkor él, ha van másik **emberi** játékos. Ha nincs, a lerakást a szótár ellenőrzi.
+- `Game.get_all_states()` nem készít állapotot robotnak; a robot sosem `disconnected` (`from_save_dict` is kényszeríti). `human_players()` / `has_connected_human()` a szoba életciklusához: ember nélkül a szoba megszűnik, a robotok nem lépnek (néző jelenlétében igen).
+- Restore: a `expected_players` csak embereket tartalmaz, a robotok az indításkor automatikusan visszakerülnek.
+
+### Szerver (`server.py`)
+- `_schedule_bot_turn(room_id)` — minden olyan ponton hívódik, ahol a kör továbbadódhat (lerakás/csere/passz, szavazás lezárása, időzítők, újracsatlakozás, indítás, megfigyelő csatlakozása). A `room.invalidate_bot_turn()` azonosítóval a régi ütemezések érvénytelenednek.
+- `_play_bot_turn(room_id, turn_id, turn_number)` — a keresés alatt (`yield_fn=socketio.sleep(0)`) az állapot megváltozhat, ezért a lépés előtt újraellenőriz. Sikertelen lépés → passz, hogy a játék ne akadjon el. A tesztek ezt a függvényt közvetlenül hívják (`start_background_task` kikapcsolva).
+- `_emit_all_states` már `socketio.emit`-et használ, így háttérszálból is hívható.
+
+### Motor (`ai_player.py`)
+- Szókincs: `dict/hu_HU.dic` tőszavai (csak kisbetűs, magánhangzót tartalmazó, 2–15 betű; ~68 000 szó), rendezett lista + `bisect` prefixkereséssel (nincs trie: kevés memória).
+- `generate_moves`: Appel–Jacobson horgonykeresés vízszintesen és (átfordított rácson) függőlegesen; a többkarakteres zsetonok (SZ, CS...) több karaktert lépnek a prefixben; joker bármely betű. A keresztszavak érvényességét **egyetlen** `filter_valid` hívás dönti el az egész táblára. A pontozás a játék saját `Board.validate_placement`-jével történik egy privát másolaton.
+- Szintek: könnyű (≤4 zseton, a gyengébb fél), közepes (felső ~30% véletlen), nehéz (`equity` = pont + `leave_value`, végjátékban a kézben maradó zsetonok levonva). A kiválasztott lépés minden szavát `_first_valid` ellenőrzi a játék szótárával; ha nincs lépés: csere (zsák ≥ 7) vagy passz.
+- A keresés időkerete szintenként korlátos (`_TIME_BUDGET`); lejártakor a addigi legjobbal dolgozik.
+
+## Megfigyelő mód
+
+- `Room.spectators {sid: név}` + `ServerState.spectator_rooms {sid: room_id}`; a megfigyelő a Socket.IO szobába is belép (chat, események), de a `player_rooms`-ban nem szerepel, így a játékos-eventek (lerakás, chat küldés...) hatástalanok.
+- `_emit_all_states` a megfigyelőknek `Game.get_spectator_state()`-et küld (kezek nélkül, `spectator: true`); minden játékos állapotában `spectator_count`.
+- Életciklus: `disconnect`/`logout`/`leave_spectate` eltávolítja; `_cleanup_room` és `_disband_active_room` `room_disbanded`-et küld nekik. Kliens oldalon újracsatlakozáskor `Spectate.resume()` újraindítja a megfigyelést.
+- A `get_rooms` a `live_games` eseményt is kiküldi; játék indításakor/végén broadcast.
+
+## Ranglista
+
+- A listát `auth.get_leaderboard()` a `game_players` ⨝ `saved_games(finished, has_bots=0)` ⨝ `users` összesítéséből számolja (nem a `users` számlálóiból), így a robotos játékok nem számítanak. A rendezés SQL-részlete rögzített (`_LEADERBOARD_ORDER`), a metrika fehérlistás.
+
+## Többnyelvű felület (i18n)
+
+- `static/i18n-data.js`: `window.I18N_DATA = {hu: {...}, en: {..., server: {exact, patterns}}}` — szigorú JSON (a tesztek `json.loads`-szal olvassák). Kulcsok `névtér.kulcs`; `_one` végű kulcs az angol egyes számhoz (`params.n === 1`).
+- HTML: `data-i18n` (szöveg), `data-i18n-placeholder`, `data-i18n-title` (title + aria-label), `data-i18n-aria`. JS: `t('kulcs', {n})`, a szerver magyar üzeneteihez `tServer(msg)`; nyelvváltáskor `langchange` esemény, amire a modulok újrarajzolják a gyorsítótárazott adataikat.
+- A szerver szerkezetes `last_action_info`-t is küld; a kliens ebből formázza a „utolsó akció” szöveget (a magyar `last_action` szöveg tartalék).
+- Új felhasználói szöveg hozzáadásakor: kulcs a hu **és** en blokkba, `data-i18n`/`t()` a kódban; a `tests/test_i18n.py` hibára fut, ha hiányzik fordítás, nem használt kulcs marad, vagy egy szerver-üzenet fordítatlan.
+
+## PWA
+
+- `/sw.js` (`templates/sw.js`): install → váz előtöltése (`SHELL_URLS`), activate → régi gyorsítótárak törlése, fetch: navigáció hálózat-először (offline: gyorsítótárazott `/`, végső esetben `offline.html`); `/socket.io/` és `/api/` soha; statikus fájlok és a CDN-es Socket.IO/betűtípus stale-while-revalidate.
+- `asset_version()` (`routes.py`) a kliens fájlok mtime-ja: az `index.html` `?v=` paramétere és a SW `VERSION`-je ugyanez.
+- Telepítés gomb: `beforeinstallprompt` (iOS Safari-n kézi útmutató).
+
+## Animációk és húzás-visszajelzés
+
+- `GameBoard.renderBoard` az előző rajzoláshoz képest különbséget számol: új betű → `tile-pop` (saját lerakás) / `tile-drop` (más lépése); utolsó lépés: `last-move`; pontszám-változás: `.score-pop`; kör váltás: `turn-pulse`; saját kör: `.my-turn` fény a táblán.
+- Húzás közben a tábla `is-dragging` osztályt kap, a foglalt mezők csíkozva; `dragenter` **és** `dragover` elfogadása szükséges (különben a böngésző a `body`-t teszi céllá, és a mezők nem kapnak eseményt). A `prefers-reduced-motion` az összes animációt kikapcsolja.
+
 ## Ismert problémák / TODO
 
 ### Játékmenet
@@ -461,15 +542,15 @@ A tábla cellái `container-type: inline-size` + `cqw` egységekkel méreteződn
 - [x] Játék mentés / visszatöltés — manuális mentés (owner-only), lobby-first restore flow
 - [x] Visszajátszás — befejezett játék lépéseinek visszanézése
 - [x] Időlimit a körökre — opcionális időzítő (0/60/90/120/180/300 mp), lejáratkor automatikus passz
-- [ ] AI ellenfél — egyjátékos mód számítógépes ellenfél(ek)kel, nehézségi szintek
+- [x] AI ellenfél — egyjátékos mód számítógépes ellenfél(ek)kel, nehézségi szintek (a robot a tőszavakból épít; ragozott főszavak nem generálódnak)
 
 ### Közösségi funkciók
 - [x] Chat — játék közbeni szöveges üzenetküldés a játékosok között
 - [x] Privát szobák — 6-jegyű kóddal csatlakozás, lobby-ban nem listázott szobák
 - [x] Játékos profil oldal — saját statisztikák, játékelőzmények megtekintése, visszajátszás
-- [ ] Spectator mód — folyamatban lévő játék megfigyelése játékos nélkül
-- [ ] Ranglista / leaderboard — regisztrált játékosok összesített statisztikái
-- [ ] Barátlista / meghívó rendszer — közvetlen meghívás barátoknak
+- [x] Spectator mód — folyamatban lévő játék megfigyelése játékos nélkül
+- [x] Ranglista / leaderboard — regisztrált játékosok összesített statisztikái (robot nélküli játékok)
+- [x] Barátlista / meghívó rendszer — közvetlen meghívás barátoknak
 
 ### Hálózat
 - [x] Újracsatlakozás (grace period) — 120 mp-es ablak a visszacsatlakozásra játék közben
@@ -479,8 +560,14 @@ A tábla cellái `container-type: inline-size` + `cqw` egységekkel méreteződn
 - [x] Sötét / világos téma váltás — Slate+Gold paletta, auto-detektálás, localStorage mentés
 - [x] Hang effektek — Web Audio API, 8 szintetizált hang, hangerő csúszka + kategóriánkénti kapcsolók
 - [x] Szótár-böngésző (Challenge fázis) — szavazásnál kattintható szavak keresése
-- [ ] Animációk — betű lerakás, pontszám felugró, kör váltás animáció
-- [ ] Szótár-böngésző (kereső/validáló)
-- [ ] PWA támogatás — offline mód, alkalmazásként telepíthető
-- [ ] Többnyelvű felület — angol és egyéb nyelvű UI (a szótár marad magyar)
-- [ ] Drag & drop vizuális visszajelzés javítása — foglalt cellák jelölése drop közben
+- [x] Animációk — betű lerakás, pontszám felugró, kör váltás animáció
+- [x] Szótár-böngésző (kereső/validáló)
+- [x] PWA támogatás — offline váz, alkalmazásként telepíthető
+- [x] Többnyelvű felület — magyar és angol UI (a szótár marad magyar)
+- [x] Drag & drop vizuális visszajelzés javítása — foglalt cellák jelölése drop közben
+- [x] Kényelmi funkciók — élő előnézet, zsetonszámláló, keverés/rendezés + gyorsbillentyűk, meghívó link, lépéstörténet
+
+### Ötletek
+- [ ] Robot: ragozott főszavak (tőszó + toldalék hunspell-ellenőrzéssel), tapasztalati értékelés (szimuláció)
+- [ ] Több nyelv a felületen (a `i18n-data.js` blokkja és a `SUPPORTED` lista bővítésével)
+- [ ] Értesítések (Web Push) a saját körre

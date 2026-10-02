@@ -23,4 +23,6 @@ AUTH_RATE_LIMITS = {
     'login': (10, 300),          # 10 kérés / 5 perc
     'register': (3, 3600),       # 3 kérés / 1 óra
     'search_users': (20, 60),    # 20 kérés / 1 perc
+    'leaderboard': (30, 60),     # 30 kérés / 1 perc
+    'dictionary': (60, 60),      # 60 kérés / 1 perc
 }

@@ -5,6 +5,7 @@ class Room:
     """Egy szoba állapota: játék, tulajdonos, beállítások, chat, challenge timer."""
 
     MAX_CHAT_MESSAGES = 100
+    MAX_SPECTATORS = 30
 
     def __init__(self, room_id, game, owner_sid, owner_name, name,
                  max_players, join_code, is_private=False, owner_token=None):
@@ -21,6 +22,8 @@ class Room:
         self.chat_messages = []
         self._challenge_timer_id = 0
         self._turn_timer_id = 0
+        self._bot_turn_id = 0
+        self.spectators = {}  # {sid: név} — megfigyelők
         self.turn_timer_expires_at = None  # float Unix timestamp or None
         # Persistence tracking (korábban a Game-ben volt)
         self.db_game_id = None
@@ -57,6 +60,15 @@ class Room:
     def turn_timer_id(self):
         return self._turn_timer_id
 
+    def invalidate_bot_turn(self):
+        """Érvényteleníti a függőben lévő robotlépést. Visszaadja az új azonosítót."""
+        self._bot_turn_id += 1
+        return self._bot_turn_id
+
+    @property
+    def bot_turn_id(self):
+        return self._bot_turn_id
+
     def transfer_ownership(self, new_owner_sid, new_owner_name, new_owner_token=None):
         """Tulajdonjog átadása."""
         self.owner = new_owner_sid
@@ -67,6 +79,26 @@ class Room:
     def is_lobby_visible(self):
         """Megjelenik-e a szoba a nyilvános lobby listában."""
         return not self.is_private and not self.is_restored and not self.game.finished and not self.game.started
+
+    @property
+    def is_live_visible(self):
+        """Megfigyelhető-e a lobby "Élő játékok" listájából (nyilvános, folyamatban lévő játék)."""
+        return not self.is_private and self.game.started and not self.game.finished
+
+    def to_live_dict(self):
+        """Az "Élő játékok" listához szükséges adatok."""
+        return {
+            'id': self.id,
+            'name': self.name,
+            'players': [
+                {'name': p.name, 'score': p.score, 'is_bot': p.is_bot}
+                for p in self.game.players
+            ],
+            'challenge_mode': self.game.challenge_mode,
+            'turn_time_limit': self.game.turn_time_limit,
+            'spectators': len(self.spectators),
+            'turn_number': self.game.turn_number,
+        }
 
     def to_lobby_dict(self):
         """Lobby listához szükséges adatok (publikus szobákhoz)."""
@@ -81,6 +113,7 @@ class Room:
             'challenge_mode': self.game.challenge_mode,
             'turn_time_limit': self.game.turn_time_limit,
             'is_restored': self.is_restored,
+            'bots': sum(1 for p in self.game.players if p.is_bot),
         }
 
 

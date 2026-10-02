@@ -8,12 +8,16 @@ from player import Player  # noqa: F401 — re-export for backward compat
 HAND_SIZE = 7
 BONUS_ALL_TILES = 50
 CHALLENGE_TIMEOUT = 30  # másodperc
+# Tippek száma játékonként (0 = kikapcsolva); a szoba létrehozásakor választható
+ALLOWED_HINT_LIMITS = (0, 1, 3, 5, 10)
+DEFAULT_HINT_LIMIT = 3
 
 
 class Game:
     """Scrabble játék állapot és logika."""
 
-    def __init__(self, game_id, challenge_mode=False, turn_time_limit=0):
+    def __init__(self, game_id, challenge_mode=False, turn_time_limit=0,
+                 hint_limit=DEFAULT_HINT_LIMIT):
         self.id = game_id
         self.players = []
         self.board = Board()
@@ -26,8 +30,15 @@ class Game:
         self.last_action = None
         self.challenge_mode = challenge_mode
         self.turn_time_limit = turn_time_limit  # 0 = kikapcsolt
+        self.hint_limit = hint_limit if hint_limit in ALLOWED_HINT_LIMITS else DEFAULT_HINT_LIMIT
+        self.hints_used = 0
         self.pending_challenge = None  # Challenge instance or None
         self.move_log = []  # Lépések listája
+        self.last_action_info = None  # Az utolsó akció szerkezetes leírása (a kliens ezt fordítja)
+        # A szavazással elutasított lerakások az aktuális táblaállásnál: a robot nem rakja le újra
+        self.rejected_placements = set()
+        self._history_cache = None  # (move_log hossza, történet)
+        self._bot_seq = 0
 
     def add_player(self, player_id, name):
         if any(p.id == player_id for p in self.players):
@@ -39,6 +50,44 @@ class Game:
         player = Player(player_id, name)
         self.players.append(player)
         return True, "Csatlakozás sikeres."
+
+    def add_bot(self, name, difficulty):
+        """Számítógépes ellenfelet ad a játékhoz (csak indítás előtt)."""
+        if len(self.players) >= 4:
+            return False, "Maximum 4 játékos lehet."
+        if self.started:
+            return False, "A játék már elkezdődött."
+        self._bot_seq += 1
+        bot_id = f"bot-{self.id}-{self._bot_seq}"
+        while any(p.id == bot_id for p in self.players):
+            self._bot_seq += 1
+            bot_id = f"bot-{self.id}-{self._bot_seq}"
+        self.players.append(Player(bot_id, name, is_bot=True, difficulty=difficulty))
+        return True, "Robot hozzáadva."
+
+    def hints_left(self):
+        """Hány tipp kérhető még (0, ha kikapcsolták vagy elfogytak)."""
+        return max(0, self.hint_limit - self.hints_used)
+
+    def use_hint(self):
+        """Elhasznál egy tippet. Visszatér: True, ha volt még elérhető."""
+        if self.hints_left() <= 0:
+            return False
+        self.hints_used += 1
+        return True
+
+    def human_players(self):
+        """A nem robot játékosok."""
+        return [p for p in self.players if not p.is_bot]
+
+    def has_connected_human(self):
+        """Van-e még kapcsolódott (nem lecsatlakozott) emberi játékos?"""
+        return any(not p.is_bot and not p.disconnected for p in self.players)
+
+    def _set_last_action(self, text, **info):
+        """Az utolsó akció szövege + szerkezetes leírása (utóbbit a kliens lokalizálja)."""
+        self.last_action = text
+        self.last_action_info = dict(info) if info else None
 
     def mark_disconnected(self, player_id):
         """Jelöli a játékost ideiglenesen lecsatlakozottnak."""
@@ -127,7 +176,8 @@ class Game:
 
             if current.skip_next_turn:
                 current.skip_next_turn = False
-                self.last_action = f"{current.name} kihagy egy kört (sikertelen megtámadás)"
+                self._set_last_action(f"{current.name} kihagy egy kört (sikertelen megtámadás)",
+                                      type='skip', player=current.name)
             else:
                 break
         self.turn_number += 1
@@ -177,12 +227,15 @@ class Game:
                             formed_words=None):
         """Véglegesíti a lerakást: tábla, pont, húzás, kör."""
         self.board.apply_placement(tiles_placed)
+        self.rejected_placements.clear()
         player.score += total_score
         self._remove_tiles_from_hand(player, tiles_placed)
         new_tiles = self.bag.draw(HAND_SIZE - len(player.hand))
         player.hand.extend(new_tiles)
         player.consecutive_passes = 0
-        self.last_action = f"{player.name}: {', '.join(word_strs)} ({total_score} pont)"
+        self._set_last_action(f"{player.name}: {', '.join(word_strs)} ({total_score} pont)",
+                              type='place', player=player.name, words=list(word_strs),
+                              score=total_score)
         self._record_move(player.name, 'place', tiles_placed=tiles_placed,
                           formed_words=formed_words, score=total_score)
 
@@ -190,6 +243,43 @@ class Game:
             self._end_game(player)
         else:
             self._next_turn()
+
+    def _challenge_applies(self, placer):
+        """Él-e a megtámadási (szavazásos) mód a lerakónál? Csak akkor, ha van legalább egy
+        másik emberi játékos, aki szavazhat — a robotok nem szavaznak, velük szemben a
+        szótár dönt."""
+        if not self.challenge_mode:
+            return False
+        return any(p is not placer and not p.is_bot for p in self.players)
+
+    def preview_placement(self, player_id, tiles_placed):
+        """A lerakás kipróbálása véglegesítés nélkül (élő pontszám-előnézet).
+
+        Visszatér: {'valid': bool, 'score': int, 'words': [{'word', 'score'}], 'message': str}
+        """
+        empty = {'valid': False, 'score': 0, 'words': [], 'message': ''}
+        if self.finished or not self.started or self.pending_challenge:
+            return empty
+        player = self.current_player()
+        if not player or player.id != player_id:
+            return empty
+        ok, err = self._validate_hand(player, tiles_placed)
+        if not ok:
+            return {**empty, 'message': err}
+        valid, formed_words, error = self.board.validate_placement(
+            tiles_placed, skip_dictionary=self._challenge_applies(player)
+        )
+        if not valid:
+            return {**empty, 'message': error}
+        total = sum(score for _, _, score in formed_words)
+        if len(tiles_placed) == HAND_SIZE:
+            total += BONUS_ALL_TILES
+        return {
+            'valid': True,
+            'score': total,
+            'words': [{'word': w, 'score': sc} for w, _, sc in formed_words],
+            'message': '',
+        }
 
     def place_tiles(self, player_id, tiles_placed):
         """Betűk lerakása.
@@ -209,8 +299,9 @@ class Game:
         if not ok:
             return False, err, 0
 
+        challenge_active = self._challenge_applies(player)
         valid, formed_words, error = self.board.validate_placement(
-            tiles_placed, skip_dictionary=(self.challenge_mode and len(self.players) > 1)
+            tiles_placed, skip_dictionary=challenge_active
         )
         if not valid:
             return False, error, 0
@@ -221,7 +312,7 @@ class Game:
 
         word_strs = [w for w, _, _ in formed_words]
 
-        if self.challenge_mode and len(self.players) > 1:
+        if challenge_active:
             removed = self._remove_tiles_from_hand(player, tiles_placed)
             self.pending_challenge = Challenge(
                 tiles_placed=tiles_placed,
@@ -231,7 +322,9 @@ class Game:
                 player_idx=self.current_player_idx,
                 removed_from_hand=removed,
             )
-            self.last_action = f"{player.name}: {', '.join(word_strs)} ({total_score} pont) — szavazásra vár"
+            self._set_last_action(
+                f"{player.name}: {', '.join(word_strs)} ({total_score} pont) — szavazásra vár",
+                type='pending', player=player.name, words=list(word_strs), score=total_score)
             return True, f"Szavak: {', '.join(word_strs)} — szavazásra vár!", total_score
 
         # Normál mód (vagy egyjátékos challenge módban): azonnal véglegesít
@@ -242,12 +335,12 @@ class Game:
     # --- Challenge system (voting) ---
 
     def _get_voter_ids(self):
-        """Szavazásra jogosult játékosok (a lerakón kívül mindenki)."""
+        """Szavazásra jogosult játékosok (a lerakón kívül minden emberi játékos)."""
         if not self.pending_challenge:
             return set()
         pc = self.pending_challenge
         placer_id = self.players[pc.player_idx].id
-        return {p.id for p in self.players if p.id != placer_id}
+        return {p.id for p in self.players if p.id != placer_id and not p.is_bot}
 
     def _finalize_accept(self):
         """Lerakás véglegesítése (elfogadva)."""
@@ -256,12 +349,15 @@ class Game:
         self.pending_challenge = None
 
         self.board.apply_placement(pc.tiles_placed)
+        self.rejected_placements.clear()
         player.score += pc.score
         new_tiles = self.bag.draw(HAND_SIZE - len(player.hand))
         player.hand.extend(new_tiles)
         player.consecutive_passes = 0
 
-        self.last_action = f"{player.name}: {', '.join(pc.word_strs)} ({pc.score} pont)"
+        self._set_last_action(f"{player.name}: {', '.join(pc.word_strs)} ({pc.score} pont)",
+                              type='place', player=player.name, words=list(pc.word_strs),
+                              score=pc.score)
         self._record_move(player.name, 'challenge_accept', tiles_placed=pc.tiles_placed,
                           formed_words=pc.formed_words, score=pc.score)
 
@@ -278,11 +374,12 @@ class Game:
 
         player.hand.extend(pc.removed_from_hand)
         player.consecutive_passes = 0
+        self.rejected_placements.add(frozenset(pc.tiles_placed))
 
-        self.last_action = (
+        self._set_last_action(
             f"{player.name} szavai elutasítva: "
-            f"{', '.join(pc.word_strs)}. Betűk visszavéve, újra ő következik."
-        )
+            f"{', '.join(pc.word_strs)}. Betűk visszavéve, újra ő következik.",
+            type='rejected', player=player.name, words=list(pc.word_strs))
         self._record_move(player.name, 'challenge_reject')
 
         if player.disconnected:
@@ -334,7 +431,8 @@ class Game:
             result = self._resolve_and_finalize()
             return True, result, self._make_vote_message(result)
 
-        self.last_action = f"{voter.name} elfogadta."
+        self._set_last_action(f"{voter.name} elfogadta.", type='vote', player=voter.name,
+                              vote='accept')
         return True, 'vote_recorded', f"{voter.name} elfogadta."
 
     def reject_pending_by_player(self, player_id):
@@ -366,7 +464,8 @@ class Game:
             result = self._resolve_and_finalize()
             return True, result, self._make_vote_message(result)
 
-        self.last_action = f"{voter.name} elutasította."
+        self._set_last_action(f"{voter.name} elutasította.", type='vote', player=voter.name,
+                              vote='reject')
         return True, 'vote_recorded', f"{voter.name} elutasította."
 
     def accept_pending(self):
@@ -416,7 +515,8 @@ class Game:
         self.bag.put_back(tiles_to_exchange)
 
         player.consecutive_passes = 0
-        self.last_action = f"{player.name} cserélt {len(tiles_to_exchange)} zsetont"
+        self._set_last_action(f"{player.name} cserélt {len(tiles_to_exchange)} zsetont",
+                              type='exchange', player=player.name, count=len(tiles_to_exchange))
         self._record_move(player.name, 'exchange')
         self._next_turn()
 
@@ -434,7 +534,7 @@ class Game:
             return False, "Nem te következel."
 
         player.consecutive_passes += 1
-        self.last_action = f"{player.name} passzolt"
+        self._set_last_action(f"{player.name} passzolt", type='pass', player=player.name)
         self._record_move(player.name, 'pass')
 
         # A lecsatlakozott játékosok nem tudnak passzolni, ők nem számítanak bele.
@@ -470,7 +570,8 @@ class Game:
             finisher.score += remaining_total
 
         self.winner = max(self.players, key=lambda p: p.score)
-        self.last_action = f"Játék vége! Győztes: {self.winner.name} ({self.winner.score} pont)"
+        self._set_last_action(f"Játék vége! Győztes: {self.winner.name} ({self.winner.score} pont)",
+                              type='game_over', player=self.winner.name, score=self.winner.score)
 
     # --- Move logging & persistence ---
 
@@ -509,21 +610,26 @@ class Game:
         pending_idx = None
         returned_tiles = []
         last_action = self.last_action
+        last_action_info = self.last_action_info
         if self.pending_challenge:
             pending_idx = self.pending_challenge.player_idx
             returned_tiles = list(self.pending_challenge.removed_from_hand)
             placer = self.players[pending_idx]
             last_action = f"{placer.name} lerakása a mentés miatt visszavonva."
+            last_action_info = {'type': 'save_revert', 'player': placer.name}
 
         return {
             'id': self.id,
             'challenge_mode': self.challenge_mode,
             'turn_time_limit': self.turn_time_limit,
+            'hint_limit': self.hint_limit,
+            'hints_used': self.hints_used,
             'started': self.started,
             'finished': self.finished,
             'current_player_idx': self.current_player_idx,
             'turn_number': self.turn_number,
             'last_action': last_action,
+            'last_action_info': last_action_info,
             'board': self.board.to_dict(),
             'board_is_empty': self.board.is_empty,
             'bag_tiles': list(self.bag.tiles),
@@ -536,6 +642,8 @@ class Game:
                     'consecutive_passes': p.consecutive_passes,
                     'skip_next_turn': p.skip_next_turn,
                     'disconnected': p.disconnected,
+                    'is_bot': p.is_bot,
+                    'difficulty': p.difficulty,
                 }
                 for i, p in enumerate(self.players)
             ],
@@ -546,12 +654,15 @@ class Game:
     def from_save_dict(cls, data):
         """Játék visszaállítása mentett állapotból."""
         game = cls(data['id'], challenge_mode=data.get('challenge_mode', False),
-                   turn_time_limit=data.get('turn_time_limit', 0))
+                   turn_time_limit=data.get('turn_time_limit', 0),
+                   hint_limit=data.get('hint_limit', DEFAULT_HINT_LIMIT))
+        game.hints_used = max(0, int(data.get('hints_used', 0) or 0))
         game.started = data.get('started', False)
         game.finished = data.get('finished', False)
         game.current_player_idx = data.get('current_player_idx', 0)
         game.turn_number = data.get('turn_number', 0)
         game.last_action = data.get('last_action')
+        game.last_action_info = data.get('last_action_info')
 
         # Board visszaállítás
         board_data = data.get('board', [])
@@ -567,12 +678,13 @@ class Game:
 
         # Játékosok visszaállítás
         for pd in data.get('players', []):
-            player = Player(pd['id'], pd['name'])
+            player = Player(pd['id'], pd['name'], is_bot=bool(pd.get('is_bot')),
+                            difficulty=pd.get('difficulty'))
             player.hand = list(pd.get('hand', []))
             player.score = pd.get('score', 0)
             player.consecutive_passes = pd.get('consecutive_passes', 0)
             player.skip_next_turn = pd.get('skip_next_turn', False)
-            player.disconnected = pd.get('disconnected', False)
+            player.disconnected = False if player.is_bot else pd.get('disconnected', False)
             game.players.append(player)
 
         # Winner visszaállítás
@@ -584,6 +696,37 @@ class Game:
                     break
 
         return game
+
+    # --- Lépéstörténet ---
+
+    def get_history(self):
+        """A lépések rövid, kliensnek szánt listája (a move_log-ból, hosszra gyorsítótárazva)."""
+        count = len(self.move_log)
+        if self._history_cache and self._history_cache[0] == count:
+            return self._history_cache[1]
+        history = []
+        for move in self.move_log:
+            try:
+                details = json.loads(move.get('details_json') or '{}')
+            except (TypeError, ValueError):
+                details = {}
+            history.append({
+                'n': move['move_number'],
+                'player': move['player_name'],
+                'type': move['action_type'],
+                'words': details.get('words', []),
+                'score': details.get('score', 0),
+                'tiles': [{'row': t['row'], 'col': t['col']} for t in details.get('tiles', [])],
+            })
+        self._history_cache = (count, history)
+        return history
+
+    def _last_move_tiles(self):
+        """Az utolsó lépés lerakott mezői (kiemeléshez), ha az utolsó lépés lerakás volt."""
+        history = self.get_history()
+        if not history or history[-1]['type'] not in ('place', 'challenge_accept'):
+            return []
+        return history[-1]['tiles']
 
     # --- State serialization ---
 
@@ -600,9 +743,14 @@ class Game:
             'turn_number': self.turn_number,
             'tiles_remaining': self.bag.remaining(),
             'last_action': self.last_action,
+            'last_action_info': self.last_action_info,
+            'last_move_tiles': self._last_move_tiles(),
+            'history': [{k: v for k, v in h.items() if k != 'tiles'} for h in self.get_history()],
             'winner': self.winner.to_dict() if self.winner else None,
             'challenge_mode': self.challenge_mode,
             'turn_time_limit': self.turn_time_limit,
+            'hint_limit': self.hint_limit,
+            'hints_left': self.hints_left(),
             'pending_challenge': None,
         }
 
@@ -631,4 +779,11 @@ class Game:
         return {
             player.id: self.get_state(for_player_id=player.id, _shared=shared)
             for player in self.players
+            if not player.is_bot
         }
+
+    def get_spectator_state(self, _shared=None):
+        """Megfigyelői nézet: ugyanaz, mint a játékosoké, de egyetlen kéz sem látszik."""
+        state = self.get_state(for_player_id=None, _shared=_shared)
+        state['spectator'] = True
+        return state

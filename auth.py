@@ -149,6 +149,11 @@ def init_db():
         conn.execute('SELECT reconnect_token FROM users LIMIT 1')
     except sqlite3.OperationalError:
         conn.execute("ALTER TABLE users ADD COLUMN reconnect_token TEXT")
+    try:
+        conn.execute('SELECT has_bots FROM saved_games LIMIT 1')
+    except sqlite3.OperationalError:
+        # Robotos játékok nem számítanak bele a ranglistába
+        conn.execute("ALTER TABLE saved_games ADD COLUMN has_bots INTEGER NOT NULL DEFAULT 0")
     conn.commit()
     conn.close()
 
@@ -368,17 +373,19 @@ def cleanup_expired():
 
 # --- Game persistence ---
 
-def save_game(room_id, room_name, state_json, challenge_mode, players_data=None, owner_name='', owner_token=None):
+def save_game(room_id, room_name, state_json, challenge_mode, players_data=None, owner_name='',
+              owner_token=None, has_bots=False):
     """Játék mentése (upsert: room_id + active alapján). Visszaadja a game_id-t.
     players_data: [{player_name, user_id (or None), score}, ...] — ha megadva, upsert a game_players-be.
+    has_bots: robot ellenfél is van a játékban (a ranglista nem számolja).
     """
     with _db() as conn:
         now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
         # Atomic upsert: UPDATE first, INSERT only if no row was updated
         updated = conn.execute(
-            "UPDATE saved_games SET state_json = ?, updated_at = ?, owner_name = ?, owner_token = ? "
-            "WHERE room_id = ? AND status = 'active'",
-            (state_json, now, owner_name, owner_token, room_id)
+            "UPDATE saved_games SET state_json = ?, updated_at = ?, owner_name = ?, owner_token = ?, "
+            "has_bots = ? WHERE room_id = ? AND status = 'active'",
+            (state_json, now, owner_name, owner_token, 1 if has_bots else 0, room_id)
         ).rowcount
         if updated:
             game_id = conn.execute(
@@ -387,9 +394,10 @@ def save_game(room_id, room_name, state_json, challenge_mode, players_data=None,
             ).fetchone()['id']
         else:
             cursor = conn.execute(
-                'INSERT INTO saved_games (room_id, room_name, state_json, status, challenge_mode, owner_name, owner_token) '
-                'VALUES (?, ?, ?, ?, ?, ?, ?)',
-                (room_id, room_name, state_json, 'active', 1 if challenge_mode else 0, owner_name, owner_token)
+                'INSERT INTO saved_games (room_id, room_name, state_json, status, challenge_mode, owner_name, '
+                'owner_token, has_bots) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                (room_id, room_name, state_json, 'active', 1 if challenge_mode else 0, owner_name,
+                 owner_token, 1 if has_bots else 0)
             )
             game_id = cursor.lastrowid
 
@@ -415,7 +423,7 @@ def _upsert_game_players(conn, game_id, players_data):
             )
 
 
-def finish_game(room_id, state_json, players_data, room_name=''):
+def finish_game(room_id, state_json, players_data, room_name='', has_bots=False):
     """Játék befejezése: status='finished', game_players INSERT, users stats UPDATE.
     players_data: [{player_name, user_id (or None), final_score, is_winner}, ...]
     """
@@ -427,15 +435,16 @@ def finish_game(room_id, state_json, players_data, room_name=''):
         ).fetchone()
         if not row:
             cursor = conn.execute(
-                'INSERT INTO saved_games (room_id, room_name, state_json, status) VALUES (?, ?, ?, ?)',
-                (room_id, room_name or '', state_json, 'finished')
+                'INSERT INTO saved_games (room_id, room_name, state_json, status, has_bots) '
+                'VALUES (?, ?, ?, ?, ?)',
+                (room_id, room_name or '', state_json, 'finished', 1 if has_bots else 0)
             )
             game_id = cursor.lastrowid
         else:
             game_id = row['id']
             conn.execute(
-                'UPDATE saved_games SET state_json = ?, status = ?, updated_at = ? WHERE id = ?',
-                (state_json, 'finished', now, game_id)
+                'UPDATE saved_games SET state_json = ?, status = ?, updated_at = ?, has_bots = ? WHERE id = ?',
+                (state_json, 'finished', now, 1 if has_bots else 0, game_id)
             )
 
         for pd in players_data:
@@ -797,3 +806,71 @@ def search_users(query, exclude_user_id, limit=10):
             (f"%{escaped}%", query.lower(), exclude_user_id, limit)
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+# --- Ranglista ---
+
+LEADERBOARD_METRICS = ('wins', 'win_rate', 'avg_score', 'best_game')
+# A százalékos / átlag alapú listákra csak elég sok játékkal lehet kerülni (különben egy
+# nyert játék után 100%-kal vezetne valaki)
+LEADERBOARD_MIN_GAMES = {'wins': 1, 'win_rate': 3, 'avg_score': 3, 'best_game': 1}
+LEADERBOARD_MAX_LIMIT = 100
+
+# A rendezés (a metrikához tartozó, rögzített SQL-részlet; felhasználói adat nem kerül bele)
+_LEADERBOARD_ORDER = {
+    'wins': 'games_won DESC, (games_won * 1.0 / games_played) DESC, total_score DESC',
+    'win_rate': '(games_won * 1.0 / games_played) DESC, games_played DESC, games_won DESC',
+    'avg_score': '(total_score * 1.0 / games_played) DESC, games_played DESC',
+    'best_game': 'best_score DESC, games_won DESC',
+}
+
+
+def _leaderboard_entry(row, rank):
+    played = row['games_played']
+    return {
+        'rank': rank,
+        'user_id': row['user_id'],
+        'display_name': row['display_name'],
+        'games_played': played,
+        'games_won': row['games_won'],
+        'win_rate': round(row['games_won'] / played * 100, 1) if played else 0,
+        'avg_score': round(row['total_score'] / played, 1) if played else 0,
+        'total_score': row['total_score'],
+        'best_score': row['best_score'],
+    }
+
+
+def get_leaderboard(metric='wins', limit=50, user_id=None):
+    """Regisztrált játékosok ranglistája (csak befejezett, robot nélküli játékokból).
+
+    metric: 'wins' | 'win_rate' | 'avg_score' | 'best_game'
+    Visszatér: (entries, me) — `entries` a legjobb `limit` játékos (rank-kal), `me` a megadott
+    felhasználó helyezése (akkor is, ha nincs a top listában), vagy None.
+    """
+    if metric not in LEADERBOARD_METRICS:
+        metric = 'wins'
+    limit = max(1, min(int(limit), LEADERBOARD_MAX_LIMIT))
+
+    with _db() as conn:
+        rows = conn.execute(
+            'SELECT gp.user_id AS user_id, u.display_name AS display_name, '
+            'COUNT(*) AS games_played, COALESCE(SUM(gp.is_winner), 0) AS games_won, '
+            'COALESCE(SUM(gp.final_score), 0) AS total_score, MAX(gp.final_score) AS best_score '
+            'FROM game_players gp '
+            "JOIN saved_games sg ON sg.id = gp.game_id AND sg.status = 'finished' AND sg.has_bots = 0 "
+            'JOIN users u ON u.id = gp.user_id '
+            'WHERE gp.user_id IS NOT NULL '
+            'GROUP BY gp.user_id '
+            'HAVING COUNT(*) >= ? '
+            f'ORDER BY {_LEADERBOARD_ORDER[metric]}, gp.user_id ASC',
+            (LEADERBOARD_MIN_GAMES[metric],),
+        ).fetchall()
+
+    entries = []
+    me = None
+    for rank, row in enumerate(rows, start=1):
+        if rank <= limit:
+            entries.append(_leaderboard_entry(row, rank))
+        if user_id is not None and row['user_id'] == user_id:
+            me = _leaderboard_entry(row, rank)
+    return entries, me
