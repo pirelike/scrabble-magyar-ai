@@ -28,4 +28,5 @@ AUTH_RATE_LIMITS = {
     'replay': (60, 60),          # 60 kérés / 1 perc (megosztott visszajátszás)
     'analysis': (30, 60),        # 30 kérés / 1 perc (játékelemzés lekérdezése)
     'daily': (60, 60),           # 60 kérés / 1 perc (napi feladvány, ranglista)
+    'practice': (120, 60),       # 120 kérés / 1 perc (kvíz, rövid szavak)
 }

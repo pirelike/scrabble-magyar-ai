@@ -732,6 +732,7 @@ const Lobby = {
             Leaderboard.load();
         } else if (tabId === 'practice') {
             Daily.load();
+            Practice.onShow();
         }
     },
 
@@ -3295,6 +3296,196 @@ const Daily = {
     },
 };
 
+// ===== GYAKORLÁS: szókvíz és rövid szavak =====
+
+const Practice = {
+    mode: 'mixed',          // 'mixed' | '2' | '3' (a kvíz szavainak hossza)
+    quiz: null,             // {questions, index, correct, answered}
+    shortLength: 2,
+    _short: {},             // hossz → szavak (gyorsítótár)
+
+    init() {
+        document.querySelectorAll('.quiz-mode').forEach(btn => btn.addEventListener('click', () => {
+            this.mode = btn.dataset.mode;
+            document.querySelectorAll('.quiz-mode').forEach(b => b.classList.toggle('active', b === btn));
+        }));
+        document.getElementById('btn-quiz-start').addEventListener('click', () => this.startQuiz());
+        document.getElementById('btn-quiz-valid').addEventListener('click', () => this.answer(true));
+        document.getElementById('btn-quiz-invalid').addEventListener('click', () => this.answer(false));
+        document.getElementById('btn-quiz-next').addEventListener('click', () => this.next());
+        document.querySelectorAll('.short-len').forEach(btn => btn.addEventListener('click', () => {
+            this.shortLength = Number(btn.dataset.length);
+            document.querySelectorAll('.short-len').forEach(b => b.classList.toggle('active', b === btn));
+            this.loadShortWords();
+        }));
+        window.addEventListener('langchange', () => {
+            if (this.quiz) this.renderQuestion(true);
+            this.renderShortWords();
+        });
+    },
+
+    onShow() {
+        if (!this._short[this.shortLength]) this.loadShortWords();
+    },
+
+    // --- Kvíz ---
+
+    async startQuiz() {
+        const btn = document.getElementById('btn-quiz-start');
+        btn.disabled = true;
+        try {
+            const query = this.mode === 'mixed' ? '' : `&length=${this.mode}`;
+            const res = await fetch(`/api/practice/quiz?n=10${query}`);
+            const data = await res.json();
+            if (!data.success || !data.questions.length) {
+                showMessage(tServer(data.message) || t('quiz.load_error'), true);
+                return;
+            }
+            this.quiz = { questions: data.questions, index: 0, correct: 0, answered: false };
+            document.getElementById('quiz-result').classList.add('hidden');
+            document.getElementById('quiz-play').classList.remove('hidden');
+            this.renderQuestion();
+        } catch {
+            showMessage(t('quiz.load_error'), true);
+        } finally {
+            btn.disabled = false;
+        }
+    },
+
+    renderQuestion(keepFeedback = false) {
+        const quiz = this.quiz;
+        if (!quiz || quiz.index >= quiz.questions.length) return;
+        document.getElementById('quiz-progress').textContent =
+            t('quiz.progress', { n: quiz.index + 1, total: quiz.questions.length, correct: quiz.correct });
+        document.getElementById('quiz-word').textContent = quiz.questions[quiz.index];
+        if (!keepFeedback) {
+            document.getElementById('quiz-feedback').textContent = '';
+            document.getElementById('quiz-feedback').className = 'quiz-feedback';
+            document.getElementById('btn-quiz-next').classList.add('hidden');
+            this._setAnswerButtons(true);
+        }
+    },
+
+    _setAnswerButtons(enabled) {
+        document.getElementById('btn-quiz-valid').disabled = !enabled;
+        document.getElementById('btn-quiz-invalid').disabled = !enabled;
+    },
+
+    async answer(isValid) {
+        const quiz = this.quiz;
+        if (!quiz || quiz.answered) return;
+        quiz.answered = true;
+        this._setAnswerButtons(false);
+        const word = quiz.questions[quiz.index];
+        const feedback = document.getElementById('quiz-feedback');
+        try {
+            const data = await postJson('/api/practice/answer', { word, answer: isValid });
+            if (!data.success) throw new Error('answer');
+            if (data.correct) quiz.correct++;
+            feedback.className = 'quiz-feedback ' + (data.correct ? 'right' : 'wrong');
+            const verdict = data.valid
+                ? t('quiz.is_valid', { score: data.score })
+                : t('quiz.is_invalid');
+            let text = (data.correct ? t('quiz.right') : t('quiz.wrong')) + ' ' + verdict;
+            if (!data.valid && data.suggestions && data.suggestions.length) {
+                text += ' ' + t('quiz.suggestions', { words: data.suggestions.join(', ') });
+            }
+            feedback.textContent = text;
+        } catch {
+            quiz.answered = false;
+            this._setAnswerButtons(true);
+            showMessage(t('quiz.load_error'), true);
+            return;
+        }
+        document.getElementById('quiz-progress').textContent =
+            t('quiz.progress', { n: quiz.index + 1, total: quiz.questions.length, correct: quiz.correct });
+        const last = quiz.index + 1 >= quiz.questions.length;
+        const next = document.getElementById('btn-quiz-next');
+        next.textContent = last ? t('quiz.finish') : t('quiz.next');
+        next.classList.remove('hidden');
+    },
+
+    next() {
+        const quiz = this.quiz;
+        if (!quiz || !quiz.answered) return;
+        quiz.index++;
+        quiz.answered = false;
+        if (quiz.index >= quiz.questions.length) {
+            this.showResult();
+        } else {
+            this.renderQuestion();
+        }
+    },
+
+    showResult() {
+        const quiz = this.quiz;
+        document.getElementById('quiz-play').classList.add('hidden');
+        const box = document.getElementById('quiz-result');
+        box.replaceChildren();
+        const score = document.createElement('div');
+        score.className = 'quiz-result-score';
+        score.textContent = t('quiz.result', { correct: quiz.correct, total: quiz.questions.length });
+        const verdict = document.createElement('div');
+        const ratio = quiz.correct / quiz.questions.length;
+        verdict.textContent = ratio === 1 ? t('quiz.perfect') : ratio >= 0.7 ? t('quiz.good') : t('quiz.practice_more');
+        box.appendChild(score);
+        box.appendChild(verdict);
+        box.classList.remove('hidden');
+        this.quiz = null;
+    },
+
+    // --- Rövid szavak ---
+
+    async loadShortWords() {
+        const length = this.shortLength;
+        if (!this._short[length]) {
+            try {
+                const res = await fetch(`/api/practice/short-words?length=${length}`);
+                const data = await res.json();
+                if (!data.success) { showMessage(tServer(data.message) || t('quiz.load_error'), true); return; }
+                this._short[length] = data.words;
+            } catch {
+                showMessage(t('quiz.load_error'), true);
+                return;
+            }
+        }
+        this.renderShortWords();
+    },
+
+    renderShortWords() {
+        const words = this._short[this.shortLength];
+        const box = document.getElementById('short-words');
+        box.replaceChildren();
+        const count = document.getElementById('short-count');
+        if (!words) { count.textContent = ''; return; }
+        count.textContent = t('short.count', { n: words.length });
+        let initial = null;
+        let group = null;
+        for (const entry of words) {
+            const first = entry.word.startsWith('SZ') || entry.word.startsWith('CS') || entry.word.startsWith('GY')
+                || entry.word.startsWith('NY') || entry.word.startsWith('LY') || entry.word.startsWith('TY')
+                || entry.word.startsWith('ZS') ? entry.word.slice(0, 2) : entry.word[0];
+            if (first !== initial) {
+                initial = first;
+                const heading = document.createElement('div');
+                heading.className = 'short-initial';
+                heading.textContent = first;
+                group = document.createElement('div');
+                group.className = 'short-group';
+                box.appendChild(heading);
+                box.appendChild(group);
+            }
+            const chip = document.createElement('span');
+            chip.className = 'short-chip';
+            chip.textContent = entry.word;
+            const score = document.createElement('small');
+            score.textContent = entry.score;
+            chip.appendChild(score);
+            group.appendChild(chip);
+        }
+    },
+};
+
 // ===== KITÜNTETÉSEK =====
 
 const BADGE_ICONS = {
@@ -4845,6 +5036,7 @@ ExitGame.init();
 Profile.init();
 Badges.init();
 Daily.init();
+Practice.init();
 Replay.init();
 GameOver.init();
 Reconnection.init();

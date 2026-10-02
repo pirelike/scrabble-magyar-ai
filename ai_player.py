@@ -91,7 +91,8 @@ INFLECT_MAX_STEM = 6
 INFLECT_MAX_FORM = 12
 
 _DIC_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dict', 'hu_HU.dic')
-_STEM_RE = re.compile(r'^[a-záéíóöőúüű]{2,15}$')
+# Csak a magyar ábécé betűi: a q, w, x, y betűkhöz nincs zseton (idegen szavak, pl. adyas), így azok úgysem rakhatók ki
+_STEM_RE = re.compile(r'^[aábcdeéfghiíjklmnoóöőprstuúüűvz]{2,15}$')
 _HAS_VOWEL_RE = re.compile(r'[aáeéiíoóöőuúüű]')
 
 

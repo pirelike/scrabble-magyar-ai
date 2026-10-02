@@ -435,6 +435,47 @@
                         </div>
                     </div>
                 </section>
+
+                <!-- Szókvíz: melyik szó érvényes? -->
+                <section class="lobby-section" id="quiz-section">
+                    <div class="section-header">
+                        <h2 class="section-title" data-i18n="quiz.title">Szókvíz</h2>
+                    </div>
+                    <p class="form-hint" data-i18n="quiz.intro">Melyik szó érvényes a játékban? Tíz kérdés, a szótár dönt.</p>
+                    <div class="segmented" id="quiz-modes" role="tablist" aria-label="Szóhossz" data-i18n-aria="quiz.modes_label">
+                        <button class="segment quiz-mode active" data-mode="mixed" type="button" data-i18n="quiz.mode_mixed">Vegyes szavak</button>
+                        <button class="segment quiz-mode" data-mode="2" type="button" data-i18n="quiz.mode_2">Kétzsetonos</button>
+                        <button class="segment quiz-mode" data-mode="3" type="button" data-i18n="quiz.mode_3">Háromzsetonos</button>
+                    </div>
+                    <div class="quiz-start-row">
+                        <button id="btn-quiz-start" type="button" data-i18n="quiz.start">Kvíz indítása</button>
+                    </div>
+                    <div id="quiz-play" class="quiz-play hidden">
+                        <div id="quiz-progress" class="quiz-progress"></div>
+                        <div id="quiz-word" class="quiz-word"></div>
+                        <div class="quiz-buttons">
+                            <button id="btn-quiz-valid" class="btn-accept" type="button" data-i18n="quiz.valid">Érvényes</button>
+                            <button id="btn-quiz-invalid" class="btn-challenge" type="button" data-i18n="quiz.invalid">Nem érvényes</button>
+                        </div>
+                        <div id="quiz-feedback" class="quiz-feedback" aria-live="polite"></div>
+                        <button id="btn-quiz-next" class="secondary hidden" type="button" data-i18n="quiz.next">Következő</button>
+                    </div>
+                    <div id="quiz-result" class="quiz-result hidden"></div>
+                </section>
+
+                <!-- Rövid szavak -->
+                <section class="lobby-section" id="shortwords-section">
+                    <div class="section-header">
+                        <h2 class="section-title" data-i18n="short.title">Rövid szavak</h2>
+                    </div>
+                    <p class="form-hint" data-i18n="short.intro">A két- és háromzsetonos szavak a Scrabble legfontosabb fegyverei: ezekkel zsúfolt táblán is lehet pontot szerezni.</p>
+                    <div class="segmented" id="short-lengths" role="tablist" aria-label="Szóhossz" data-i18n-aria="quiz.modes_label">
+                        <button class="segment short-len active" data-length="2" type="button" data-i18n="quiz.mode_2">Kétzsetonos</button>
+                        <button class="segment short-len" data-length="3" type="button" data-i18n="quiz.mode_3">Háromzsetonos</button>
+                    </div>
+                    <p class="form-hint" id="short-count"></p>
+                    <div id="short-words" class="short-words"></div>
+                </section>
             </div>
 
             <!-- TAB 5: Ranglista -->

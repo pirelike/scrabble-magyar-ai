@@ -10,6 +10,7 @@ from flask import (
 import analysis
 import daily
 import dictionary
+import practice
 from config import SMTP_CONFIGURED
 from tiles import tokenize_word, word_base_score, TILE_VALUES
 from auth import (
@@ -537,6 +538,57 @@ def daily_leaderboard():
     for entry in entries:
         entry['is_me'] = entry['user_id'] == user_id
     return jsonify({'success': True, 'date': date_str, 'entries': entries, 'me': me})
+
+
+@public_bp.route('/api/practice/quiz', methods=['GET'])
+def practice_quiz():
+    """„Melyik szó érvényes?” kvíz: a kérdések (szavak) listája, a válaszokat nem tartalmazza."""
+    if not _rate_limiter.check_ip(_get_client_ip(), 'practice'):
+        return jsonify({'success': False, 'message': 'Túl sok kérés. Próbáld újra később.'}), 429
+    try:
+        count = int(request.args.get('n', practice.QUESTION_COUNT))
+    except ValueError:
+        count = practice.QUESTION_COUNT
+    length_text = request.args.get('length', '')
+    if length_text not in ('', '2', '3'):
+        return jsonify({'success': False, 'message': 'Érvénytelen szóhossz.'}), 400
+    if not dictionary.is_available():
+        return jsonify({'success': False, 'message': 'A szótár nem érhető el.'}), 503
+    questions = practice.make_quiz(count, int(length_text) if length_text else None)
+    return jsonify({'success': True, 'questions': questions})
+
+
+@public_bp.route('/api/practice/answer', methods=['POST'])
+def practice_answer():
+    """Egy kvíz-válasz kiértékelése: érvényes-e a szó, helyes volt-e a tipp, pontérték, javaslatok."""
+    if not _rate_limiter.check_ip(_get_client_ip(), 'practice'):
+        return jsonify({'success': False, 'message': 'Túl sok kérés. Próbáld újra később.'}), 429
+    data = request.get_json(silent=True) or {}
+    word = data.get('word')
+    if not isinstance(word, str) or not isinstance(data.get('answer'), bool):
+        return jsonify({'success': False, 'message': 'Érvénytelen kérés.'}), 400
+    if not dictionary.is_available():
+        return jsonify({'success': False, 'message': 'A szótár nem érhető el.'}), 503
+    result = practice.check_answer(word, data['answer'])
+    if result is None:
+        return jsonify({'success': False, 'message': 'Érvénytelen szó.'}), 400
+    return jsonify({'success': True, **result})
+
+
+@public_bp.route('/api/practice/short-words', methods=['GET'])
+def practice_short_words():
+    """Az összes érvényes 2 vagy 3 zsetonos szó pontértékkel (a tanuláshoz)."""
+    if not _rate_limiter.check_ip(_get_client_ip(), 'practice'):
+        return jsonify({'success': False, 'message': 'Túl sok kérés. Próbáld újra később.'}), 429
+    try:
+        length = int(request.args.get('length', 2))
+    except ValueError:
+        length = 0
+    if length not in practice.SHORT_LENGTHS:
+        return jsonify({'success': False, 'message': 'Érvénytelen szóhossz.'}), 400
+    if not dictionary.is_available():
+        return jsonify({'success': False, 'message': 'A szótár nem érhető el.'}), 503
+    return jsonify({'success': True, 'length': length, 'words': practice.short_words(length)})
 
 
 _MAX_DICT_WORDS = 8
