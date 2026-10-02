@@ -170,6 +170,69 @@ class TestSpecialFlags:
         assert c.check('lúd') and c.check('lúdak')
 
 
+class TestMorphology:
+    """A szótár morfológiai címkéi (AM aliasok) alapján szűrt levezetések."""
+    AFF = (
+        'SET UTF-8\n'
+        'AM 6\n'
+        'AM po:noun ts:NOM\n'                    # 1
+        'AM po:adj ts:NOM\n'                     # 2
+        'AM is:POSS_SG_1 is:NOM\n'               # 3
+        'AM is:ék_FAMILIAR_noun is:NOM\n'        # 4
+        'AM is:ESS\n'                            # 5
+        'AM po:noun ts:NOM al:uv-vá al:uv-\n'    # 6
+        'SFX P Y 1\n'
+        'SFX P 0 om . 3\n'
+        'SFX F Y 1\n'
+        'SFX F 0 ék . 4\n'
+        'SFX E Y 1\n'
+        'SFX E 0 ul . 5\n'
+        'SFX K Y 1\n'
+        'SFX K 0 ok .\n'
+    )
+    DIC = '5\nház/PFEK\t1\ntar/PEK\t2\nbarát/PK\t2\nbarát/P\t1\nuv\t6\n'
+
+    def make(self, tmp_path, attested=None):
+        c = make_checker(tmp_path, self.AFF, self.DIC)
+        if attested is not None:
+            path = tmp_path / 'attested.txt'
+            path.write_text('# megjegyzés\n' + '\n'.join(attested) + '\n', encoding='utf-8')
+            c._attested = c._load_attested(str(path))
+        return c
+
+    def test_without_attestation_list_everything_is_accepted(self, tmp_path):
+        c = self.make(tmp_path)
+        assert all(c.check(w) for w in ('házom', 'tarom', 'házék', 'házul', 'tarok'))
+
+    def test_possessive_on_an_adjective_needs_attestation(self, tmp_path):
+        c = self.make(tmp_path, attested=[])
+        assert c.check('házom') and c.check('tarok')     # főnév + birtokos, melléknév + többes: rendben
+        assert not c.check('tarom') and c.needs_attestation('tarom')
+        assert c.check('barátom')                        # a főnévi szócikk elég
+
+    def test_familiar_plural_and_essive_need_attestation(self, tmp_path):
+        c = self.make(tmp_path, attested=['házul'])
+        assert not c.check('házék') and c.needs_attestation('házék')
+        assert c.check('házul')                          # a listán szerepel
+
+    def test_essive_on_an_adjective_is_the_regular_adverb(self, tmp_path):
+        c = self.make(tmp_path, attested=[])
+        assert c.check('tarul') and not c.needs_attestation('tarul')   # mint a ROSSZUL
+
+    def test_attested_risky_form_is_valid(self, tmp_path):
+        c = self.make(tmp_path, attested=['tarom', 'Házék'])
+        assert c.check('tarom') and c.check('házék')
+
+    def test_hyphen_only_entries_are_invalid(self, tmp_path):
+        c = self.make(tmp_path, attested=[])
+        assert not c.check('uv') and not c.needs_attestation('uv')
+
+    def test_inflected_forms_skip_unattested_risky_forms(self, tmp_path):
+        c = self.make(tmp_path, attested=['házul'])
+        assert c.inflected_forms(['ház', 'tar', 'uv'], {'om', 'ék', 'ul', 'ok'}) == {
+            'házom', 'házul', 'házok', 'tarok', 'tarul'}
+
+
 class TestBinaryFlags:
     """A hu_HU.aff egybájtos, nem UTF-8 jelzőket használ (és Latin-1 megjegyzéseket)."""
 
@@ -191,8 +254,7 @@ class TestBinaryFlags:
 @pytest.fixture(scope='module')
 def checker():
     import dictionary
-    return AffixChecker(os.path.join(dictionary._DICT_DIR, 'hu_HU.aff'),
-                        os.path.join(dictionary._DICT_DIR, 'hu_HU.dic'))
+    return dictionary.load_checker()   # ugyanúgy, mint a szerveren (a használati listával)
 
 
 class TestRealDictionary:

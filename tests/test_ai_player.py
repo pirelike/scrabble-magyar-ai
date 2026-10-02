@@ -426,6 +426,15 @@ class TestInflectedVocabulary:
         assert max(len(w) for w in extra) <= ai_player.INFLECT_MAX_FORM
         assert all(w == w.upper() for w in extra)
 
+    def test_grammatical_but_unused_forms_are_left_out(self, vocab):
+        # ilyeneket rakott le korábban a robot (pl. a napi feladvány tábláján)
+        # a kockázatos alakok közül a használtak sem (KEDVESEM): a szótár elfogadja, de a robot nem rakja le
+        for word in ('FALIM', 'FALIJA', 'TAROM', 'ÉJÉK', 'CIRMOSÉK', 'BLÖKIÜL', 'BODZÁSUNK', 'VU', 'COS',
+                     'KEDVESEM'):
+            assert word not in vocab, word
+        for word in ('ROSSZUL', 'KUTYÁM', 'ALMÁT'):   # a szabályos alakok maradnak
+            assert word in vocab, word
+
     def test_size_stays_bounded(self, vocab):
         assert 250_000 < len(vocab) < 500_000
 
