@@ -38,15 +38,23 @@ Open http://localhost:5000 in your browser.
 - **Barátlista és szobameghívó** — regisztrált játékosok egymást barátnak jelölhetik (kérés küldés/elfogadás/elutasítás, barát eltávolítás), online státusz jelzővel; a várakozó szoba tulajdonosa barátait közvetlenül meghívhatja a szobába
 - **In-game chat** — játék közbeni szöveges üzenetküldés a szobában lévő játékosok között
 - **Játék mentés / visszatöltés** — manuális mentés (owner-only); lobby-first restore flow: a tulajdonos visszaállítja a mentést, várakozó szoba jön létre ahová az eredeti játékosok csatlakozhatnak
-- **Visszajátszás** — befejezett játékok lépésről lépésre visszanézhetők (board snapshot-okkal)
-- **Játékos profil** — statisztikák (játszott, győzelem, nyerési arány, átl. pontszám) és játékelőzmények
+- **Visszajátszás** — befejezett játékok lépésről lépésre visszanézhetők (board snapshot-okkal), elemzéssel és megosztható linkkel
+- **Visszavonás** — megtámadás módban a lerakó visszavonhatja a még el nem döntött lerakását; `Ctrl+Z` az utolsó lerakott betűt veszi vissza
+- **Játékos profil** — statisztikák (játszott, győzelem, nyerési arány, átl. pontszám, értékszám), kitüntetések és játékelőzmények (értékszám-változással)
 - **Sötét / világos téma** — automatikus detektálás (`prefers-color-scheme`), manuális váltás, Slate+Gold paletta
 - **Hang effektek** — betű lerakás, szavazás, kör értesítő, chat, játék kezdés/vége; hangerő-szabályozó és kategóriánkénti ki/be kapcsolók (Web Audio API, nincs külső fájl)
 - **Stabil újracsatlakozás** — hálózati hiba vagy manuális kilépés után is visszacsatlakozhatnak a játékosok az aktív játékba (120 mp grace period, token alapú); a **várakozó szoba** sem szűnik meg azonnal, ha a tulajdonos kapcsolata megszakad (pl. telefonon átvált az üzenetküldő appra a kód elküldéséhez): 10 percig megmarad, és a tulajdonos visszatérhet
 - **Pinch-to-zoom** — mobilon a tábla nagyítható/kicsinyíthető csípő mozdulattal
-- **Robot ellenfelek (AI)** — egyedül is játszható 1–3 számítógépes ellenfél ellen, három nehézségi szinttel (könnyű / közepes / nehéz); a robotok a szótár tőszavaiból építenek, a keresztszavakat a teljes szótárral ellenőrzik. Robotos játék a ranglistába nem számít. Egyedül játszva **tipp** kérhető (a három legjobb lépés)
+- **Robot ellenfelek (AI)** — egyedül is játszható 1–3 számítógépes ellenfél ellen, 10 nehézségi fokozattal vagy **„Igazodik hozzám”** móddal (a robot az utolsó köreid átlagához állítja az erejét); a robotok tőszavakat és gyakori ragozott alakokat is raknak. Robotos játék a ranglistába nem számít. Egyedül játszva **tipp** kérhető (a három legjobb lépés)
 - **Megfigyelő mód** — folyamatban lévő nyilvános játék megfigyelése játékos nélkül (lobby „Élő játékok”, privát játék kóddal); a megfigyelő nem lát kezeket, nem lép és nem chatel
-- **Ranglista** — győzelmek, nyerési arány, átlagpont és legjobb játék szerint (csak regisztrált játékosok, robot nélküli, befejezett játékokból)
+- **Ranglista** — **értékszám (ELO)**, győzelmek, nyerési arány, átlagpont és legjobb játék szerint (csak regisztrált játékosok, robot nélküli, befejezett játékokból)
+- **Napi feladvány** — naponta egy közös táblaállás és betűkészlet mindenkinek: keresd meg a legtöbb pontot érő lépést; napi ranglista, tegnapi megoldás
+- **Gyakorlás** — „Melyik szó érvényes?” kvíz és a két-, háromzsetonos szavak teljes listája
+- **Levelezős játék** — barátokkal órák vagy napok alatt lépkedve (24 óra – 7 nap lépésenként); a játék közben bezárhatod az alkalmazást, és értesítést kapsz, ha rád kerül a sor
+- **Értesítések (Web Push)** — a profilban bekapcsolható „Te jössz!” értesítés a telefonodra / böngésződbe
+- **Játékelemzés** — a játék végén lépésenként a legjobb lehetséges lépés és a kint maradt pont, játékosonkénti hatékonysággal
+- **Kitüntetések** — bingó (mind a 7 zseton), 100+ pontos lépés, 8+ zsetonos szó, joker, 300 pontos játék, győzelem erős robot ellen, napi feladvány legjobb lépése, 10 győzelem, 25 játék…
+- **Visszajátszás megosztása** — a befejezett játék visszajátszásának linkje (`/?replay=…`) bejelentkezés nélkül is megnyitható
 - **Szótár-böngésző** — bárhonnan megnyitható szó-ellenőrző: érvényes-e a szó, hány pontot ér prémium nélkül, zsetonokra bontva, javaslatokkal elgépelés esetén
 - **Animációk** — betű lerakás, ellenfél lépésének becsúszása, pontszám felugró, kör váltás jelzése; húzás közben a foglalt mezők pirossal jelölve (`prefers-reduced-motion` esetén kikapcsolva)
 - **PWA** — telepíthető alkalmazás (manifest, service worker, ikonok); kapcsolat nélkül is elindul a felület, és érthető üzenetet mutat
@@ -208,8 +216,12 @@ A szerver opcionális környezeti változókat olvas. Egyik sem kötelező — m
 | `SMTP_USER` | *(üres)* | SMTP felhasználó |
 | `SMTP_PASSWORD` | *(üres)* | SMTP jelszó (app password) |
 | `SMTP_FROM` | *(üres)* | Feladó email cím |
+| `VAPID_PRIVATE_KEY` | *(első induláskor generált, az adatbázisban marad)* | Web Push VAPID privát kulcs (PEM; sortörések `\n`-nel) |
+| `VAPID_SUBJECT` | `mailto:SMTP_FROM` | Web Push `sub` mező (`mailto:` vagy `https:` cím) |
 
 Ha az SMTP változók nincsenek beállítva, a verifikációs kódok a szerver konzolra íródnak ki (fejlesztéshez elegendő).
+
+A Web Push a `pywebpush` csomagot használja (a `requirements.txt` tartalmazza); ha nincs telepítve, az értesítések kikapcsolnak, a játék többi része változatlanul működik. Az értesítésekhez a böngészőnek HTTPS (vagy `localhost`) kell; iPhone-on az alkalmazást előbb a Főképernyőhöz kell adni.
 
 <details>
 <summary>Példa .env fájl (opcionális, manuálisan kell source-olni)</summary>
@@ -229,13 +241,20 @@ export SMTP_FROM=yourscrabble@gmail.com
 ## Projekt struktúra / Project Structure
 
 ```
-server.py          — Flask + Socket.IO szerver, lobby/szoba kezelés, Socket.IO event handlerek, robotlépések
+server.py          — Flask + Socket.IO (gevent) szerver, lobby/szoba kezelés, Socket.IO event handlerek, robotlépések, napi feladvány, levelezős játékok, push
 game.py            — Játéklogika (Game osztály), körök, pontozás, challenge rendszer, kör időlimit, lépéstörténet, előnézet
 player.py          — Player osztály (id, név, kéz, pontszám, disconnected állapot, robot jelző)
-ai_player.py       — Robot ellenfél: szókincs (a szótár tőszavai), lépésgenerátor, nehézségi szintek, tippek
+ai_player.py       — Robot ellenfél: szókincs (tőszavak + gyakori ragozott alakok), lépésgenerátor, 10 fokozat + „igazodik hozzám”, tippek
+achievements.py    — Kitüntetések kiértékelése
+analysis.py        — Játékelemzés (legjobb lépés / kint maradt pont lépésenként)
+async_games.py     — Levelezős játék felállítása, lista
+daily.py           — Napi feladvány előállítása és eredmény-rögzítés
+elo.py             — ELO értékszám
+practice.py        — Szókvíz, rövid szavak listája
+push_service.py    — Web Push (VAPID, feliratkozások, küldés)
 board.py           — 15×15 tábla, premium mezők, szóelhelyezés validáció és pontozás
 dictionary.py      — Magyar szótár-ellenőrzés (beágyazott), tömeges ellenőrzés, javaslatok
-affix_checker.py   — Hunspell-szerű, függőségmentes szóellenőrző a dict/hu_HU fájlokhoz
+affix_checker.py   — Hunspell-szerű, függőségmentes szóellenőrző a dict/hu_HU fájlokhoz (ragozott alakok előállításával)
 tiles.py           — Magyar betűkészlet (100 zseton), TileBag osztály, szó → zsetonok felbontás
 challenge.py       — Challenge (megtámadás) logika, szavazási állapotgép
 room.py            — Room osztály (szoba állapot, owner, chat, timer kezelés, megfigyelők)
@@ -257,7 +276,7 @@ static/
   i18n-data.js     — Fordítások (hu / en) — szigorú JSON, a tesztek is ezt olvassák
   style.css        — Stílusok, sötét/világos téma (Slate+Gold paletta), reszponzív layout, animációk
   manifest.webmanifest, offline.html, icons/ — PWA: manifest, kapcsolat nélküli oldal, ikonok
-tests/             — Tesztek (pytest, 889 teszt)
+tests/             — Tesztek (pytest, 1264 teszt)
 ```
 
 ---
@@ -266,7 +285,7 @@ tests/             — Tesztek (pytest, 889 teszt)
 
 A játék kiemelt figyelmet fordít a multiplayer sessionök stabilitására:
 - **Fix játékoslista**: A játék kezdésekor (start) a rendszer rögzíti a résztvevőket és azonnal menti az állapotot az adatbázisba.
-- **Lecsatlakozás kezelése**: Ha egy játékos kilép vagy megszakad a kapcsolata, nem törlődik a játékból, csak `disconnected` állapotba kerül. A játék automatikusan átugorja őt a körök során.
+- **Lecsatlakozás kezelése**: Ha egy játékos kilép vagy megszakad a kapcsolata, nem törlődik a játékból, csak `disconnected` állapotba kerül. Az élő játék automatikusan átugorja őt a körök során (a **levelezős** játékban nem: ott a határidő számít, és az adatbázis a játék tartós otthona).
 - **Bármikori visszatérés**: Az érintett játékosok bármikor visszakapcsolódhatnak az aktív játékba az újracsatlakozási tokenjük segítségével.
 - **Automatikus mentés**: Ha a szoba tulajdonosa (lobby leader) végleg lecsatlakozik (120 mp grace period lejár), a rendszer automatikusan menti a játékállást, mielőtt feloszlatná a szobát, így semmi nem vész el.
 - **Konzisztens mentések**: A manuális mentések minden játékost megőriznek, így a játék később pontosan ugyanabban a felállásban folytatható.
@@ -277,18 +296,22 @@ A játék kiemelt figyelmet fordít a multiplayer sessionök stabilitására:
 
 Új szoba létrehozásakor 1–3 robot ellenfél kérhető (a robotok is férőhelyet foglalnak). Egyedül, robotok ellen is játszhatsz.
 
-| Szint | Viselkedés |
-|---|---|
-| Könnyű | rövid szavak (max. 4 zseton), a gyengébb lépések közül választ, jokert nem használ |
-| Közepes | a legjobb lépések felső harmadából választ véletlenszerűen |
-| Nehéz | a pontszám + a kézben maradó zsetonok értékelése alapján a legjobb lépést adja, jokert is használ |
+| Fokozat | Név | Mért erő (pont/kör) |
+|---|---|---|
+| 1 – 3 | újonc · kezdő · könnyű | 4,3 · 6,1 · 7,5 |
+| 4 – 7 | mérsékelt · alkalmi · közepes · ügyes | 10,3 · 13,0 · 16,1 · 19,3 |
+| 8 – 10 | haladó · erős · mester | 23,2 · 25,3 · 28,0 |
+| **Igazodik hozzám** | a robot az utolsó ~6 köröd átlagához állítja az erejét | — |
 
-- A robotok szókincse a beágyazott szótár **tőszavai** (kb. 68 000 szó); a keresztszavakat és a kiválasztott lépés szavait a teljes szótár ellenőrzi, így ragozott szavakhoz is kapcsolódnak.
+- Az alsó fokozatok célpontszámot sorsolnak, és a hozzá legközelebbi lépést rakják le; a felsők a pont + a kézben maradó zsetonok értéke alapján a legjobb lépést választják (egyre kisebb zajjal). Jokert minden fokozat használ.
+- A robotok szókincse a szótár **tőszavai** (kb. 68 000 szó) és azok **gyakori ragozott alakjai** (többes szám, tárgyrag, esetragok, birtokos és igei végződések; kb. 250 000 alak, a szótár saját szabályaival előállítva). A keresztszavakat és a kiválasztott lépés szavait a teljes szótár ellenőrzi.
+- **Igazodik hozzám**: a robot az emberi játékosok utolsó 6 körének átlagát (a passz 0 pont) a mért skálán fokozattá képezi; tört fokozatnál a két szomszédos fokozatot keveri. Az első néhány körben az 5. fokozat felé húz.
 - Megtámadás módban a robotok **nem szavaznak**: ha a lerakónak nincs emberi ellenfele, a szótár dönt; a robot lerakására az emberek szavaznak.
 - Egyedül (robotok ellen) játszva a **Tipp** gomb a három legjobb lépést mutatja; az „Elhelyez” a táblára teszi, a lerakást te hagyod jóvá.
-- A tippek **korlátozottak**: szoba létrehozásakor (lobby → Új szoba → *Tippek száma*) kikapcsolhatók, vagy 1 / 3 (alapértelmezett) / 5 / 10 tipp engedélyezhető játékonként. A gomb a hátralévő számot mutatja (`Tipp (2)`), kikapcsolt tippnél nem jelenik meg. A felhasznált tippek száma a mentéssel együtt megmarad; ha nincs javasolható lépés, a tipp nem fogy.
-- A robotos játékok a profil statisztikájában szerepelnek, de a **ranglistában nem**.
+- A tippek **korlátozottak**: szoba létrehozásakor (lobby → Új szoba → *Tippek száma*) kikapcsolhatók, vagy 1 / 3 (alapértelmezett) / 5 / 10 tipp engedélyezhető játékonként. A gomb a hátralévő számot mutatja (`Tipp (2)`), kikapcsolt tippnél nem jelenik meg.
+- A robotos játékok a profil statisztikájában szerepelnek, de a **ranglistában és az értékszámban nem**.
 - Emberi néző vagy játékos nélkül a robotok nem játszanak egymás ellen.
+- Az erősség újramérése: `python tools/bot_arena.py ladder -n 24 -j 4`; az „igazodó” robot ellenőrzése: `python tools/bot_arena.py adapt 5`.
 
 ## Megfigyelő mód / Spectating
 
@@ -298,7 +321,24 @@ A játék kiemelt figyelmet fordít a multiplayer sessionök stabilitására:
 
 ## Ranglista / Leaderboard
 
-Lobby → **Ranglista**: győzelmek, nyerési arány (min. 3 játék), átlagpont (min. 3 játék) és legjobb játék szerint. Csak regisztrált játékosok szerepelnek, csak befejezett, **robot nélküli** játékokból. A saját helyezésed akkor is látszik, ha nem vagy a top 50-ben.
+Lobby → **Ranglista**: **értékszám (ELO**, min. 3 értékelt játék), győzelmek, nyerési arány (min. 3 játék), átlagpont (min. 3 játék) és legjobb játék szerint. Csak regisztrált játékosok szerepelnek, csak befejezett, **robot nélküli** játékokból. A saját helyezésed akkor is látszik, ha nem vagy a top 50-ben.
+
+**Értékszám**: mindenki 1200-ról indul; a játék végén minden játékospárra külön számolódik a változás (a nagyobb pontszám nyer, az egyenlő döntetlen), az első 10 értékelt játékban gyorsabban (K = 32), utána lassabban (K = 20). Csak legalább két regisztrált játékos közti, robot nélküli játék számít; aki feladja a játékot, pontszámától függetlenül veszít.
+
+## Napi feladvány, gyakorlás / Daily puzzle, practice
+
+Lobby → **Gyakorlás**:
+- **Napi feladvány**: naponta (magyar idő szerint) egy közös táblaállás és betűkészlet; a cél a legtöbb pontot érő lépés. Próbálkozhatsz többször (a legjobb számít, holtversenynél a kevesebb próbálkozás és a korábbi idő), az élő előnézet segít. A *Megoldás* gomb megmutatja a legjobb lépést, de utána már nem kerülhetsz a napi ranglistára. Vendégként is játszhatsz, de csak regisztrált játékos kerül a ranglistára. A tegnapi megoldás is látszik.
+- **Szókvíz**: tíz kérdés, hogy a szó érvényes-e (vegyes szavak, vagy csak két-, háromzsetonosak); hibás válasznál javaslatokat kapsz.
+- **Rövid szavak**: az összes érvényes két- és háromzsetonos szó pontértékkel, kezdőbetű szerint csoportosítva.
+
+## Levelezős játék / Correspondence games
+
+Lobby → **Levelezős**: barátaiddal (1–3 fő) órák vagy napok alatt lépkedhettek.
+- Új játéknál megadod a barátokat és a gondolkodási időt (24 / 48 / 72 óra vagy 7 nap lépésenként). A játék azonnal elindul; a barátok a saját Levelezős fülükön látják, és értesítést kapnak.
+- A listában az elöl áll, ahol te jössz; a fül jelvénye mutatja, hány játékban vagy soron. A játékból bármikor kiléphetsz, a játék megmarad (a szerver minden lépést elment, újraindítás után is folytatható).
+- Ha a határidőig nem lépsz, **automatikusan passzolsz**; három egymás utáni lejárt határidő után a játékot feladottnak tekintjük. A *Játék feladása* gombbal te is feladhatod: a játék véget ér, és nem lehetsz a győztes.
+- Értesítés: Web Push (a profilban kapcsolható), és az alkalmazáson belül is felugró üzenet.
 
 ## Kényelmi funkciók / Quality of life
 
@@ -310,7 +350,11 @@ Lobby → **Ranglista**: győzelmek, nyerési arány (min. 3 játék), átlagpon
 | Meghívó link | a várakozó szobában a *Meghívó link* gomb megosztja / másolja a `/?join=KÓD` címet; megnyitva belépés után automatikusan csatlakozik |
 | Lépéstörténet | *Lépések* lista a panelen; az utolsó lépés betűi kiemelve a táblán és a visszajátszásban; a játék végén a legjobb lépés |
 
-**Gyorsbillentyűk** (játék közben, nyitott ablak nélkül): `Enter` lerak · `Esc` visszavon · `Backspace` az utolsó lerakott betű vissza · `S` keverés · `R` rendezés.
+**Gyorsbillentyűk** (játék közben, nyitott ablak nélkül): `Enter` lerak · `Esc` visszavon · `Backspace` / `Ctrl+Z` az utolsó lerakott betű vissza · `S` keverés · `R` rendezés.
+
+**Elemzés és megosztás**: a profil előzményeiben (és a játék végén) a *Visszajátszás* mellett *Megosztás* gomb készít linket; a visszajátszás képernyőn az *Elemzés indítása* lépésenként megmutatja a legjobb lehetséges lépést, a kint maradt pontokat és a játékosonkénti hatékonyságot (csak az elemzés bevezetése utáni játékokra, mert a lépésnapló azóta őrzi a kezeket).
+
+**Kitüntetések**: a profilon látszanak; új kitüntetésről játék végén értesít a játék.
 
 ## Nyelvek / Languages
 
@@ -344,26 +388,36 @@ Támogatott böngészőben a lobby felső sávjában megjelenik a **Telepítés*
 | Fájl | Tesztek | Lefedettség |
 |---|---|---|
 | `tests/test_auth.py` | 63 | DB, user CRUD, jelszó hash, verifikációs kódok, session kezelés |
-| `tests/test_game_logic.py` | 138 | TileBag, Board, Player, Game, Challenge, kör időlimit |
+| `tests/test_game_logic.py` | 160 | TileBag, Board, Player, Game, Challenge, kör időlimit |
 | `tests/test_server_auth.py` | 52 | HTTP auth route-ok, cookie flow |
-| `tests/test_server_socket.py` | 67 | Socket.IO eventek, lobby, szobák, challenge, chat, owner kilépés |
+| `tests/test_server_socket.py` | 68 | Socket.IO eventek, lobby, szobák, challenge, chat, owner kilépés |
 | `tests/test_challenge.py` | 17 | Challenge szavazásos rendszer |
 | `tests/test_dictionary.py` | 59 | Szótár-ellenőrzés (valódi szótárral: kisbetűs keresés, tulajdonnevek, rövidítések, értelmetlen szavak pl. SALYT), elérhetőség, javaslatok, tábla-validáció |
 | `tests/test_affix_checker.py` | 39 | Beépített szóellenőrző: toldalékok, előtagok, folytatási osztályok, speciális jelzők, a valódi szótár (hunspellel összevetve) |
 | `tests/test_email_service.py` | 4 | Email küldés |
 | `tests/test_room.py` | 12 | Room osztály |
 | `tests/test_friends.py` | 27 | Barát CRUD, kérések, felhasználókeresés, szobameghívó, online státusz |
-| `tests/test_timer_and_replay.py` | 27 | Körszámláló UI, kör időlimit, replay perzisztencia |
-| `tests/test_regressions.py` | 80 | Kódátvizsgálás során talált hibák regressziós tesztjei |
-| `tests/test_ai_player.py` | 39 | Robot: szókincs, lépésgenerátor, nehézségi szintek, tipp |
-| `tests/test_bots.py` | 106 | Robotok a játékmodellben és a szerveren, lépéstörténet, előnézet, tipp |
+| `tests/test_timer_and_replay.py` | 28 | Körszámláló UI, kör időlimit, replay perzisztencia |
+| `tests/test_regressions.py` | 81 | Kódátvizsgálás során talált hibák regressziós tesztjei |
+| `tests/test_ai_player.py` | 81 | Robot: szókincs (ragozott alakok), lépésgenerátor, nehézségi szintek, tipp |
+| `tests/test_bots.py` | 114 | Robotok a játékmodellben és a szerveren, lépéstörténet, előnézet, tipp |
 | `tests/test_spectator.py` | 30 | Megfigyelő mód, élő játékok listája |
 | `tests/test_public_api.py` | 52 | Ranglista (DB + route), szótár-ellenőrző API, PWA végpontok |
 | `tests/test_tiles_dictionary.py` | 30 | Zseton-felbontás, tömeges szótár-ellenőrzés, javaslatok |
 | `tests/test_i18n.py` | 27 | Fordítások teljessége (kulcsok, helyőrzők, szerverüzenetek), a böngészős fordító futtatása node-ban |
-| `tests/test_frontend_consistency.py` | 20 | Kliens ↔ szerver összhang: konstansok, elem-azonosítók, Socket.IO események, JS szintaxis |
+| `tests/test_frontend_consistency.py` | 23 | Kliens ↔ szerver összhang: konstansok, elem-azonosítók, Socket.IO események, JS szintaxis |
 
-**Összesen: 889 teszt** (a node-ot igénylő tesztek node nélkül kimaradnak)
+| `tests/test_adaptive_bot.py` | 40 | „Igazodik hozzám” robot |
+| `tests/test_achievements.py` | 26 | Kitüntetések |
+| `tests/test_elo.py` | 27 | ELO értékszám, értékszám szerinti ranglista |
+| `tests/test_replay_share.py` | 11 | Megosztható visszajátszás |
+| `tests/test_analysis.py` | 23 | Játékelemzés |
+| `tests/test_daily.py` | 49 | Napi feladvány és ranglistája |
+| `tests/test_practice.py` | 24 | Szókvíz, rövid szavak |
+| `tests/test_push.py` | 42 | Web Push |
+| `tests/test_async_games.py` | 55 | Levelezős játék |
+
+**Összesen: 1264 teszt** (a node-ot igénylő tesztek node nélkül kimaradnak)
 
 ---
 
@@ -415,7 +469,8 @@ Ha nem telepítetted, használd a `--no-tunnel` kapcsolót a helyi futtatáshoz.
 - [x] Játék mentés / visszatöltés — manuális mentés, lobby-first restore flow
 - [x] Visszajátszás — befejezett játék lépéseinek visszanézése
 - [x] Időlimit a körökre — opcionális időzítő, lejáratkor automatikus passz
-- [x] AI ellenfél — egyjátékos mód számítógépes ellenfél(ek)kel, három nehézségi szint, tipp
+- [x] AI ellenfél — egyjátékos mód számítógépes ellenfél(ek)kel, 10 nehézségi fokozat, „igazodik hozzám” mód, ragozott szavak, tipp
+- [x] Levelezős (aszinkron) játék, napi feladvány, gyakorló módok, játékelemzés, kitüntetések, ELO, Web Push
 
 ### Közösségi funkciók
 - [x] Chat — játék közbeni üzenetküldés a szobában
