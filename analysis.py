@@ -11,7 +11,7 @@ import json
 import ai_player
 from board import Board
 
-ANALYSIS_VERSION = 1
+ANALYSIS_VERSION = 2
 SECONDS_PER_MOVE = 0.8
 # Ezek a lépések számítanak a játékos körének (az elutasított lerakás nem)
 TURN_TYPES = ('place', 'challenge_accept', 'exchange', 'pass')

@@ -2,6 +2,7 @@
 
   python tools/bot_arena.py ladder [-n 24] [-j 4]       # átlagos pont/kör fokozatonként (önjáték)
   python tools/bot_arena.py match 3 6 [-n 40] [-j 4]    # két fokozat egymás ellen
+  python tools/bot_arena.py adapt 4 [-n 24] [-j 4]      # az "igazodik hozzám" robot egy 4. fokozatú ellen
 
 Egy játék ~1 mp; a -j a párhuzamos folyamatok száma. A `ladder` eredményét az `ai_player._PROFILES`
 fölötti megjegyzésben rögzített értékekkel kell összevetni, ha a paramétereket módosítod.
@@ -22,9 +23,11 @@ _MAX_TURNS = 500  # biztonsági korlát
 
 
 def play_game(levels, seed):
-    """Egy játék a megadott fokozatú robotok között.
+    """Egy játék a megadott fokozatú robotok között (a fokozat lehet `ai_player.ADAPTIVE` is: az az
+    ellenfelek utolsó köreihez igazodik).
 
-    Visszatér: (végső pontszámok, lerakott pontok összege és körök száma játékosonként)."""
+    Visszatér: (végső pontszámok, lerakott pontok összege és körök száma játékosonként, az
+    "igazodik hozzám" robotok által használt fokozatok listája)."""
     random.seed(seed)  # a zsák keverése
     rng = random.Random(seed + 1)
     game = Game(f'arena-{seed}')
@@ -33,13 +36,18 @@ def play_game(levels, seed):
     game.start()
     turns = [0] * len(levels)
     points = [0] * len(levels)
+    adaptive_levels = []
     for _ in range(_MAX_TURNS):
         if game.finished:
             break
         idx = game.current_player_idx
         player = game.current_player()
+        others = [p.name for p in game.players if p is not player]
+        level = game.bot_level(player, rng=rng, reference_names=others)
+        if player.difficulty == ai_player.ADAPTIVE:
+            adaptive_levels.append(level)
         action = ai_player.choose_action(
-            game.board, list(player.hand), player.difficulty, game.bag.remaining(),
+            game.board, list(player.hand), level, game.bag.remaining(),
             rng=rng, avoid=game.rejected_placements)
         turns[idx] += 1
         ok = False
@@ -51,7 +59,7 @@ def play_game(levels, seed):
             ok, _msg = game.exchange_tiles(player.id, action['indices'])
         if not ok:
             game.pass_turn(player.id)
-    return [p.score for p in game.players], points, turns
+    return [p.score for p in game.players], points, turns, adaptive_levels
 
 
 def _job(args):
@@ -80,7 +88,7 @@ def match(level_a, level_b, games, workers, seed):
         order = [level_a, level_b] if g % 2 == 0 else [level_b, level_a]
         jobs.append((order, seed * 1000 + g))
     wins, diffs = 0.0, []
-    for (order, _seed), (scores, _points, _turns) in zip(jobs, _run(jobs, workers)):
+    for (order, _seed), (scores, _points, _turns, _levels) in zip(jobs, _run(jobs, workers)):
         a_idx = order.index(level_a) if level_a != level_b else 0
         diff = scores[a_idx] - scores[1 - a_idx]
         diffs.append(diff)
@@ -89,10 +97,31 @@ def match(level_a, level_b, games, workers, seed):
           f'({100 * wins / games:.0f}% az elsőnek), átlagos pontkülönbség {statistics.mean(diffs):+.0f}')
 
 
+def adapt(reference, games, workers, seed):
+    """Az "igazodik hozzám" robot egy rögzített fokozatú "ember" ellen: melyik fokozatot használja,
+    mennyi pontot ér el körönként, és hányszor nyer."""
+    jobs = []
+    for g in range(games):
+        order = [ai_player.ADAPTIVE, reference] if g % 2 == 0 else [reference, ai_player.ADAPTIVE]
+        jobs.append((order, seed * 1000 + g))
+    levels, auto_points, auto_turns, ref_points, ref_turns, wins = [], 0, 0, 0, 0, 0.0
+    for (order, _seed), (scores, points, turns, used) in zip(jobs, _run(jobs, workers)):
+        a = order.index(ai_player.ADAPTIVE)
+        levels.extend(used)
+        auto_points += points[a]; auto_turns += turns[a]
+        ref_points += points[1 - a]; ref_turns += turns[1 - a]
+        diff = scores[a] - scores[1 - a]
+        wins += 1.0 if diff > 0 else 0.5 if diff == 0 else 0.0
+    print(f'igazodó robot vs {reference}. fokozat: átlagosan a {statistics.mean(levels):.1f}. fokozatot használta, '
+          f'{auto_points / auto_turns:.1f} pont/kör (az ellenfél {ref_points / ref_turns:.1f}), '
+          f'győzelem {100 * wins / games:.0f}%')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('mode', choices=('ladder', 'match'))
-    parser.add_argument('levels', nargs='*', type=int, help='match: a két mérendő fokozat')
+    parser.add_argument('mode', choices=('ladder', 'match', 'adapt'))
+    parser.add_argument('levels', nargs='*', type=int,
+                        help='match: a két mérendő fokozat; adapt: az ellenfél fokozata')
     parser.add_argument('-n', '--games', type=int, default=24, help='játékok száma (alapért.: 24)')
     parser.add_argument('-j', '--jobs', type=int, default=1, help='párhuzamos folyamatok (alapért.: 1)')
     parser.add_argument('--seed', type=int, default=1)
@@ -100,6 +129,10 @@ def main():
 
     if args.mode == 'ladder':
         ladder(args.games, args.jobs, args.seed)
+    elif args.mode == 'adapt':
+        if len(args.levels) != 1 or not ai_player.parse_level(args.levels[0]):
+            parser.error('az adapt egy fokozatot (1–10) vár')
+        adapt(args.levels[0], args.games, args.jobs, args.seed)
     else:
         if len(args.levels) != 2 or not all(ai_player.parse_level(lv) for lv in args.levels):
             parser.error('a match két fokozatot (1–10) vár')

@@ -657,6 +657,7 @@ const Lobby = {
             if (e.key === 'Enter') this.joinByCode();
         });
         document.getElementById('room-ai-count').addEventListener('change', () => this.updateAiControls());
+        document.getElementById('room-ai-difficulty').addEventListener('change', () => this.updateAiControls());
         this.updateAiControls();
 
         // Lobby nav tab switching
@@ -689,7 +690,9 @@ const Lobby = {
     // A robotok is foglalnak helyet: a tulajdonosnak is maradnia kell
     updateAiControls() {
         const count = parseInt(document.getElementById('room-ai-count').value) || 0;
-        document.getElementById('room-ai-difficulty').disabled = count === 0;
+        const difficulty = document.getElementById('room-ai-difficulty');
+        difficulty.disabled = count === 0;
+        document.getElementById('room-ai-auto-hint').classList.toggle('hidden', count === 0 || difficulty.value !== 'auto');
         const maxSel = document.getElementById('room-max-players');
         if (count > 0 && parseInt(maxSel.value) < count + 1) maxSel.value = String(Math.min(count + 1, 4));
         for (const opt of maxSel.options) opt.disabled = count > 0 && parseInt(opt.value) < count + 1;
@@ -841,7 +844,8 @@ const Lobby = {
         const isPrivate = document.getElementById('room-private').checked;
         const turnTimeLimit = parseInt(document.getElementById('room-turn-limit').value) || 0;
         const aiCount = parseInt(document.getElementById('room-ai-count').value) || 0;
-        const aiDifficulty = parseInt(document.getElementById('room-ai-difficulty').value) || 6;
+        const difficultyValue = document.getElementById('room-ai-difficulty').value;
+        const aiDifficulty = difficultyValue === 'auto' ? 'auto' : (parseInt(difficultyValue) || 6);
         const hintLimit = Number(document.getElementById('room-hint-limit').value);
         socket.emit('create_room', {
             name, max_players: maxPlayers,

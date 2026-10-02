@@ -635,6 +635,7 @@ class TestHintEvent:
         room = _create(client, ai_players=['easy'])
         client.emit('start_game')
         client.get_received()
+        room.game.players[0].hand = list('ALMAKÖR')  # biztosan van rakható szó (véletlen kéz nélkül)
         return client, room
 
     def test_hint_in_solo_game(self, make_client, monkeypatch):
@@ -922,6 +923,7 @@ class TestHintLimitEvent:
         room = _create(client, ai_players=['easy'], hint_limit=limit)
         client.emit('start_game')
         client.get_received()
+        room.game.players[0].hand = list('ALMAKÖR')  # biztosan van rakható szó (véletlen kéz nélkül)
         return client, room
 
     def test_disabled_hints_are_refused(self, make_client, monkeypatch):

@@ -489,7 +489,7 @@ def _play_bot_turn(room_id, turn_id=None, turn_number=None):
 
     try:
         action = ai_player.choose_action(
-            game.board, list(bot.hand), bot.difficulty or ai_player.DEFAULT_DIFFICULTY,
+            game.board, list(bot.hand), game.bot_level(bot) or ai_player.DEFAULT_DIFFICULTY,
             game.bag.remaining(), yield_fn=lambda: socketio.sleep(0),
             avoid=game.rejected_placements)
     except Exception as e:  # a robot hibája ne akassza meg a játékot
@@ -1044,7 +1044,7 @@ def handle_create_room(data):
     ai_levels = data.get('ai_players', [])
     if not isinstance(ai_levels, list):
         ai_levels = []
-    ai_levels = [ai_player.parse_level(lv) for lv in ai_levels]
+    ai_levels = [ai_player.parse_difficulty(lv) for lv in ai_levels]
     ai_levels = [lv for lv in ai_levels if lv is not None][:MAX_BOTS]
     ai_levels = ai_levels[:max_players - 1]
 
@@ -2088,6 +2088,7 @@ if __name__ == '__main__':
     cleanup_expired()
     _cleanup_finished_saves()
     dictionary.warm_up()  # a szótár betöltése indításkor (az első lerakásnál ne kelljen várni)
+    ai_player.get_vocabulary()  # a robot szókincse (a ragozott alakokkal ~2 mp) is előre épüljön fel
 
     if use_tunnel:
         start_tunnel(port)

@@ -1,5 +1,6 @@
 import json
 
+import ai_player
 from tiles import TileBag, TILE_VALUES
 from board import Board, BOARD_SIZE
 from challenge import Challenge
@@ -91,6 +92,41 @@ class Game:
     def human_players(self):
         """A nem robot játékosok."""
         return [p for p in self.players if not p.is_bot]
+
+    def recent_stats(self, names, window=ai_player.ADAPT_WINDOW):
+        """A megadott nevű játékosok utolsó `window` körének átlagos pontja (a passz / csere 0 pont).
+
+        Több játékosnál az egyéni átlagok átlaga. Visszatér: (átlag vagy None, a legtöbb kört lépett
+        játékos körei a figyelembe vett ablakban)."""
+        wanted = set(names)
+        scores = {name: [] for name in wanted}
+        for move in self.move_log:
+            if move['player_name'] not in wanted:
+                continue
+            kind = move['action_type']
+            if kind in ('place', 'challenge_accept'):
+                try:
+                    scores[move['player_name']].append(json.loads(move['details_json']).get('score', 0))
+                except (TypeError, ValueError):
+                    scores[move['player_name']].append(0)
+            elif kind in ('exchange', 'pass'):
+                scores[move['player_name']].append(0)
+        averages, turns = [], 0
+        for history in scores.values():
+            recent = history[-window:]
+            if recent:
+                averages.append(sum(recent) / len(recent))
+                turns = max(turns, len(recent))
+        return (sum(averages) / len(averages) if averages else None), turns
+
+    def bot_level(self, bot, rng=None, reference_names=None):
+        """A robot ebben a körben használt fokozata (1–10). Az "igazodik hozzám" robot az emberi
+        játékosok (vagy a `reference_names` játékosok) utolsó köreinek átlagához állítja az erejét."""
+        if bot.difficulty != ai_player.ADAPTIVE:
+            return bot.difficulty
+        names = reference_names if reference_names is not None else [p.name for p in self.human_players()]
+        average, turns = self.recent_stats(names)
+        return ai_player.adaptive_level(average, turns, rng)
 
     def has_connected_human(self):
         """Van-e még kapcsolódott (nem lecsatlakozott) emberi játékos?"""

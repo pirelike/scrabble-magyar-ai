@@ -21,6 +21,7 @@ from bisect import bisect_left
 from collections import Counter
 
 from board import Board, BOARD_SIZE, CENTER
+import dictionary
 from dictionary import filter_valid
 from tiles import LETTERS, TILE_VALUES, VOWELS
 
@@ -50,8 +51,9 @@ _HINT_TIME_BUDGET = 3.5
 #   sigma — értékeléses: a legjobb (pont + maradék zsetonok értéke) lépés, az értékelésre rakott
 #           Gauss-zajjal (0 = mindig a legjobb);
 #   pass_p — esély, hogy a robot "nem talál" lépést, és passzol / cserél.
-# Mért átlagos pontszám körönként (bot–bot önjáték, a passzok is számítanak): 4,5 · 6,2 · 7,7 ·
-# 10,1 · 12,7 · 15,2 · 16,8 · 19,0 · 20,9 · 23,1. Újramérés: `python tools/bot_arena.py ladder`.
+# Mért átlagos pontszám körönként (bot–bot önjáték, a passzok is számítanak, ragozott alakokkal a
+# szókincsben): 4,3 · 6,1 · 7,5 · 10,3 · 13,0 · 16,1 · 19,3 · 23,2 · 25,3 · 28,0 (`LEVEL_STRENGTH`).
+# Újramérés: `python tools/bot_arena.py ladder`; utána a `LEVEL_STRENGTH` értékeit is frissíteni kell.
 _PROFILES = {
     1: {'mu': 2, 'pass_p': 0.15},
     2: {'mu': 5},
@@ -65,6 +67,28 @@ _PROFILES = {
     10: {'sigma': 0},
 }
 _TARGET_CV = 0.5  # a célpontszám relatív szórása
+
+# "Igazodik hozzám" mód: a robot az ember utolsó köreinek átlagához állítja az erejét. A mért
+# átlagok (fent) között lineárisan interpolálunk, a tört fokozatot a két szomszédos fokozat
+# véletlenszerű keverése valósítja meg (pl. 5,3 → 70%-ban 5., 30%-ban 6. fokozat).
+ADAPTIVE = 'auto'
+LEVEL_STRENGTH = (4.3, 6.1, 7.5, 10.3, 13.0, 16.1, 19.3, 23.2, 25.3, 28.0)  # pont/kör fokozatonként
+ADAPT_WINDOW = 6          # az ember utolsó ennyi köre számít
+ADAPT_START_LEVEL = 5.0   # induló fokozat, amíg nincs adat (kevés adatnál efelé húz)
+
+# Ragozott alakok a szókincsben: szótő + egy végződés a hunspell szabályaival. A teljes szabályrendszer
+# több tízmillió alakot adna, ezért csak a leggyakoribb esetragokat, a birtokos és az igei végződéseket
+# vesszük fel, a rövidebb (legfeljebb INFLECT_MAX_STEM betűs) szótövekhez: ~250 000 alak, ~35 MB.
+_INFLECT_ADDS = frozenset(
+    # többes szám, tárgyrag (a magánhangzó-nyúlásos alakokkal) és esetragok
+    'k ak ek ok ök ák ék t at et ot öt át ét ban ben ba be ból ből ra re ról ről on en ön hoz hez höz '
+    'tól től nak nek val vel ig ért nál nél ul ül ként '
+    # birtokos személyjelek
+    'm d a e ja je unk ünk uk ük om em öm od ed öd '
+    # igei és képzett alakok
+    'ik sz ol el öl tok tek tök ott ett ött tam tem tál tél tunk tünk tak ni va ve ó ő ás és'.split())
+INFLECT_MAX_STEM = 6
+INFLECT_MAX_FORM = 12
 
 _DIC_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dict', 'hu_HU.dic')
 _STEM_RE = re.compile(r'^[a-záéíóöőúüű]{2,15}$')
@@ -98,14 +122,72 @@ def normalize_level(value):
     return level if level is not None else DEFAULT_LEVEL
 
 
+def parse_difficulty(value):
+    """A robot beállított nehézsége: fokozat (1–10) vagy `ADAPTIVE` ("igazodik hozzám"); None, ha
+    érvénytelen."""
+    if isinstance(value, str) and value.strip().lower() in (ADAPTIVE, 'adaptive'):
+        return ADAPTIVE
+    return parse_level(value)
+
+
+def normalize_difficulty(value):
+    """Mint a `parse_difficulty`, de érvénytelen érték esetén az alapértelmezett fokozat."""
+    difficulty = parse_difficulty(value)
+    return difficulty if difficulty is not None else DEFAULT_LEVEL
+
+
+def level_for_average(average):
+    """Az átlagos pont/körnek megfelelő (tört) fokozat a mért `LEVEL_STRENGTH` skálán."""
+    strength = LEVEL_STRENGTH
+    if average <= strength[0]:
+        return float(MIN_LEVEL)
+    if average >= strength[-1]:
+        return float(MAX_LEVEL)
+    for i in range(len(strength) - 1):
+        if average <= strength[i + 1]:
+            return (i + 1) + (average - strength[i]) / (strength[i + 1] - strength[i])
+    return float(MAX_LEVEL)
+
+
+def adaptive_level(average, turns, rng=None):
+    """Az "igazodik hozzám" robot fokozata (egész szám) az ember legutóbbi köreinek alapján.
+
+    average: az ember átlagos pont/köre (None, ha még nem lépett); turns: a figyelembe vett körök
+    száma. Kevés adatnál az induló fokozat felé húz, `ADAPT_WINDOW` körtől a mért átlagot követi.
+    A tört fokozatot a két szomszédos fokozat véletlenszerű keverése adja."""
+    rng = rng or random
+    if average is None or turns <= 0:
+        target = ADAPT_START_LEVEL
+    else:
+        weight = min(turns, ADAPT_WINDOW) / ADAPT_WINDOW
+        target = ADAPT_START_LEVEL * (1 - weight) + level_for_average(average) * weight
+    low = math.floor(target)
+    level = low + 1 if rng.random() < target - low else low
+    return max(MIN_LEVEL, min(MAX_LEVEL, level))
+
+
 # --- Szókincs ---
+
+class _SortedMembership:
+    """Tagsági vizsgálat egy rendezett listán (`bisect`): a külön halmaz memóriáját spórolja meg,
+    ami a ~400 000 szavas szókincsnél jelentős (a keresés így is milliszekundumos)."""
+    __slots__ = ('_words',)
+
+    def __init__(self, words):
+        self._words = words
+
+    def __contains__(self, word):
+        words = self._words
+        i = bisect_left(words, word)
+        return i < len(words) and words[i] == word
+
 
 class Vocabulary:
     """Rendezett szólista gyors prefix- és tagsági kereséssel."""
 
     def __init__(self, words):
         self.words = sorted(set(w.upper() for w in words))
-        self.word_set = frozenset(self.words)
+        self.word_set = _SortedMembership(self.words)
 
     def has_prefix(self, prefix):
         i = bisect_left(self.words, prefix)
@@ -121,8 +203,9 @@ class Vocabulary:
 _vocabulary = None
 
 
-def load_vocabulary(path=_DIC_PATH):
-    """A hunspell .dic fájl tőszavaiból szókincset épít (csak kisbetűs, a táblán kirakható szavak)."""
+def load_vocabulary(path=_DIC_PATH, inflect=True):
+    """A hunspell .dic fájl tőszavaiból (és azok gyakori ragozott alakjaiból, ha `inflect`) építi a
+    szókincset — csak kisbetűs, a táblán kirakható szavak."""
     stems = set()
     with open(path, encoding='utf-8', errors='replace') as fh:
         next(fh, None)  # az első sor a szavak száma
@@ -131,7 +214,13 @@ def load_vocabulary(path=_DIC_PATH):
             # A magánhangzó nélküli bejegyzések rövidítések (kkv, tb, kg): a robot nem rak le ilyet
             if _STEM_RE.match(entry) and _HAS_VOWEL_RE.search(entry):
                 stems.add(entry.upper())
-    return Vocabulary(stems)
+    words = set(stems)
+    checker = dictionary.get_checker() if inflect else None
+    if checker is not None:
+        short = [s.lower() for s in stems if len(s) <= INFLECT_MAX_STEM]
+        forms = checker.inflected_forms(short, _INFLECT_ADDS, INFLECT_MAX_FORM)
+        words.update(f.upper() for f in forms if _STEM_RE.match(f) and _HAS_VOWEL_RE.search(f))
+    return Vocabulary(words)
 
 
 def get_vocabulary():
