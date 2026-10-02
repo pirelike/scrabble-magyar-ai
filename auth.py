@@ -218,6 +218,11 @@ def init_db():
         # Megosztható visszajátszás-link (nyilvános, a játékosok kérésére jön létre)
         conn.execute("ALTER TABLE saved_games ADD COLUMN share_token TEXT")
     try:
+        conn.execute('SELECT is_async FROM saved_games LIMIT 1')
+    except sqlite3.OperationalError:
+        # Levelezős játék: a játékosok órák / napok alatt lépnek, a mentés a játék tartós otthona
+        conn.execute("ALTER TABLE saved_games ADD COLUMN is_async INTEGER NOT NULL DEFAULT 0")
+    try:
         conn.execute('SELECT rating FROM users LIMIT 1')
     except sqlite3.OperationalError:
         # Élő-értékszám (ELO) és az értékelt játékok száma
@@ -453,7 +458,7 @@ def cleanup_expired():
 # --- Game persistence ---
 
 def save_game(room_id, room_name, state_json, challenge_mode, players_data=None, owner_name='',
-              owner_token=None, has_bots=False):
+              owner_token=None, has_bots=False, is_async=False):
     """Játék mentése (upsert: room_id + active alapján). Visszaadja a game_id-t.
     players_data: [{player_name, user_id (or None), score}, ...] — ha megadva, upsert a game_players-be.
     has_bots: robot ellenfél is van a játékban (a ranglista nem számolja).
@@ -474,9 +479,9 @@ def save_game(room_id, room_name, state_json, challenge_mode, players_data=None,
         else:
             cursor = conn.execute(
                 'INSERT INTO saved_games (room_id, room_name, state_json, status, challenge_mode, owner_name, '
-                'owner_token, has_bots) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                'owner_token, has_bots, is_async) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 (room_id, room_name, state_json, 'active', 1 if challenge_mode else 0, owner_name,
-                 owner_token, 1 if has_bots else 0)
+                 owner_token, 1 if has_bots else 0, 1 if is_async else 0)
             )
             game_id = cursor.lastrowid
 
@@ -512,7 +517,9 @@ def _apply_ratings(conn, game_id, players_data):
         if uid and uid not in ranked:
             row = conn.execute('SELECT rating, rated_games FROM users WHERE id = ?', (uid,)).fetchone()
             if row:
-                ranked[uid] = (row['rating'], row['rated_games'], pd['final_score'])
+                # Aki feladta, az pontszámától függetlenül mindenki mögé kerül
+                score = -10 ** 9 if pd.get('resigned') else pd['final_score']
+                ranked[uid] = (row['rating'], row['rated_games'], score)
     if len(ranked) < 2:
         return
     changes = elo.rating_changes([(uid, r, g, s) for uid, (r, g, s) in ranked.items()])
@@ -681,6 +688,28 @@ def get_game_by_id(game_id):
     return dict(row) if row else None
 
 
+def get_active_async_games():
+    """Az összes folyamatban lévő levelezős játék (szerverindításkor a szobák visszaépítéséhez)."""
+    with _db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM saved_games WHERE status = 'active' AND is_async = 1 ORDER BY id"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_user_async_games(user_id):
+    """A felhasználó folyamatban lévő levelezős játékai: a mentett állapot + a saját játékosneve."""
+    with _db() as conn:
+        rows = conn.execute(
+            'SELECT sg.id AS game_id, sg.room_id, sg.room_name, sg.state_json, sg.updated_at, '
+            'sg.created_at, gp.player_name AS my_name '
+            'FROM game_players gp JOIN saved_games sg ON sg.id = gp.game_id '
+            "WHERE gp.user_id = ? AND sg.status = 'active' AND sg.is_async = 1 "
+            'ORDER BY sg.updated_at DESC', (user_id,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def get_user_active_games(user_id, reconnect_token=None):
     """Felhasználó aktív (mentett) játékai — csak ahol ő az owner."""
     with _db() as conn:
@@ -690,7 +719,7 @@ def get_user_active_games(user_id, reconnect_token=None):
                 'sg.room_name, sg.room_id, sg.created_at, sg.updated_at, sg.challenge_mode, sg.owner_name, sg.owner_token '
                 'FROM game_players gp '
                 'JOIN saved_games sg ON gp.game_id = sg.id '
-                "WHERE gp.user_id = ? AND sg.status = 'active' AND sg.owner_token = ? "
+                "WHERE gp.user_id = ? AND sg.status = 'active' AND sg.owner_token = ? AND sg.is_async = 0 "
                 'ORDER BY sg.updated_at DESC',
                 (user_id, reconnect_token)
             ).fetchall()
@@ -701,7 +730,7 @@ def get_user_active_games(user_id, reconnect_token=None):
                 'FROM game_players gp '
                 'JOIN saved_games sg ON gp.game_id = sg.id '
                 'JOIN game_players gp_owner ON gp_owner.game_id = sg.id AND gp_owner.user_id = ? AND gp_owner.player_name = sg.owner_name '
-                "WHERE gp.user_id = ? AND sg.status = 'active' "
+                "WHERE gp.user_id = ? AND sg.status = 'active' AND sg.is_async = 0 "
                 'ORDER BY sg.updated_at DESC',
                 (user_id, user_id)
             ).fetchall()

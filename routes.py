@@ -8,6 +8,7 @@ from flask import (
 )
 
 import analysis
+import async_games
 import daily
 import dictionary
 import practice
@@ -25,6 +26,7 @@ from auth import (
     get_user_achievements, get_game_analysis, save_game_analysis,
     get_daily_puzzle, get_daily_entry, get_daily_leaderboard,
     save_push_subscription, delete_push_subscription, count_push_subscriptions,
+    get_user_async_games,
     get_user_active_games, abandon_game_by_id, is_user_in_game,
     get_friends, get_pending_requests, get_sent_requests, search_users,
 )
@@ -846,6 +848,18 @@ def game_analysis(game_id):
     return jsonify({'success': True, 'status': 'running', 'done': 0, 'total': len(turns)})
 
 
+@game_bp.route('/api/async/games', methods=['GET'])
+def async_games_list():
+    """A bejelentkezett felhasználó folyamatban lévő levelezős játékai (akinél a sor, az elöl)."""
+    user = validate_session(request.cookies.get('session_token'))
+    if not user:
+        return jsonify({'success': False, 'message': 'Bejelentkezés szükséges.'}), 401
+    games = [g for g in (async_games.summarize(r) for r in get_user_async_games(user['id'])) if g]
+    games.sort(key=lambda g: not g['my_turn'])   # a rendezés stabil: a többi az utolsó lépés szerinti
+    return jsonify({'success': True, 'games': games,
+                    'my_turn_count': sum(1 for g in games if g['my_turn'])})
+
+
 @game_bp.route('/api/game/<int:game_id>/abandon', methods=['POST'])
 def abandon_game(game_id):
     token = request.cookies.get('session_token')
@@ -860,6 +874,9 @@ def abandon_game(game_id):
         return jsonify({'success': False, 'message': 'Játék nem található.'}), 404
     if game_row['status'] != 'active':
         return jsonify({'success': False, 'message': 'A játék nem aktív.'}), 400
+    if game_row.get('is_async'):
+        return jsonify({'success': False,
+                        'message': 'A levelezős játékot a játékban, a Feladom gombbal fejezheted be.'}), 400
 
     is_owner = False
     if game_row.get('owner_token') and user.get('reconnect_token'):

@@ -733,6 +733,8 @@ const Lobby = {
         } else if (tabId === 'practice') {
             Daily.load();
             Practice.onShow();
+        } else if (tabId === 'async') {
+            AsyncGames.onShow();
         }
     },
 
@@ -777,6 +779,8 @@ const Lobby = {
         const createTab = document.getElementById('nav-tab-create');
         const savedTab = document.getElementById('nav-tab-saved');
         const friendsTab = document.getElementById('nav-tab-friends');
+        const asyncTab = document.getElementById('nav-tab-async');
+        if (asyncTab) asyncTab.classList.toggle('hidden', AppState.isGuest);
         if (createTab) createTab.classList.toggle('hidden', AppState.isGuest);
         if (savedTab) savedTab.classList.toggle('hidden', AppState.isGuest);
         if (friendsTab) friendsTab.classList.toggle('hidden', AppState.isGuest);
@@ -787,6 +791,7 @@ const Lobby = {
         
         if (!AppState.isGuest) {
             Friends.load(); // Kérések badge frissítéséhez
+            AsyncGames.load();   // a "te jössz" jelvényhez
         }
 
         // Reset to home tab
@@ -1490,6 +1495,7 @@ const GameBoard = {
         AppState.myPlayerId = socket.id;
         AppState.isSpectator = !!state.spectator;
         Daily.onGameState(state);
+        AsyncGames.onGameState(state);
 
         // Clear placed tiles when turn changes away from us
         if (state.current_player !== socket.id && BoardState.placedTiles.length > 0) {
@@ -1925,6 +1931,8 @@ const GameBoard = {
             case 'game_over': return t('last.game_over', { player: info.player, score: info.score });
             case 'game_over_draw': return t('last.game_over_draw', { players: (info.players || []).join(', '), score: info.score });
             case 'withdrawn': return t('last.withdrawn', { player: info.player });
+            case 'timeout': return t('last.timeout', { player: info.player });
+            case 'resigned': return t('last.resigned', { player: info.player });
             case 'puzzle': return t('last.place', { player: info.player, words, score: info.score });
             case 'save_revert': return t('last.save_revert', { player: info.player });
             default: return tServer(gs.last_action) || '';
@@ -2912,12 +2920,14 @@ const GameOver = {
         const gs = AppState.gameState;
         if (!gs) return;
         const scoresContainer = document.getElementById('final-scores');
-        const sorted = [...gs.players].sort((a, b) => b.score - a.score);
-        // Döntetlennél minden holtversenyben álló első helyezett győztes
-        const topScore = sorted.length ? sorted[0].score : 0;
+        // A győztesek a szerver szerint (döntetlennél több is; aki feladta, nem lehet az); régi állapotban a legtöbb pont
+        const serverWinners = new Set((gs.winners || []).map(w => w.name));
+        const topScore = gs.players.length ? Math.max(...gs.players.map(p => p.score)) : 0;
+        const isWinner = (p) => (serverWinners.size ? serverWinners.has(p.name) : p.score === topScore);
+        const sorted = [...gs.players].sort((a, b) => (isWinner(b) - isWinner(a)) || (b.score - a.score));
         scoresContainer.innerHTML = sorted.map((p) => `
-            <div class="score-final ${p.score === topScore ? 'winner' : ''}">
-                <span>${p.score === topScore ? '&#x1F3C6; ' : ''}${escapeHtml(p.name)}</span>
+            <div class="score-final ${isWinner(p) ? 'winner' : ''}">
+                <span>${isWinner(p) ? '&#x1F3C6; ' : ''}${escapeHtml(p.name)}${p.resigned ? ' <small>(' + escapeHtml(t('async.resigned_tag')) + ')</small>' : ''}</span>
                 <span>${escapeHtml(t('common.points', { n: p.score }))}</span>
             </div>
         `).join('');
@@ -3051,6 +3061,14 @@ const ExitGame = {
         // Non-owner buttons
         document.getElementById('btn-exit-confirm').addEventListener('click', () => this.leave());
         document.getElementById('btn-exit-cancel').addEventListener('click', () => this.hideDialog());
+        // Levelezős játék
+        document.getElementById('btn-exit-async-leave').addEventListener('click', () => this.leave());
+        document.getElementById('btn-exit-async-cancel').addEventListener('click', () => this.hideDialog());
+        document.getElementById('btn-exit-async-resign').addEventListener('click', () => {
+            this.hideDialog();
+            showConfirm(t('async.resign'), t('async.resign_confirm'), t('async.resign'),
+                () => socket.emit('resign_game'));
+        });
     },
 
     showDialog() {
@@ -3060,12 +3078,14 @@ const ExitGame = {
         if (AppState.gameState && AppState.gameState.puzzle) { this._doLeave(); return; }
         const gs = AppState.gameState;
         const isActiveGame = gs && gs.started && !gs.finished;
-        const showOwner = AppState.isOwner && isActiveGame;
+        const isAsync = !!(isActiveGame && gs.async_mode);   // levelezős: kilépés = a játék megmarad
+        const showOwner = AppState.isOwner && isActiveGame && !isAsync;
 
         document.getElementById('exit-dialog-text').textContent =
-            showOwner ? t('exit.what_to_do') : t('exit.sure');
+            isAsync ? t('async.exit_text') : (showOwner ? t('exit.what_to_do') : t('exit.sure'));
         document.getElementById('exit-owner-buttons').classList.toggle('hidden', !showOwner);
-        document.getElementById('exit-player-buttons').classList.toggle('hidden', showOwner);
+        document.getElementById('exit-async-buttons').classList.toggle('hidden', !isAsync);
+        document.getElementById('exit-player-buttons').classList.toggle('hidden', showOwner || isAsync);
         document.getElementById('exit-dialog').classList.remove('hidden');
     },
 
@@ -3293,6 +3313,165 @@ const Daily = {
         } else {
             GameBoard.applyHint(solution.tiles);
         }
+    },
+};
+
+// ===== LEVELEZŐS JÁTÉKOK =====
+// Órák / napok alatt lépő játék barátokkal: a lobby listája a folyamatban lévő játékokat mutatja
+// (akinél a sor, az elöl), a játékban a határidő látszik; a szerver értesít, ha rád kerül a sor.
+
+const AsyncGames = {
+    games: [],
+
+    init() {
+        document.getElementById('btn-async-create').addEventListener('click', () => this.create());
+        socket.on('async_your_turn', (data) => {
+            showMessage(t('async.your_turn_toast', { room: data.room_name }), false, 6000);
+            SoundManager.play('your_turn');
+            this.load();
+        });
+        socket.on('async_invited', (data) => {
+            showMessage(t('async.invited_toast', { name: data.from_name, room: data.room_name }), false, 6000);
+            this.load();
+        });
+        window.addEventListener('langchange', () => {
+            this.render(this.games);
+            this.renderFriends();
+            if (AppState.gameState) this.onGameState(AppState.gameState);
+        });
+        setInterval(() => { if (AppState.gameState) this.updateDeadline(AppState.gameState); }, 30000);
+    },
+
+    onShow() {
+        this.load();
+        Friends.load().then(() => this.renderFriends()).catch(() => this.renderFriends());
+    },
+
+    async load() {
+        if (AppState.isGuest) return;
+        try {
+            const res = await fetch('/api/async/games');
+            const data = await res.json();
+            if (!data.success) return;
+            this.games = data.games;
+            this.render(data.games);
+            this.updateBadge(data.my_turn_count);
+        } catch { /* a lobby többi része enélkül is működik */ }
+    },
+
+    updateBadge(count) {
+        const badge = document.getElementById('async-badge');
+        badge.textContent = count;
+        badge.classList.toggle('hidden', !count);
+    },
+
+    // "23 ó 40 p" / "2 n 3 ó" / lejárt
+    formatRemaining(deadline) {
+        const seconds = Math.floor(deadline - Date.now() / 1000);
+        if (seconds <= 0) return t('async.overdue');
+        const days = Math.floor(seconds / 86400);
+        const hours = Math.floor((seconds % 86400) / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        if (days) return t('async.remaining_days', { d: days, h: hours });
+        return t('async.remaining_hours', { h: hours, m: minutes });
+    },
+
+    render(games) {
+        const box = document.getElementById('async-games');
+        box.replaceChildren();
+        if (!games.length) {
+            box.innerHTML = emptyStateHtml(t('async.empty'));
+            return;
+        }
+        for (const game of games) {
+            const card = document.createElement('div');
+            card.className = 'room-card' + (game.my_turn ? ' room-card-rejoin' : '');
+            const info = document.createElement('div');
+            info.className = 'room-info';
+            const name = document.createElement('div');
+            name.className = 'room-name';
+            name.textContent = game.room_name;
+            const details = document.createElement('div');
+            details.className = 'room-details';
+            details.textContent = game.players.map(p => `${p.name} ${p.score}`).join(' · ');
+            const status = document.createElement('div');
+            status.className = 'room-details async-status' + (game.my_turn ? ' my-turn' : '');
+            status.textContent = game.my_turn
+                ? t('async.your_turn') + (game.turn_deadline ? ' · ' + this.formatRemaining(game.turn_deadline) : '')
+                : t('async.waiting_for', { name: game.current_player || '?' });
+            info.appendChild(name);
+            info.appendChild(details);
+            info.appendChild(status);
+            card.appendChild(info);
+            const btn = document.createElement('button');
+            btn.className = 'btn-join';
+            btn.textContent = t('async.open');
+            btn.addEventListener('click', () => socket.emit('open_async_game', { game_id: game.game_id }));
+            card.appendChild(btn);
+            box.appendChild(card);
+        }
+    },
+
+    // --- Új játék ---
+
+    renderFriends() {
+        const box = document.getElementById('async-friends');
+        const selected = new Set(this.selectedFriendIds());
+        box.replaceChildren();
+        if (!Friends.friendsList.length) {
+            box.innerHTML = emptyStateHtml(t('async.no_friends'));
+            return;
+        }
+        for (const friend of Friends.friendsList) {
+            const label = document.createElement('label');
+            label.className = 'friend-check';
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            input.value = friend.id;
+            input.checked = selected.has(friend.id);
+            input.addEventListener('change', () => this._limitSelection(input));
+            const text = document.createElement('span');
+            text.textContent = friend.display_name;
+            label.appendChild(input);
+            label.appendChild(text);
+            box.appendChild(label);
+        }
+    },
+
+    selectedFriendIds() {
+        return Array.from(document.querySelectorAll('#async-friends input:checked')).map(i => Number(i.value));
+    },
+
+    // Legfeljebb három barát választható (a játékban legfeljebb négyen vannak)
+    _limitSelection(changed) {
+        if (this.selectedFriendIds().length > 3) {
+            changed.checked = false;
+            showMessage(t('async.max_friends'), true);
+        }
+    },
+
+    create() {
+        const friendIds = this.selectedFriendIds();
+        if (!friendIds.length) {
+            showMessage(t('async.pick_friends'), true);
+            return;
+        }
+        const name = document.getElementById('async-name').value.trim() || t('async.name_placeholder');
+        const hours = Number(document.getElementById('async-hours').value);
+        socket.emit('create_async_game', { name, friend_ids: friendIds, turn_hours: hours });
+    },
+
+    // --- Játék közben: a határidő kijelzése ---
+
+    onGameState(state) {
+        this.updateDeadline(state);
+    },
+
+    updateDeadline(state) {
+        const el = document.getElementById('async-deadline');
+        const show = !!(state && state.async_mode && !state.finished && state.turn_deadline);
+        el.classList.toggle('hidden', !show);
+        if (show) el.textContent = t('async.deadline', { time: this.formatRemaining(state.turn_deadline) });
     },
 };
 
@@ -5129,6 +5308,7 @@ Profile.init();
 Badges.init();
 Daily.init();
 Practice.init();
+AsyncGames.init();
 Push.init();
 Replay.init();
 GameOver.init();

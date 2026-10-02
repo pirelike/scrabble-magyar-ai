@@ -1,4 +1,5 @@
 import json
+import time
 
 import ai_player
 from tiles import TileBag, TILE_VALUES
@@ -11,6 +12,8 @@ BONUS_ALL_TILES = 50
 CHALLENGE_TIMEOUT = 30  # másodperc
 # Ennyi egymást követő pont nélküli kör (passz, csere, elutasított lerakás) után véget ér a játék
 SCORELESS_TURNS_LIMIT = 6
+# Levelezős játék: ennyi egymás utáni lejárt határidő után a játékos feladja a játékot
+MAX_TIMEOUTS = 3
 # Tippek száma játékonként (0 = kikapcsolva); a szoba létrehozásakor választható
 ALLOWED_HINT_LIMITS = (0, 1, 3, 5, 10)
 DEFAULT_HINT_LIMIT = 3
@@ -31,6 +34,11 @@ class Game:
         self.winners = []  # döntetlennél több is lehet
         # Napi feladvány: {'date', 'score'} — egy játékos, egyetlen lerakás, utána vége a játéknak
         self.puzzle = None
+        # Levelezős játék: órák / napok alatt lépnek, a lecsatlakozott játékost nem ugorjuk át,
+        # a soron lévőnek `turn_hours` órája van (utána automatikus passz)
+        self.async_mode = False
+        self.turn_hours = 0
+        self.turn_deadline = None  # Unix idő, amíg a soron lévőnek lépnie kell
         self.scoreless_turns = 0  # egymást követő pont nélküli körök száma
         self.turn_number = 0
         self.last_action = None
@@ -203,6 +211,7 @@ class Game:
         self.started = True
         for player in self.players:
             player.hand = self.bag.draw(HAND_SIZE)
+        self._reset_deadline()
         return True, "A játék elkezdődött!"
 
     def current_player(self):
@@ -216,8 +225,9 @@ class Game:
             self.current_player_idx = (self.current_player_idx + 1) % len(self.players)
             current = self.players[self.current_player_idx]
 
-            # Ha le van csatlakozva, csak átlépjük (kivéve ha mindenki le van csatlakozva)
-            if current.disconnected:
+            # Ha le van csatlakozva, csak átlépjük (kivéve ha mindenki le van csatlakozva);
+            # a levelezős játékban a távollévő is sorra kerül, neki a határidő szab időt
+            if current.disconnected and not self.async_mode:
                 # Csak akkor lépünk tovább, ha van még nem lecsatlakozott játékos
                 if any(not p.disconnected for p in self.players):
                     continue
@@ -231,6 +241,12 @@ class Game:
             else:
                 break
         self.turn_number += 1
+        self._reset_deadline()
+
+    def _reset_deadline(self):
+        """Levelezős játékban az új kör határideje."""
+        self.turn_deadline = (time.time() + self.turn_hours * 3600
+                              if self.async_mode and self.turn_hours else None)
 
     def skip_disconnected_current(self):
         """Ha a soron lévő játékos lecsatlakozott, tovább lépteti a kört.
@@ -239,7 +255,7 @@ class Game:
         `_finalize_reject`) úgyis továbbadja a kört, itt a léptetés dupla ugrást okozna.
         Visszatér True-val, ha a kör tényleg továbblépett.
         """
-        if not self.started or self.finished or self.pending_challenge:
+        if not self.started or self.finished or self.pending_challenge or self.async_mode:
             return False
         current = self.current_player()
         if not current or not current.disconnected:
@@ -284,6 +300,7 @@ class Game:
         new_tiles = self.bag.draw(HAND_SIZE - len(player.hand))
         player.hand.extend(new_tiles)
         self.scoreless_turns = 0
+        player.timeouts = 0
         self._set_last_action(f"{player.name}: {', '.join(word_strs)} ({total_score} pont)",
                               type='place', player=player.name, words=list(word_strs),
                               score=total_score)
@@ -605,14 +622,15 @@ class Game:
 
         self._set_last_action(f"{player.name} cserélt {len(tiles_to_exchange)} zsetont",
                               type='exchange', player=player.name, count=len(tiles_to_exchange))
+        player.timeouts = 0
         self._record_move(player.name, 'exchange', rack=rack)
         if not self._register_scoreless_turn():
             self._next_turn()
 
         return True, f"{len(tiles_to_exchange)} zseton kicserélve."
 
-    def pass_turn(self, player_id):
-        """Passz."""
+    def pass_turn(self, player_id, timeout=False):
+        """Passz. `timeout`: a levelezős játék határideje járt le (automatikus passz)."""
         if self.finished:
             return False, "A játék véget ért."
         if self.pending_challenge:
@@ -624,12 +642,50 @@ class Game:
         if player.id != player_id:
             return False, "Nem te következel."
 
-        self._set_last_action(f"{player.name} passzolt", type='pass', player=player.name)
+        if timeout:
+            player.timeouts += 1
+            self._set_last_action(f"{player.name} nem lépett időben (passz)", type='timeout',
+                                  player=player.name)
+        else:
+            player.timeouts = 0
+            self._set_last_action(f"{player.name} passzolt", type='pass', player=player.name)
         self._record_move(player.name, 'pass', rack=list(player.hand))
         if not self._register_scoreless_turn():
             self._next_turn()
 
         return True, "Passz."
+
+    def expire_turn(self):
+        """Levelezős játék: a soron lévő nem lépett a határidőig — passz, és ha ez már a
+        `MAX_TIMEOUTS`-adik egymás utáni lejárt határideje, a játékos feladja a játékot.
+        Visszatér: True, ha történt valami."""
+        if not self.async_mode or not self.started or self.finished or self.pending_challenge:
+            return False
+        player = self.current_player()
+        ok, _msg = self.pass_turn(player.id, timeout=True)
+        if ok and not self.finished and player.timeouts >= MAX_TIMEOUTS:
+            self.resign(player.id)
+        return ok
+
+    def resign(self, player_id):
+        """A játékos feladja a játékot: a játék véget ér, és ő nem lehet győztes.
+        Visszatér: (success, message)"""
+        if not self.started:
+            return False, "A játék még nem indult el."
+        if self.finished:
+            return False, "A játék véget ért."
+        player = self._find_player(player_id)
+        if not player:
+            return False, "Nem vagy a játék résztvevője."
+        player.resigned = True
+        self.pending_challenge = None
+        self._end_game(None)
+        others = [p for p in self.players if not p.resigned]
+        if others:
+            best = max(p.score for p in others)
+            self.winners = [p for p in others if p.score == best]
+        self._set_last_action(f"{player.name} feladta a játékot.", type='resigned', player=player.name)
+        return True, "A játék feladva."
 
     # --- Helpers ---
 
@@ -733,6 +789,9 @@ class Game:
             'current_player_idx': self.current_player_idx,
             'turn_number': self.turn_number,
             'scoreless_turns': self.scoreless_turns,
+            'async_mode': self.async_mode,
+            'turn_hours': self.turn_hours,
+            'turn_deadline': self.turn_deadline,
             'last_action': last_action,
             'last_action_info': last_action_info,
             'board': self.board.to_dict(),
@@ -746,6 +805,8 @@ class Game:
                     'score': p.score,
                     'skip_next_turn': p.skip_next_turn,
                     'disconnected': p.disconnected,
+                    'timeouts': p.timeouts,
+                    'resigned': p.resigned,
                     'is_bot': p.is_bot,
                     'difficulty': p.difficulty,
                 }
@@ -769,6 +830,9 @@ class Game:
         legacy_passes = max((pd.get('consecutive_passes', 0) for pd in data.get('players', [])),
                             default=0)
         game.scoreless_turns = max(0, int(data.get('scoreless_turns', legacy_passes) or 0))
+        game.async_mode = bool(data.get('async_mode', False))
+        game.turn_hours = int(data.get('turn_hours', 0) or 0)
+        game.turn_deadline = data.get('turn_deadline')
         game.last_action = data.get('last_action')
         game.last_action_info = data.get('last_action_info')
 
@@ -791,6 +855,8 @@ class Game:
             player.hand = list(pd.get('hand', []))
             player.score = pd.get('score', 0)
             player.skip_next_turn = pd.get('skip_next_turn', False)
+            player.timeouts = int(pd.get('timeouts', 0) or 0)
+            player.resigned = bool(pd.get('resigned', False))
             player.disconnected = False if player.is_bot else pd.get('disconnected', False)
             game.players.append(player)
 
@@ -857,6 +923,9 @@ class Game:
                        if self.puzzle is not None else None),
             'challenge_mode': self.challenge_mode,
             'turn_time_limit': self.turn_time_limit,
+            'async_mode': self.async_mode,
+            'turn_hours': self.turn_hours,
+            'turn_deadline': self.turn_deadline,
             'hint_limit': self.hint_limit,
             'hints_left': self.hints_left(),
             'pending_challenge': None,

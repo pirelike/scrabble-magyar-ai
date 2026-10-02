@@ -23,8 +23,10 @@ except ImportError:   # pragma: no cover - a környezet dönti el
 TTL_SECONDS = 6 * 3600   # ennyi ideig őrzi a push szolgáltatás a kézbesítetlen üzenetet
 
 MESSAGES = {
-    'hu': {'title': 'Magyar Scrabble', 'turn': 'Te jössz! · {room}'},
-    'en': {'title': 'Hungarian Scrabble', 'turn': "It's your turn! · {room}"},
+    'hu': {'title': 'Magyar Scrabble', 'turn': 'Te jössz! · {room}',
+           'invite': 'Meghívtak egy levelezős játékba: {room}'},
+    'en': {'title': 'Hungarian Scrabble', 'turn': "It's your turn! · {room}",
+           'invite': "You've been invited to a correspondence game: {room}"},
 }
 DEFAULT_LANG = 'hu'
 
@@ -134,11 +136,11 @@ def notify_user(user_id, kind, **params):
     return sent
 
 
-def notify_turn(user_id, room_name, room_id):
-    """„Te jössz!” értesítés háttérben (nem blokkolja a játékmenetet)."""
+def notify_turn(user_id, room_name, room_id, kind='turn'):
+    """„Te jössz!” (vagy meghívó) értesítés háttérben (nem blokkolja a játékmenetet)."""
     if not is_available() or not auth.count_push_subscriptions(user_id):
         return False
-    task = lambda: notify_user(user_id, 'turn', room=room_name, room_id=room_id)   # noqa: E731
+    task = lambda: notify_user(user_id, kind, room=room_name, room_id=room_id)   # noqa: E731
     if _spawn is not None:
         _spawn(task)
     else:

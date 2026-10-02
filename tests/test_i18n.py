@@ -108,7 +108,7 @@ class TestKeyUsage:
             for lang in ('hu', 'en'):
                 assert f'badge.{badge}' in data[lang] and f'badge.{badge}_desc' in data[lang]
         for kind in ('exchange', 'pass', 'rejected', 'skip', 'vote_accept', 'vote_reject',
-                     'game_over', 'game_over_draw', 'save_revert', 'place', 'pending', 'withdrawn'):
+                     'game_over', 'game_over_draw', 'save_revert', 'place', 'pending', 'withdrawn', 'timeout', 'resigned'):
             assert f'last.{kind}' in data['en']
 
     def test_no_unused_keys(self, data, app_js, index_html):
@@ -253,6 +253,7 @@ _NOT_SHOWN = {
     '7 elutasította.',
     '7 lerakása a mentés miatt visszavonva.',
     '7 visszavonta a lerakását.',
+    '7 feladta a játékot.',
 }
 
 
@@ -388,7 +389,7 @@ class TestClientTranslator:
                                          'player', 'room', 'word', 'total', 'bag', 'hands',
                                          'vowels', 'consonants', 'blanks', 'played', 'won', 'rate',
                                          'rating', 'change', 'done', 'lost', 'missed', 'optimal', 'turns',
-                                         'rank', 'best', 'date', 'correct')}
+                                         'rank', 'best', 'date', 'correct', 'd', 'h', 'm', 'time', 'room')}
         for key in keys:
             cases.append({'op': 't', 'key': key, 'params': params})
         for lang in ('hu', 'en'):

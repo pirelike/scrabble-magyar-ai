@@ -162,6 +162,10 @@
                     <span data-i18n="lobby.tab_friends">Barátok</span>
                     <span class="friend-badge hidden" id="friend-badge">0</span>
                 </button>
+                <button class="lobby-nav-tab segment" data-lobby-tab="async" id="nav-tab-async" type="button">
+                    <span data-i18n="lobby.tab_async">Levelezős</span>
+                    <span class="friend-badge hidden" id="async-badge">0</span>
+                </button>
                 <button class="lobby-nav-tab segment" data-lobby-tab="practice" id="nav-tab-practice" type="button" data-i18n="lobby.tab_practice">Gyakorlás</button>
                 <button class="lobby-nav-tab segment" data-lobby-tab="leaderboard" id="nav-tab-leaderboard" type="button" data-i18n="lobby.tab_leaderboard">Ranglista</button>
                 <button class="lobby-nav-tab segment hidden" data-lobby-tab="room" id="nav-tab-room" type="button" disabled data-i18n="lobby.tab_room">Nyitott szoba</button>
@@ -416,6 +420,46 @@
                 </section>
             </div>
 
+            <!-- TAB: Levelezős játékok (órák / napok alatt lépnek) -->
+            <div class="lobby-tab-panel" id="lobby-panel-async">
+                <section class="lobby-section">
+                    <div class="section-header">
+                        <h2 class="section-title" data-i18n="async.title">Levelezős játékaim</h2>
+                    </div>
+                    <p class="form-hint" data-i18n="async.intro">Barátaiddal órák vagy napok alatt lépkedtek: a játék közben bezárhatod az alkalmazást, és értesítést kapsz, ha rád kerül a sor.</p>
+                    <div id="async-games" class="rooms-list">
+                        <div class="empty-state">
+                            <p class="empty-msg" data-i18n="async.empty">Még nincs folyamatban lévő levelezős játékod.</p>
+                        </div>
+                    </div>
+                </section>
+                <section class="lobby-section">
+                    <div class="section-header">
+                        <h2 class="section-title" data-i18n="async.new">Új levelezős játék</h2>
+                    </div>
+                    <div class="create-room-form">
+                        <div class="form-group">
+                            <label for="async-name" class="form-label" data-i18n="create.room_name">Szoba neve</label>
+                            <input type="text" id="async-name" class="form-input" maxlength="30" placeholder="Levelezős játék" data-i18n-placeholder="async.name_placeholder">
+                        </div>
+                        <div class="form-group">
+                            <label for="async-hours" class="form-label" data-i18n="async.hours_label">Gondolkodási idő lépésenként</label>
+                            <select id="async-hours" class="form-select">
+                                <option value="24" data-i18n="async.hours_24">24 óra</option>
+                                <option value="48" selected data-i18n="async.hours_48">48 óra</option>
+                                <option value="72" data-i18n="async.hours_72">72 óra</option>
+                                <option value="168" data-i18n="async.hours_168">7 nap</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <span class="form-label" data-i18n="async.friends_label">Játékosok (1–3 barát)</span>
+                            <div id="async-friends" class="friend-check-list"></div>
+                        </div>
+                        <button id="btn-async-create" type="button" data-i18n="async.create">Játék indítása</button>
+                    </div>
+                </section>
+            </div>
+
             <!-- TAB: Gyakorlás (napi feladvány, szókvíz, rövid szavak) -->
             <div class="lobby-tab-panel" id="lobby-panel-practice">
                 <section class="lobby-section" id="daily-section">
@@ -637,6 +681,7 @@
                     <div class="game-info">
                         <div id="tiles-remaining"></div>
                         <div id="current-turn">-</div>
+                        <div id="async-deadline" class="async-deadline hidden"></div>
                         <div id="last-action" class="last-action"></div>
                     </div>
                     <!-- Kör időlimit -->
@@ -724,6 +769,12 @@
                     <button id="btn-exit-save" class="btn-primary" type="button" data-i18n="exit.save_leave">Mentés és kilépés</button>
                     <button id="btn-exit-nosave" class="danger" type="button" data-i18n="exit.leave_nosave">Kilépés mentés nélkül</button>
                     <button id="btn-exit-cancel-owner" class="secondary" type="button" data-i18n="common.cancel">Mégsem</button>
+                </div>
+                <!-- Levelezős játék: a kilépés nem veszíti el a játékot -->
+                <div id="exit-async-buttons" class="dialog-buttons dialog-buttons-vertical hidden">
+                    <button id="btn-exit-async-leave" class="btn-primary" type="button" data-i18n="async.leave_keep">Kilépés (a játék folytatódik)</button>
+                    <button id="btn-exit-async-resign" class="danger" type="button" data-i18n="async.resign">Játék feladása</button>
+                    <button id="btn-exit-async-cancel" class="secondary" type="button" data-i18n="common.cancel">Mégsem</button>
                 </div>
                 <!-- Non-owner buttons -->
                 <div id="exit-player-buttons" class="dialog-buttons hidden">

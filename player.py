@@ -11,6 +11,8 @@ class Player:
         self.score = 0
         self.skip_next_turn = False  # Challenge büntetés
         self.disconnected = False  # Ideiglenesen lecsatlakozott
+        self.timeouts = 0  # levelezős játék: egymás utáni lejárt határidők
+        self.resigned = False  # feladta a játékot
         self.is_bot = is_bot  # Számítógépes ellenfél
         # A robot fokozata (1–10) vagy 'auto' ("igazodik hozzám"); a korábbi 'easy' / 'medium' /
         # 'hard' értékek átképeződnek
@@ -24,6 +26,7 @@ class Player:
             'hand_count': len(self.hand),
             'skip_next_turn': self.skip_next_turn,
             'disconnected': self.disconnected,
+            'resigned': self.resigned,
             'is_bot': self.is_bot,
             'difficulty': self.difficulty,
         }

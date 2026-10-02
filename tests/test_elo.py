@@ -233,3 +233,14 @@ class TestServerAndApi:
         assert board['success'] and board['metric'] == 'rating'
         assert board['min_games'] == elo.MIN_RATED_GAMES_FOR_RANKING
         assert board['entries'] == []   # még kevés értékelt játék
+
+
+class TestResignedPlayersInRatings:
+    def test_resigner_loses_even_with_the_higher_score(self):
+        a, b = _users(2)
+        players = [
+            {'player_name': 'U0', 'user_id': a, 'final_score': 300, 'is_winner': False, 'resigned': True},
+            {'player_name': 'U1', 'user_id': b, 'final_score': 50, 'is_winner': True},
+        ]
+        auth.finish_game('resign-room', '{}', players)
+        assert auth.get_user_by_id(a)['rating'] < 1200 < auth.get_user_by_id(b)['rating']
