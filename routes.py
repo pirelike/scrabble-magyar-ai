@@ -353,6 +353,8 @@ def profile():
             'win_rate': win_rate,
             'avg_score': avg_score,
             'total_score': total_score,
+            'rating': user['rating'],
+            'rated_games': user['rated_games'],
         },
         'history': [
             {
@@ -361,6 +363,9 @@ def profile():
                 'created_at': h['created_at'],
                 'final_score': h['final_score'],
                 'is_winner': bool(h['is_winner']),
+                'rating_change': (h['rating_after'] - h['rating_before']
+                                  if h['rating_after'] is not None and h['rating_before'] is not None
+                                  else None),
                 'opponents': h['opponents'],
             }
             for h in history

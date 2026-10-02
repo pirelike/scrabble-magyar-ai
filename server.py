@@ -22,7 +22,7 @@ from auth import (
     init_db, save_game, finish_game, add_game_move,
     load_active_games, abandon_game, abandon_game_by_id,
     is_user_in_game, get_game_by_id, get_game_moves, get_game_players,
-    get_user_by_id, grant_achievements,
+    get_user_by_id, grant_achievements, get_game_rating_changes,
     send_friend_request as auth_send_friend_request,
     accept_friend_request as auth_accept_friend_request,
     decline_friend_request as auth_decline_friend_request,
@@ -560,6 +560,7 @@ def _save_game_to_db(room_id):
             room.db_game_id = db_id
             room.result_saved = True
             _award_achievements(game, players_data, db_id)
+            _announce_rating_changes(game, players_data, db_id)
             socketio.emit('rooms_list', state.get_rooms_list())
             socketio.emit('live_games', state.get_live_games())
         else:
@@ -609,6 +610,23 @@ def _award_achievements(game, players_data, db_id):
                 socketio.emit('achievements_earned', {'badges': new}, room=player.id)
     except Exception as e:  # a kitüntetés hibája ne akadályozza a mentést
         print(f"[achievements] Hiba a kitüntetések rögzítésénél: {e}")
+
+
+def _announce_rating_changes(game, players_data, db_id):
+    """Az értékelt játékosoknak elküldi az új értékszámukat és a változást."""
+    try:
+        changes = get_game_rating_changes(db_id)
+        name_to_user = {pd['player_name']: pd['user_id'] for pd in players_data if pd.get('user_id')}
+        for player in game.players:
+            if player.is_bot:
+                continue
+            uid = name_to_user.get(player.name)
+            if uid in changes:
+                before, after = changes[uid]
+                socketio.emit('rating_update', {'rating': after, 'change': after - before},
+                              room=player.id)
+    except Exception as e:  # az értékszám kijelzése ne akadályozza a mentést
+        print(f"[rating] Hiba az értékszám küldésénél: {e}")
 
 
 def _cleanup_finished_saves():

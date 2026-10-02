@@ -3845,3 +3845,23 @@ html.booting .lang-toggle {
     font-weight: 700;
     text-align: center;
 }
+
+
+/* ---- Értékszám (ELO) ---- */
+
+.final-rating {
+    margin: var(--space-3) 0;
+    font-weight: 700;
+    text-align: center;
+}
+
+.final-rating.up { color: var(--success-text); }
+.final-rating.down { color: var(--danger-text); }
+
+.history-rating {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.history-rating.up { color: var(--success-text); }
+.history-rating.down { color: var(--danger-text); }

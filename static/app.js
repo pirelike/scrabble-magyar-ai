@@ -2854,6 +2854,8 @@ const BoardZoom = {
 // ===== GAME OVER =====
 
 const GameOver = {
+    _rating: null,
+
     init() {
         document.getElementById('btn-back-lobby').addEventListener('click', () => this.backToLobby());
         window.addEventListener('langchange', () => {
@@ -2867,6 +2869,23 @@ const GameOver = {
         SoundManager.play('game_over');
         this.render();
         document.getElementById('game-over-dialog').classList.remove('hidden');
+    },
+
+    // Az értékelt játék után az új értékszám és a változás
+    setRating(data) {
+        this._rating = data;
+        this.renderRating();
+    },
+
+    renderRating() {
+        const box = document.getElementById('final-rating');
+        const data = this._rating;
+        box.classList.toggle('hidden', !data);
+        if (!data) return;
+        const sign = data.change > 0 ? '+' : '';
+        box.textContent = t('game.rating_update', { rating: data.rating, change: sign + data.change });
+        box.classList.toggle('up', data.change > 0);
+        box.classList.toggle('down', data.change < 0);
     },
 
     // Végeredmény + játékonkénti érdekességek (legjobb szó, legtöbb pont egy lépésben)
@@ -2894,6 +2913,7 @@ const GameOver = {
             stats.appendChild(line);
         };
         Badges.renderGameOver();
+        this.renderRating();
         if (best) addLine(t('game.best_move', { player: best.player, words: best.words.join(', '), score: best.score }));
         const moves = (gs.history || []).filter(h => h.type === 'place' || h.type === 'challenge_accept').length;
         if (moves) addLine(t('game.total_moves', { n: (gs.history || []).length, words: moves }));
@@ -2910,6 +2930,7 @@ const GameOver = {
 
     backToLobby() {
         document.getElementById('game-over-dialog').classList.add('hidden');
+        this._rating = null;
         const spectating = AppState.isSpectator;
         AppState.reset();
         ChallengeUI.stopCountdown(); TurnTimerUI._stop();
@@ -3078,6 +3099,7 @@ const Badges = {
 
     init() {
         socket.on('achievements_earned', (data) => this.onEarned((data && data.badges) || []));
+        socket.on('rating_update', (data) => GameOver.setRating(data));
         window.addEventListener('langchange', () => {
             if (!document.getElementById('game-over-dialog').classList.contains('hidden')) this.renderGameOver();
         });
@@ -3194,6 +3216,7 @@ const Profile = {
             { label: t('common.win'), value: stats.games_won },
             { label: t('profile.win_rate'), value: stats.win_rate + '%' },
             { label: t('profile.avg_score'), value: stats.avg_score },
+            { label: t('profile.rating'), value: stats.rating },
         ];
         for (const card of cards) {
             const el = document.createElement('div');
@@ -3253,6 +3276,13 @@ const Profile = {
             info.appendChild(name);
             info.appendChild(score);
             info.appendChild(result);
+            if (h.rating_change !== null && h.rating_change !== undefined) {
+                const delta = document.createElement('span');
+                delta.className = 'history-rating ' + (h.rating_change >= 0 ? 'up' : 'down');
+                delta.textContent = (h.rating_change > 0 ? '+' : '') + h.rating_change;
+                delta.title = t('profile.rating');
+                info.appendChild(delta);
+            }
             info.appendChild(opponents);
             row.appendChild(info);
 
@@ -4112,7 +4142,7 @@ const Dialogs = {
 // ===== RANGLISTA =====
 
 const Leaderboard = {
-    metric: 'wins',
+    metric: 'rating',
     _data: null,
 
     init() {
@@ -4146,6 +4176,7 @@ const Leaderboard = {
 
     _value(entry, metric) {
         switch (metric) {
+            case 'rating': return `${entry.rating}`;
             case 'win_rate': return `${entry.win_rate}%`;
             case 'avg_score': return `${entry.avg_score}`;
             case 'best_game': return `${entry.best_score}`;

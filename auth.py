@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from werkzeug.security import generate_password_hash, check_password_hash
 
+import elo
 from config import (
     DB_PATH, SESSION_MAX_AGE_DAYS, VERIFICATION_CODE_EXPIRY_MINUTES,
     VERIFICATION_MAX_ATTEMPTS, EMAIL_VERIFIED_WINDOW_MINUTES,
@@ -168,6 +169,17 @@ def init_db():
     except sqlite3.OperationalError:
         # Megosztható visszajátszás-link (nyilvános, a játékosok kérésére jön létre)
         conn.execute("ALTER TABLE saved_games ADD COLUMN share_token TEXT")
+    try:
+        conn.execute('SELECT rating FROM users LIMIT 1')
+    except sqlite3.OperationalError:
+        # Élő-értékszám (ELO) és az értékelt játékok száma
+        conn.execute(f"ALTER TABLE users ADD COLUMN rating INTEGER NOT NULL DEFAULT {elo.INITIAL_RATING}")
+        conn.execute("ALTER TABLE users ADD COLUMN rated_games INTEGER NOT NULL DEFAULT 0")
+    try:
+        conn.execute('SELECT rating_before FROM game_players LIMIT 1')
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE game_players ADD COLUMN rating_before INTEGER")
+        conn.execute("ALTER TABLE game_players ADD COLUMN rating_after INTEGER")
     conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_saved_games_share_token '
                  'ON saved_games(share_token) WHERE share_token IS NOT NULL')
     conn.commit()
@@ -327,7 +339,8 @@ def validate_session(token):
 
     with _db() as conn:
         row = conn.execute(
-            'SELECT s.*, u.id as uid, u.email, u.display_name, u.games_played, u.games_won, u.total_score, u.reconnect_token '
+            'SELECT s.*, u.id as uid, u.email, u.display_name, u.games_played, u.games_won, u.total_score, u.reconnect_token, '
+            'u.rating, u.rated_games '
             'FROM sessions s JOIN users u ON s.user_id = u.id '
             'WHERE s.token = ?',
             (token,)
@@ -349,6 +362,8 @@ def validate_session(token):
             'games_won': row['games_won'],
             'total_score': row['total_score'],
             'reconnect_token': row['reconnect_token'],
+            'rating': row['rating'],
+            'rated_games': row['rated_games'],
         }
 
 
@@ -439,9 +454,42 @@ def _upsert_game_players(conn, game_id, players_data):
             )
 
 
+def _apply_ratings(conn, game_id, players_data):
+    """ELO: a regisztrált játékosok értékszámának frissítése a végeredmény alapján (legalább két
+    regisztrált játékos kell; a vendégek nem vesznek részt). A változás a game_players sorban is
+    rögzül (rating_before / rating_after)."""
+    ranked = {}
+    for pd in players_data:
+        uid = pd.get('user_id')
+        if uid and uid not in ranked:
+            row = conn.execute('SELECT rating, rated_games FROM users WHERE id = ?', (uid,)).fetchone()
+            if row:
+                ranked[uid] = (row['rating'], row['rated_games'], pd['final_score'])
+    if len(ranked) < 2:
+        return
+    changes = elo.rating_changes([(uid, r, g, s) for uid, (r, g, s) in ranked.items()])
+    for uid, (before, _games, _score) in ranked.items():
+        after = before + changes[uid]
+        conn.execute('UPDATE users SET rating = ?, rated_games = rated_games + 1 WHERE id = ?',
+                     (after, uid))
+        conn.execute('UPDATE game_players SET rating_before = ?, rating_after = ? '
+                     'WHERE game_id = ? AND user_id = ?', (before, after, game_id, uid))
+
+
+def get_game_rating_changes(game_id):
+    """Egy játék értékszám-változásai: {user_id: (előtte, utána)} (csak az értékelt játékosok)."""
+    with _db() as conn:
+        rows = conn.execute(
+            'SELECT user_id, rating_before, rating_after FROM game_players '
+            'WHERE game_id = ? AND user_id IS NOT NULL AND rating_after IS NOT NULL', (game_id,)
+        ).fetchall()
+    return {r['user_id']: (r['rating_before'], r['rating_after']) for r in rows}
+
+
 def finish_game(room_id, state_json, players_data, room_name='', has_bots=False):
     """Játék befejezése: status='finished', game_players INSERT, users stats UPDATE.
     players_data: [{player_name, user_id (or None), final_score, is_winner}, ...]
+    Robotos játék nem számít az értékszámba (és a ranglistába sem).
     """
     with _db() as conn:
         now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
@@ -490,6 +538,9 @@ def finish_game(room_id, state_json, players_data, room_name='', has_bots=False)
                     (1 if pd.get('is_winner') else 0, pd['final_score'], pd['user_id'])
                 )
 
+        if not has_bots:
+            _apply_ratings(conn, game_id, players_data)
+
     return game_id
 
 
@@ -527,7 +578,7 @@ def get_user_game_history(user_id, limit=20):
     with _db() as conn:
         rows = conn.execute(
             'SELECT sg.id as game_id, sg.room_name, sg.created_at, '
-            'gp.final_score, gp.is_winner, gp.player_name '
+            'gp.final_score, gp.is_winner, gp.player_name, gp.rating_before, gp.rating_after '
             'FROM saved_games sg '
             'JOIN game_players gp ON sg.id = gp.game_id AND gp.user_id = ? '
             "WHERE sg.status = 'finished' "
@@ -567,6 +618,8 @@ def get_user_game_history(user_id, limit=20):
             'final_score': r['final_score'],
             'is_winner': r['is_winner'],
             'player_name': r['player_name'],
+            'rating_before': r['rating_before'],
+            'rating_after': r['rating_after'],
             'opponents': opponents_by_game.get(r['game_id'], []),
         }
         for r in rows
@@ -887,14 +940,16 @@ def search_users(query, exclude_user_id, limit=10):
 
 # --- Ranglista ---
 
-LEADERBOARD_METRICS = ('wins', 'win_rate', 'avg_score', 'best_game')
+LEADERBOARD_METRICS = ('rating', 'wins', 'win_rate', 'avg_score', 'best_game')
 # A százalékos / átlag alapú listákra csak elég sok játékkal lehet kerülni (különben egy
 # nyert játék után 100%-kal vezetne valaki)
-LEADERBOARD_MIN_GAMES = {'wins': 1, 'win_rate': 3, 'avg_score': 3, 'best_game': 1}
+LEADERBOARD_MIN_GAMES = {'rating': elo.MIN_RATED_GAMES_FOR_RANKING, 'wins': 1, 'win_rate': 3,
+                         'avg_score': 3, 'best_game': 1}
 LEADERBOARD_MAX_LIMIT = 100
 
 # A rendezés (a metrikához tartozó, rögzített SQL-részlet; felhasználói adat nem kerül bele)
 _LEADERBOARD_ORDER = {
+    'rating': 'u.rating DESC, games_won DESC, total_score DESC',
     'wins': 'games_won DESC, (games_won * 1.0 / games_played) DESC, total_score DESC',
     'win_rate': '(games_won * 1.0 / games_played) DESC, games_played DESC, games_won DESC',
     'avg_score': '(total_score * 1.0 / games_played) DESC, games_played DESC',
@@ -914,33 +969,41 @@ def _leaderboard_entry(row, rank):
         'avg_score': round(row['total_score'] / played, 1) if played else 0,
         'total_score': row['total_score'],
         'best_score': row['best_score'],
+        'rating': row['rating'],
+        'rated_games': row['rated_games'],
     }
 
 
 def get_leaderboard(metric='wins', limit=50, user_id=None):
     """Regisztrált játékosok ranglistája (csak befejezett, robot nélküli játékokból).
 
-    metric: 'wins' | 'win_rate' | 'avg_score' | 'best_game'
+    metric: 'rating' | 'wins' | 'win_rate' | 'avg_score' | 'best_game'
     Visszatér: (entries, me) — `entries` a legjobb `limit` játékos (rank-kal), `me` a megadott
     felhasználó helyezése (akkor is, ha nincs a top listában), vagy None.
     """
     if metric not in LEADERBOARD_METRICS:
         metric = 'wins'
     limit = max(1, min(int(limit), LEADERBOARD_MAX_LIMIT))
+    min_games = LEADERBOARD_MIN_GAMES[metric]
+    # Az értékszám-ranglistára csak elég sok értékelt (regisztráltak közti) játék után lehet kerülni
+    rated_only = 'AND u.rated_games >= ? ' if metric == 'rating' else ''
+    params = (min_games, min_games) if metric == 'rating' else (min_games,)
 
     with _db() as conn:
         rows = conn.execute(
             'SELECT gp.user_id AS user_id, u.display_name AS display_name, '
             'COUNT(*) AS games_played, COALESCE(SUM(gp.is_winner), 0) AS games_won, '
-            'COALESCE(SUM(gp.final_score), 0) AS total_score, MAX(gp.final_score) AS best_score '
+            'COALESCE(SUM(gp.final_score), 0) AS total_score, MAX(gp.final_score) AS best_score, '
+            'u.rating AS rating, u.rated_games AS rated_games '
             'FROM game_players gp '
             "JOIN saved_games sg ON sg.id = gp.game_id AND sg.status = 'finished' AND sg.has_bots = 0 "
             'JOIN users u ON u.id = gp.user_id '
             'WHERE gp.user_id IS NOT NULL '
+            f'{rated_only}'
             'GROUP BY gp.user_id '
             'HAVING COUNT(*) >= ? '
             f'ORDER BY {_LEADERBOARD_ORDER[metric]}, gp.user_id ASC',
-            (LEADERBOARD_MIN_GAMES[metric],),
+            params,
         ).fetchall()
 
     entries = []

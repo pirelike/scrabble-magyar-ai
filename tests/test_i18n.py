@@ -386,7 +386,8 @@ class TestClientTranslator:
         keys = [k for k in _ui_keys(data['en'])]
         params = {name: 'X' for name in ('n', 'max', 'owner', 'name', 'names', 'players', 'words', 'score',
                                          'player', 'room', 'word', 'total', 'bag', 'hands',
-                                         'vowels', 'consonants', 'blanks', 'played', 'won', 'rate')}
+                                         'vowels', 'consonants', 'blanks', 'played', 'won', 'rate',
+                                         'rating', 'change')}
         for key in keys:
             cases.append({'op': 't', 'key': key, 'params': params})
         for lang in ('hu', 'en'):
