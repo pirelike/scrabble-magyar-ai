@@ -40,7 +40,7 @@ def _ui_keys(translations):
 
 
 # Dinamikusan összerakott kulcscsaládok (a kódban `t('előtag.' + ...)` formában szerepelnek)
-_DYNAMIC_PREFIXES = ('ai.', 'history.', 'dict.reason_', 'sound.cat_', 'board.', 'last.vote_')
+_DYNAMIC_PREFIXES = ('ai.', 'history.', 'dict.reason_', 'sound.cat_', 'board.', 'last.vote_', 'badge.')
 
 
 class TestDataFile:
@@ -103,6 +103,10 @@ class TestKeyUsage:
             assert f'sound.cat_{cat}' in data['en'] and f'sound.cat_{cat}_desc' in data['en']
         for prefix in ('dl', 'tl', 'dw', 'tw'):
             assert f'board.{prefix}_long' in data['en'] and f'board.{prefix}_short' in data['en']
+        from achievements import BADGES
+        for badge in BADGES:
+            for lang in ('hu', 'en'):
+                assert f'badge.{badge}' in data[lang] and f'badge.{badge}_desc' in data[lang]
         for kind in ('exchange', 'pass', 'rejected', 'skip', 'vote_accept', 'vote_reject',
                      'game_over', 'game_over_draw', 'save_revert', 'place', 'pending', 'withdrawn'):
             assert f'last.{kind}' in data['en']

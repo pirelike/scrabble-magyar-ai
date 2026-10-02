@@ -15,6 +15,8 @@ from auth import (
     create_session, validate_session, delete_session,
     is_email_verified, clear_email_verification,
     get_game_moves, get_user_game_history, get_game_by_id,
+    get_or_create_share_token, get_game_by_share_token, get_game_results,
+    get_user_achievements,
     get_user_active_games, abandon_game_by_id, is_user_in_game,
     get_friends, get_pending_requests, get_sent_requests, search_users,
 )
@@ -344,6 +346,7 @@ def profile():
 
     return jsonify({
         'success': True,
+        'badges': get_user_achievements(user['id']),
         'stats': {
             'games_played': games_played,
             'games_won': games_won,
@@ -545,6 +548,55 @@ def dictionary_check():
 
 # ===== GAME ROUTES =====
 
+def _moves_payload(game_id):
+    return [
+        {
+            'move_number': m['move_number'],
+            'player_name': m['player_name'],
+            'action_type': m['action_type'],
+            'details_json': m['details_json'],
+            'board_snapshot_json': m['board_snapshot_json'],
+        }
+        for m in get_game_moves(game_id)
+    ]
+
+
+_SHARE_TOKEN_RE = re.compile(r'^[A-Za-z0-9_-]{6,40}$')
+
+
+@game_bp.route('/api/game/<int:game_id>/share', methods=['POST'])
+def share_game(game_id):
+    """Megosztható linket készít egy befejezett játék visszajátszásához (csak a résztvevőknek)."""
+    user = validate_session(request.cookies.get('session_token'))
+    if not user:
+        return jsonify({'success': False, 'message': 'Bejelentkezés szükséges.'}), 401
+    if not get_game_by_id(game_id):
+        return jsonify({'success': False, 'message': 'Játék nem található.'}), 404
+    if not is_user_in_game(game_id, user['id']):
+        return jsonify({'success': False, 'message': 'Nincs jogosultságod a játék megosztásához.'}), 403
+    token = get_or_create_share_token(game_id)
+    if not token:
+        return jsonify({'success': False, 'message': 'Csak befejezett játék osztható meg.'}), 400
+    return jsonify({'success': True, 'token': token})
+
+
+@game_bp.route('/api/replay/<token>', methods=['GET'])
+def shared_replay(token):
+    """Megosztott visszajátszás: nyilvános, bejelentkezés nélkül is elérhető."""
+    if not _rate_limiter.check_ip(_get_client_ip(), 'replay'):
+        return jsonify({'success': False, 'message': 'Túl sok kérés. Próbáld újra később.'}), 429
+    game_row = get_game_by_share_token(token) if _SHARE_TOKEN_RE.match(token) else None
+    if not game_row:
+        return jsonify({'success': False, 'message': 'A megosztott visszajátszás nem található.'}), 404
+    return jsonify({
+        'success': True,
+        'room_name': game_row['room_name'],
+        'created_at': game_row['created_at'],
+        'players': get_game_results(game_row['id']),
+        'moves': _moves_payload(game_row['id']),
+    })
+
+
 @game_bp.route('/api/game/<int:game_id>/moves', methods=['GET'])
 def game_moves(game_id):
     token = request.cookies.get('session_token')
@@ -559,19 +611,11 @@ def game_moves(game_id):
     if not is_user_in_game(game_id, user['id']):
         return jsonify({'success': False, 'message': 'Nincs jogosultságod a játék megtekintéséhez.'}), 403
 
-    moves = get_game_moves(game_id)
     return jsonify({
         'success': True,
-        'moves': [
-            {
-                'move_number': m['move_number'],
-                'player_name': m['player_name'],
-                'action_type': m['action_type'],
-                'details_json': m['details_json'],
-                'board_snapshot_json': m['board_snapshot_json'],
-            }
-            for m in moves
-        ],
+        'moves': _moves_payload(game_id),
+        'players': get_game_results(game_id),
+        'finished': game_row['status'] == 'finished',
     })
 
 

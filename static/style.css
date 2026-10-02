@@ -3758,3 +3758,90 @@ html.booting .lang-toggle {
         flex: 1 1 auto;
     }
 }
+
+
+/* ---- Visszajátszás: végeredmény + megosztás ---- */
+
+.replay-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2) var(--space-3);
+    margin-bottom: var(--space-3);
+}
+
+.replay-players {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--space-2);
+}
+
+.replay-player {
+    padding: var(--space-1) var(--space-3);
+    background: var(--bg-card);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-pill);
+    font-size: var(--text-sm);
+}
+
+.replay-player.winner {
+    border-color: var(--accent);
+    font-weight: 700;
+}
+
+
+/* ---- Kitüntetések ---- */
+
+.badge-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: var(--space-3);
+    margin-bottom: var(--space-6);
+}
+
+.badge-card {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    background: var(--bg-card);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-card);
+}
+
+.badge-card.locked {
+    opacity: 0.45;
+    filter: grayscale(1);
+}
+
+.badge-icon {
+    flex: none;
+    font-size: 28px;
+    line-height: 1;
+}
+
+.badge-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.badge-text small {
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+}
+
+.final-badges {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin: var(--space-3) 0;
+}
+
+.final-badges-title {
+    font-weight: 700;
+    text-align: center;
+}

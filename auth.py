@@ -123,6 +123,15 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_game_players_user_id ON game_players(user_id);
         CREATE INDEX IF NOT EXISTS idx_game_moves_game_id ON game_moves(game_id);
 
+        CREATE TABLE IF NOT EXISTS achievements (
+            user_id INTEGER NOT NULL,
+            badge TEXT NOT NULL,
+            game_id INTEGER,
+            earned_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (user_id, badge),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
         CREATE TABLE IF NOT EXISTS friendships (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -154,6 +163,13 @@ def init_db():
     except sqlite3.OperationalError:
         # Robotos játékok nem számítanak bele a ranglistába
         conn.execute("ALTER TABLE saved_games ADD COLUMN has_bots INTEGER NOT NULL DEFAULT 0")
+    try:
+        conn.execute('SELECT share_token FROM saved_games LIMIT 1')
+    except sqlite3.OperationalError:
+        # Megosztható visszajátszás-link (nyilvános, a játékosok kérésére jön létre)
+        conn.execute("ALTER TABLE saved_games ADD COLUMN share_token TEXT")
+    conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_saved_games_share_token '
+                 'ON saved_games(share_token) WHERE share_token IS NOT NULL')
     conn.commit()
     conn.close()
 
@@ -627,6 +643,67 @@ def is_user_in_game(game_id, user_id):
             (game_id, user_id)
         ).fetchone()
     return row is not None
+
+
+def get_or_create_share_token(game_id):
+    """A befejezett játék visszajátszásának megosztási tokenje (ha még nincs, létrehozza).
+    Visszatér: token, vagy None, ha a játék nem létezik / még nem fejeződött be."""
+    with _db() as conn:
+        row = conn.execute('SELECT status, share_token FROM saved_games WHERE id = ?',
+                           (game_id,)).fetchone()
+        if not row or row['status'] != 'finished':
+            return None
+        if row['share_token']:
+            return row['share_token']
+        token = secrets.token_urlsafe(9)
+        conn.execute('UPDATE saved_games SET share_token = ? WHERE id = ?', (token, game_id))
+        return token
+
+
+def get_game_by_share_token(token):
+    """A megosztási tokenhez tartozó befejezett játék (vagy None)."""
+    if not token:
+        return None
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT * FROM saved_games WHERE share_token = ? AND status = 'finished'", (token,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_game_results(game_id):
+    """A játék végeredménye: [{player_name, final_score, is_winner}], pontszám szerint csökkenően."""
+    with _db() as conn:
+        rows = conn.execute(
+            'SELECT player_name, final_score, is_winner FROM game_players WHERE game_id = ? '
+            'ORDER BY final_score DESC, id', (game_id,)
+        ).fetchall()
+    return [{'player_name': r['player_name'], 'final_score': r['final_score'],
+             'is_winner': bool(r['is_winner'])} for r in rows]
+
+
+def grant_achievements(user_id, badges, game_id=None):
+    """Kitüntetések rögzítése (kulcsonként egyszer). Visszatér: az újonnan megszerzettek listája."""
+    new = []
+    with _db() as conn:
+        for badge in sorted(badges):
+            inserted = conn.execute(
+                'INSERT OR IGNORE INTO achievements (user_id, badge, game_id) VALUES (?, ?, ?)',
+                (user_id, badge, game_id)
+            ).rowcount
+            if inserted:
+                new.append(badge)
+    return new
+
+
+def get_user_achievements(user_id):
+    """A felhasználó kitüntetései: [{badge, game_id, earned_at}], megszerzés sorrendjében."""
+    with _db() as conn:
+        rows = conn.execute(
+            'SELECT badge, game_id, earned_at FROM achievements WHERE user_id = ? '
+            'ORDER BY earned_at, rowid', (user_id,)
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def get_game_players(game_id):

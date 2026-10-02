@@ -236,6 +236,24 @@ function formatServerDate(value, options) {
     return d ? d.toLocaleString(I18N.locale(), options) : '';
 }
 
+// Link megosztása: telefonon a rendszer megosztó lapja, egyébként vágólap
+async function shareOrCopy(url, title, text, copiedMessage) {
+    if (isTouchDevice && navigator.share) {
+        try {
+            await navigator.share({ title, text, url });
+            return;
+        } catch (e) {
+            if (e && e.name === 'AbortError') return;  // a felhasználó bezárta a megosztó lapot
+        }
+    }
+    try {
+        await navigator.clipboard.writeText(url);
+        showMessage(copiedMessage);
+    } catch {
+        showMessage(t('common.copy_failed'), true);
+    }
+}
+
 // ===== APP STATE =====
 // Consolidated game & session state
 
@@ -293,6 +311,7 @@ const AppState = {
         this.spectateRoomId = null;
         this.spectateCode = null;
         this.gameState = null;
+        Badges.newInGame = [];
         // Clear saved rejoin info
         localStorage.removeItem('scrabble-rejoin');
         // Hide room tab
@@ -623,6 +642,7 @@ const Auth = {
             }
         } catch { /* no session */ }
         document.documentElement.classList.remove('booting');
+        if (!AppState.currentUser) Replay.openSharedLink();
     },
 };
 
@@ -778,7 +798,8 @@ const Lobby = {
         const join = params.get('join');
         const spectate = params.get('spectate');
         const action = params.get('action');
-        if (!join && !spectate && !action) return;
+        const replay = params.get('replay');
+        if (!join && !spectate && !action && !replay) return;
         // A cím megtisztítása, hogy frissítésre ne ismétlődjön a művelet
         try { history.replaceState(null, '', location.pathname); } catch { /* ignore */ }
 
@@ -790,6 +811,8 @@ const Lobby = {
             socket.emit('spectate_room', { code: spectate });
         } else if (action === 'create' && !AppState.isGuest) {
             this.switchTab('create');
+        } else if (replay) {
+            Replay.loadShared(replay);
         }
     },
 
@@ -1321,27 +1344,10 @@ const WaitingRoom = {
         return `${location.origin}/?join=${AppState.currentRoomCode}`;
     },
 
-    async shareLink() {
+    shareLink() {
         if (!AppState.currentRoomCode) return;
-        const url = this.inviteUrl();
-        if (isTouchDevice && navigator.share) {
-            try {
-                await navigator.share({
-                    title: t('app.title'),
-                    text: t('wait.share_text', { room: AppState.roomName || '' }),
-                    url,
-                });
-                return;
-            } catch (e) {
-                if (e && e.name === 'AbortError') return;  // a felhasználó bezárta a megosztó lapot
-            }
-        }
-        try {
-            await navigator.clipboard.writeText(url);
-            showMessage(t('wait.link_copied'));
-        } catch {
-            showMessage(t('common.copy_failed'), true);
-        }
+        return shareOrCopy(this.inviteUrl(), t('app.title'),
+            t('wait.share_text', { room: AppState.roomName || '' }), t('wait.link_copied'));
     },
 
     update() {
@@ -2887,6 +2893,7 @@ const GameOver = {
             line.textContent = text;
             stats.appendChild(line);
         };
+        Badges.renderGameOver();
         if (best) addLine(t('game.best_move', { player: best.player, words: best.words.join(', '), score: best.score }));
         const moves = (gs.history || []).filter(h => h.type === 'place' || h.type === 'challenge_accept').length;
         if (moves) addLine(t('game.total_moves', { n: (gs.history || []).length, words: moves }));
@@ -3059,6 +3066,74 @@ const ExitGame = {
     },
 };
 
+// ===== KITÜNTETÉSEK =====
+
+const BADGE_ICONS = {
+    first_game: '🎲', first_win: '🥇', bingo: '🎯', score_100: '💯', long_word: '📏',
+    joker_play: '🃏', game_300: '🏔️', bot_slayer: '🤖', wins_10: '🏆', games_25: '🎖️',
+};
+
+const Badges = {
+    newInGame: [],   // az éppen befejezett játékban megszerzett kitüntetések
+
+    init() {
+        socket.on('achievements_earned', (data) => this.onEarned((data && data.badges) || []));
+        window.addEventListener('langchange', () => {
+            if (!document.getElementById('game-over-dialog').classList.contains('hidden')) this.renderGameOver();
+        });
+    },
+
+    onEarned(keys) {
+        for (const key of keys) {
+            if (!BADGE_ICONS[key]) continue;
+            this.newInGame.push(key);
+            showMessage(t('badge.earned', { name: t('badge.' + key) }), false, 5000);
+        }
+        // A játék vége ablak már nyitva lehet: frissítjük
+        if (!document.getElementById('game-over-dialog').classList.contains('hidden')) this.renderGameOver();
+    },
+
+    _card(key, owned) {
+        const card = document.createElement('div');
+        card.className = 'badge-card' + (owned ? '' : ' locked');
+        card.title = t('badge.' + key + '_desc');
+        const icon = document.createElement('span');
+        icon.className = 'badge-icon';
+        icon.textContent = BADGE_ICONS[key];
+        const text = document.createElement('div');
+        text.className = 'badge-text';
+        const name = document.createElement('strong');
+        name.textContent = t('badge.' + key);
+        const desc = document.createElement('small');
+        desc.textContent = t('badge.' + key + '_desc');
+        text.appendChild(name);
+        text.appendChild(desc);
+        card.appendChild(icon);
+        card.appendChild(text);
+        return card;
+    },
+
+    // A profilon minden kitüntetés látszik, a meg nem szerzettek halványan
+    renderProfile(owned) {
+        const grid = document.getElementById('profile-badges');
+        grid.replaceChildren();
+        const have = new Set(owned.map(b => b.badge));
+        for (const key of Object.keys(BADGE_ICONS)) grid.appendChild(this._card(key, have.has(key)));
+    },
+
+    renderGameOver() {
+        const box = document.getElementById('final-badges');
+        box.replaceChildren();
+        box.classList.toggle('hidden', !this.newInGame.length);
+        if (!this.newInGame.length) return;
+        const title = document.createElement('div');
+        title.className = 'final-badges-title';
+        title.textContent = t('badge.new_title');
+        box.appendChild(title);
+        for (const key of new Set(this.newInGame)) box.appendChild(this._card(key, true));
+    },
+};
+
 // ===== PROFILE =====
 
 const Profile = {
@@ -3068,6 +3143,7 @@ const Profile = {
         window.addEventListener('langchange', () => {
             if (this._data && !document.getElementById('profile-screen').classList.contains('hidden')) {
                 this.renderStats(this._data.stats);
+                Badges.renderProfile(this._data.badges || []);
                 this.renderHistory(this._data.history);
             }
         });
@@ -3098,6 +3174,7 @@ const Profile = {
 
             this._data = data;
             this.renderStats(data.stats);
+            Badges.renderProfile(data.badges || []);
             this.renderHistory(data.history);
             const nameEl = document.getElementById('profile-user-name');
             if (nameEl) nameEl.textContent = AppState.currentUser?.display_name || '';
@@ -3185,6 +3262,12 @@ const Profile = {
             btn.addEventListener('click', () => Replay.load(h.game_id));
             row.appendChild(btn);
 
+            const shareBtn = document.createElement('button');
+            shareBtn.className = 'small-btn secondary';
+            shareBtn.textContent = t('replay.share');
+            shareBtn.addEventListener('click', () => Replay.share(h.game_id));
+            row.appendChild(shareBtn);
+
             container.appendChild(row);
         }
     },
@@ -3194,18 +3277,26 @@ const Profile = {
 
 const Replay = {
     moves: [],
+    players: [],
+    gameId: null,
     currentIdx: -1,
     _returnTo: null,
 
     init() {
         document.getElementById('btn-replay-back').addEventListener('click', () => {
-            showScreen(this._returnTo || 'profile-screen');
+            showScreen(this._returnTo || (AppState.displayName ? 'profile-screen' : 'auth-screen'));
             this._returnTo = null;
+        });
+        document.getElementById('btn-replay-share').addEventListener('click', () => {
+            if (this.gameId) this.share(this.gameId);
         });
         document.getElementById('btn-replay-prev').addEventListener('click', () => this.prev());
         document.getElementById('btn-replay-next').addEventListener('click', () => this.next());
         window.addEventListener('langchange', () => {
-            if (!document.getElementById('replay-screen').classList.contains('hidden')) this.renderMove();
+            if (!document.getElementById('replay-screen').classList.contains('hidden')) {
+                this.renderMove();
+                this.renderPlayers();
+            }
         });
     },
 
@@ -3217,16 +3308,75 @@ const Replay = {
                 showMessage(tServer(data.message) || t('replay.load_error'), true);
                 return;
             }
-
-            const current = document.querySelector('.screen:not(.hidden)');
-            if (current && current.id !== 'replay-screen') this._returnTo = current.id;
-            this.moves = data.moves;
-            this.currentIdx = -1;
-            this.buildBoard();
-            this.renderMove();
-            showScreen('replay-screen');
+            this._open(data, gameId);
         } catch {
             showMessage(t('replay.load_error'), true);
+        }
+    },
+
+    // Megosztott visszajátszás megnyitása a linkből (bejelentkezés nélkül is)
+    async loadShared(token) {
+        try {
+            const resp = await fetch(`/api/replay/${encodeURIComponent(token)}`);
+            const data = await resp.json();
+            if (!data.success) {
+                showMessage(tServer(data.message) || t('replay.load_error'), true);
+                return;
+            }
+            this._open(data, null);
+        } catch {
+            showMessage(t('replay.load_error'), true);
+        }
+    },
+
+    // A /?replay=TOKEN link kezelése, ha a látogató nincs bejelentkezve
+    openSharedLink() {
+        let token = null;
+        try { token = new URLSearchParams(location.search).get('replay'); } catch { return; }
+        if (!token) return;
+        try { history.replaceState(null, '', location.pathname); } catch { /* ignore */ }
+        this.loadShared(token);
+    },
+
+    _open(data, gameId) {
+        const current = document.querySelector('.screen:not(.hidden)');
+        if (current && current.id !== 'replay-screen') this._returnTo = current.id;
+        this.gameId = gameId;
+        this.moves = data.moves;
+        this.players = data.players || [];
+        this.currentIdx = -1;
+        this.buildBoard();
+        this.renderMove();
+        this.renderPlayers();
+        document.getElementById('btn-replay-share').classList.toggle('hidden', !gameId);
+        showScreen('replay-screen');
+    },
+
+    // A végeredmény a visszajátszás fölött (holtversenynél több győztes is lehet)
+    renderPlayers() {
+        const box = document.getElementById('replay-players');
+        box.replaceChildren();
+        for (const p of this.players) {
+            const item = document.createElement('span');
+            item.className = 'replay-player' + (p.is_winner ? ' winner' : '');
+            item.textContent = `${p.is_winner ? '🏆 ' : ''}${p.player_name} · ${t('common.points', { n: p.final_score })}`;
+            box.appendChild(item);
+        }
+    },
+
+    // Megosztható link készítése a saját befejezett játékhoz
+    async share(gameId) {
+        try {
+            const resp = await fetch(`/api/game/${gameId}/share`, { method: 'POST' });
+            const data = await resp.json();
+            if (!data.success) {
+                showMessage(tServer(data.message) || t('replay.share_error'), true);
+                return;
+            }
+            const url = `${location.origin}/?replay=${data.token}`;
+            await shareOrCopy(url, t('app.title'), t('replay.share_text'), t('replay.link_copied'));
+        } catch {
+            showMessage(t('replay.share_error'), true);
         }
     },
 
@@ -4303,6 +4453,7 @@ ChallengeUI.init();
 Chat.init();
 ExitGame.init();
 Profile.init();
+Badges.init();
 Replay.init();
 GameOver.init();
 Reconnection.init();

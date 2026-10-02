@@ -668,6 +668,7 @@
                 <h2 id="game-over-title" data-i18n="game.over">Játék vége!</h2>
                 <div id="final-scores"></div>
                 <div id="final-stats" class="final-stats"></div>
+                <div id="final-badges" class="final-badges hidden"></div>
                 <button id="btn-back-lobby" type="button" data-i18n="game.back_lobby">Vissza a lobbyba</button>
             </div>
         </div>
@@ -703,6 +704,10 @@
         </header>
         <main class="profile-container">
             <div class="stat-cards" id="profile-stats"></div>
+            <div class="section-header">
+                <h2 class="section-title" data-i18n="badge.title">Kitüntetések</h2>
+            </div>
+            <div id="profile-badges" class="badge-grid"></div>
             <div class="section-header">
                 <h2 class="section-title" data-i18n="profile.history">Játékelőzmények</h2>
             </div>
@@ -740,6 +745,10 @@
             </div>
         </header>
         <main class="replay-container">
+            <div class="replay-summary">
+                <div id="replay-players" class="replay-players"></div>
+                <button id="btn-replay-share" class="small-btn secondary hidden" type="button" data-i18n="replay.share">Megosztás</button>
+            </div>
             <div class="replay-controls">
                 <button id="btn-replay-prev" class="secondary" type="button" disabled data-i18n="replay.prev">&larr; Előző</button>
                 <span id="replay-counter">0 / 0</span>
