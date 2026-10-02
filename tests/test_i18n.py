@@ -93,8 +93,8 @@ class TestKeyUsage:
         assert not sorted(k for k in used if k not in data['en'])
 
     def test_dynamic_key_families_are_complete(self, data):
-        for kind in ('easy', 'medium', 'hard'):
-            assert f'ai.{kind}' in data['en']
+        for level in range(1, 11):
+            assert f'ai.level_{level}' in data['en'] and f'ai.level_{level}' in data['hu']
         for kind in ('exchange', 'pass', 'challenge_reject', 'other'):
             assert f'history.{kind}' in data['en']
         for reason in ('not_in_dictionary', 'invalid_chars', 'too_long', 'too_short'):

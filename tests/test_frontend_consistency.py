@@ -85,6 +85,25 @@ def _server_source():
     return _read('server.py') + _read('routes.py')
 
 
+class TestBotLevelSelector:
+    def test_difficulty_select_offers_exactly_the_server_levels(self, index_html):
+        import ai_player
+        select = re.search(r'<select id="room-ai-difficulty"[^>]*>(.*?)</select>', index_html, re.S).group(1)
+        values = [int(v) for v in re.findall(r'<option value="(\d+)"', select)]
+        assert values == list(ai_player.DIFFICULTIES)
+
+    def test_default_option_is_the_default_level(self, index_html):
+        import ai_player
+        select = re.search(r'<select id="room-ai-difficulty"[^>]*>(.*?)</select>', index_html, re.S).group(1)
+        selected = re.findall(r'<option value="(\d+)" selected', select)
+        assert selected == [str(ai_player.DEFAULT_LEVEL)]
+
+    def test_every_option_has_a_matching_translation_key(self, index_html):
+        select = re.search(r'<select id="room-ai-difficulty"[^>]*>(.*?)</select>', index_html, re.S).group(1)
+        for value, key in re.findall(r'<option value="(\d+)"[^>]*data-i18n="([^"]+)"', select):
+            assert key == f'ai.level_{value}'
+
+
 class TestSocketEvents:
     def test_events_emitted_by_the_client_have_server_handlers(self, app_js):
         handlers = set(re.findall(r"@socketio\.on\('(\w+)'\)", _server_source()))

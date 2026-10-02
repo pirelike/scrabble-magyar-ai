@@ -110,6 +110,14 @@ _BOT_NAMES = {
     'hard': ['Rezső', 'Róbert', 'Rómeó'],
 }
 
+
+def _bot_tier(level):
+    """A robot fokozatának sávja (név és gondolkodási idő): 1–3 könnyű, 4–7 közepes, 8–10 nehéz."""
+    level = ai_player.normalize_level(level)
+    if level <= 3:
+        return 'easy'
+    return 'medium' if level <= 7 else 'hard'
+
 # --- Input validáció ---
 
 _VALID_NAME_RE = re.compile(r'^[\w\sáéíóöőúüűÁÉÍÓÖŐÚÜŰ._-]{1,20}$', re.UNICODE)
@@ -405,7 +413,7 @@ def _handle_challenge_result(room_id, room, game, result, msg):
 def _bot_name(game, difficulty):
     """Szabad robotnév az adott nehézséghez (nem ütközik a szobában lévő nevekkel)."""
     taken = {p.name.casefold() for p in game.players}
-    pool = _BOT_NAMES.get(difficulty) or _BOT_NAMES['medium']
+    pool = _BOT_NAMES[_bot_tier(difficulty)]
     for name in pool:
         if name.casefold() not in taken:
             return name
@@ -436,7 +444,7 @@ def _schedule_bot_turn(room_id):
     bot = game.current_player()
     turn_id = room.invalidate_bot_turn()
     turn_number = game.turn_number
-    delay = random.uniform(*_BOT_THINK_DELAY.get(bot.difficulty, (1.0, 2.0)))
+    delay = random.uniform(*_BOT_THINK_DELAY[_bot_tier(bot.difficulty)])
 
     def run():
         socketio.sleep(delay)
@@ -986,7 +994,8 @@ def handle_create_room(data):
     ai_levels = data.get('ai_players', [])
     if not isinstance(ai_levels, list):
         ai_levels = []
-    ai_levels = [lv for lv in ai_levels if lv in ai_player.DIFFICULTIES][:MAX_BOTS]
+    ai_levels = [ai_player.parse_level(lv) for lv in ai_levels]
+    ai_levels = [lv for lv in ai_levels if lv is not None][:MAX_BOTS]
     ai_levels = ai_levels[:max_players - 1]
 
     room_id = str(uuid.uuid4())[:8]

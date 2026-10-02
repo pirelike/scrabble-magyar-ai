@@ -7,9 +7,12 @@ Működés:
     A keresztszavak érvényességét a szótár dönti el (egyetlen tömeges híváson belül), így a
     robot ragozott szavakhoz is tud kapcsolódni. A fő szó tőszó; a kiválasztott lépés minden szavát
     a játék saját szótára is ellenőrzi, mielőtt a robot lerakja.
-  * Nehézségi szintek: könnyű (rövid, gyenge lépések), közepes (jó lépések közül véletlen),
-    nehéz (a legjobb pontszám + maradék zsetonok értékelése, jokert is használ).
+  * Nehézségi szintek: 10 fokozat (1 = újonc … 10 = mester). Az alsó fokozatokon a robot minden
+    körben egy véletlen célpontszámot vesz fel, és a hozzá legközelebbi pontszámú lépést rakja le;
+    a felső fokozatokon a legjobban értékelt (pont + maradék zsetonok) lépést választja, egyre
+    kisebb zajjal. A fokozatok erejét bot–bot mérés kalibrálta (lásd `_PROFILES`).
 """
+import math
 import os
 import random
 import re
@@ -24,11 +27,44 @@ from tiles import LETTERS, TILE_VALUES, VOWELS
 HAND_SIZE = 7
 BONUS_ALL_TILES = 50
 
-DIFFICULTIES = ('easy', 'medium', 'hard')
-DEFAULT_DIFFICULTY = 'medium'
+MIN_LEVEL = 1
+MAX_LEVEL = 10
+DEFAULT_LEVEL = 6
+DIFFICULTIES = tuple(range(MIN_LEVEL, MAX_LEVEL + 1))
+DEFAULT_DIFFICULTY = DEFAULT_LEVEL
 
-# Gondolkodási időkeret másodpercben (a keresés ennyi után a eddigi legjobbal folytatja)
-_TIME_BUDGET = {'easy': 1.0, 'medium': 2.0, 'hard': 3.5}
+# A korábbi háromfokozatú skála (könnyű / közepes / nehéz) helye az új skálán: a régi mentések és
+# kliensek ugyanilyen erős robotot kapnak (egyenrangú ellenfelekkel mérve 38 / 53 / 49% volt).
+LEGACY_LEVELS = {'easy': 3, 'medium': 6, 'hard': 10}
+_LEVEL_TEXTS = {str(level): level for level in DIFFICULTIES}
+
+# Gondolkodási időkeret másodpercben (a keresés ennyi után az eddigi legjobbal folytatja). A robot
+# erejét a lépéskiválasztás szabja meg, nem az időkeret: a keresés a legtöbb táblán ennél jóval
+# hamarabb véget ér, így a szintek ereje nem függ a szerver sebességétől.
+_TIME_BUDGET = 1.5
+_HINT_TIME_BUDGET = 3.5
+
+# Fokozatonkénti erősség. Kétféle választási mód van:
+#   mu    — célpontszámos: a körönkénti célpontszám átlaga (lognormális szórással), a robot a hozzá
+#           legközelebbi pontszámú lépést rakja le;
+#   sigma — értékeléses: a legjobb (pont + maradék zsetonok értéke) lépés, az értékelésre rakott
+#           Gauss-zajjal (0 = mindig a legjobb);
+#   pass_p — esély, hogy a robot "nem talál" lépést, és passzol / cserél.
+# Mért átlagos pontszám körönként (bot–bot önjáték, a passzok is számítanak): 4,5 · 6,2 · 7,7 ·
+# 10,1 · 12,7 · 15,2 · 16,8 · 19,0 · 20,9 · 23,1. Újramérés: `python tools/bot_arena.py ladder`.
+_PROFILES = {
+    1: {'mu': 2, 'pass_p': 0.15},
+    2: {'mu': 5},
+    3: {'mu': 8},
+    4: {'mu': 12},
+    5: {'mu': 16},
+    6: {'mu': 20},
+    7: {'mu': 26},
+    8: {'sigma': 8},
+    9: {'sigma': 4},
+    10: {'sigma': 0},
+}
+_TARGET_CV = 0.5  # a célpontszám relatív szórása
 
 _DIC_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dict', 'hu_HU.dic')
 _STEM_RE = re.compile(r'^[a-záéíóöőúüű]{2,15}$')
@@ -37,6 +73,29 @@ _HAS_VOWEL_RE = re.compile(r'[aáeéiíoóöőuúüű]')
 
 class _OutOfTime(Exception):
     """A keresés időkerete lejárt."""
+
+
+def parse_level(value):
+    """A robot fokozata (1–10) a megadott értékből, vagy None, ha érvénytelen.
+
+    Elfogadja az egész számot, a számot szövegként ("6"), és a korábbi neveket
+    ('easy' / 'medium' / 'hard')."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    if isinstance(value, int):
+        return value if MIN_LEVEL <= value <= MAX_LEVEL else None
+    if isinstance(value, str):
+        text = value.strip().lower()
+        return LEGACY_LEVELS.get(text) or _LEVEL_TEXTS.get(text)
+    return None
+
+
+def normalize_level(value):
+    """Mint a `parse_level`, de érvénytelen vagy hiányzó érték esetén az alapértelmezett fokozat."""
+    level = parse_level(value)
+    return level if level is not None else DEFAULT_LEVEL
 
 
 # --- Szókincs ---
@@ -378,7 +437,7 @@ def _remaining_after(rack, move):
 
 
 def _rate(moves, rack, bag_remaining):
-    """Kitölti a lépések `equity` értékét (nehéz szinthez)."""
+    """Kitölti a lépések `equity` értékét (az értékeléses fokozatokhoz)."""
     for move in moves:
         leave = _remaining_after(rack, move)
         if bag_remaining == 0:
@@ -403,26 +462,25 @@ def _first_valid(candidates, wanted=1, batch=8):
     return chosen
 
 
-def _ordered_candidates(moves, difficulty, rng):
-    """A jelöltek preferencia szerinti sorrendje a nehézségi szint alapján."""
-    if difficulty == 'hard':
-        return sorted(moves, key=lambda m: (-m.equity, rng.random()))
+def _uses_equity(level):
+    """Értékeléses (nem célpontszámos) fokozat: a lépések `equity` értékét ki kell tölteni."""
+    return 'sigma' in _PROFILES[level]
 
-    by_score = sorted(moves, key=lambda m: -m.score)
-    if difficulty == 'easy':
-        # Rövid szavak, a gyengébb lépések közül véletlen
-        short = [m for m in by_score if len(m.tiles) <= 4] or by_score
-        half = short[len(short) // 2:] or short
-        pool = list(half)
-        rng.shuffle(pool)
-        rest = [m for m in by_score if m not in pool]
-        return pool + rest
 
-    # közepes: a legjobb ~30% közül véletlen, majd a többi pontszám szerint
-    top = max(3, len(by_score) * 3 // 10)
-    pool = by_score[:top]
-    rng.shuffle(pool)
-    return pool + by_score[top:]
+def _ordered_candidates(moves, level, rng):
+    """A jelöltek preferencia szerinti sorrendje a fokozat alapján (az első a legkedvezőbb).
+
+    Célpontszámos fokozatnál a körönként sorsolt célpontszámhoz legközelebbi pontszámú lépés az első;
+    értékeléses fokozatnál a legnagyobb (zajjal terhelt) `equity`. Az összes lépés megmarad
+    tartaléknak arra az esetre, ha a legkedvezőbbet a játék szótára elutasítja."""
+    profile = _PROFILES[normalize_level(level)]
+    if 'mu' in profile:
+        target = profile['mu'] * math.exp(rng.gauss(-_TARGET_CV ** 2 / 2, _TARGET_CV))
+        return sorted(moves, key=lambda m: (abs(m.score - target), rng.random()))
+    sigma = profile['sigma']
+    if sigma:
+        return sorted(moves, key=lambda m: -(m.equity + rng.gauss(0, sigma)))
+    return sorted(moves, key=lambda m: (-m.equity, rng.random()))
 
 
 def choose_exchange(rack, rng=None):
@@ -451,6 +509,8 @@ def choose_action(board, rack, difficulty, bag_remaining, rng=None, vocab=None, 
                   avoid=None):
     """Eldönti, mit lép a robot.
 
+    difficulty: a robot fokozata (1–10); a korábbi nevek ('easy' / 'medium' / 'hard') is érvényesek,
+    érvénytelen érték esetén az alapértelmezett fokozat érvényes.
     avoid: kerülendő lerakások (a tiles halmaza) — pl. a szavazással elutasítottak.
 
     Visszatér egy dict-et:
@@ -459,19 +519,22 @@ def choose_action(board, rack, difficulty, bag_remaining, rng=None, vocab=None, 
       {'action': 'pass'}
     """
     rng = rng or random
-    if difficulty not in DIFFICULTIES:
-        difficulty = DEFAULT_DIFFICULTY
+    level = normalize_level(difficulty)
 
-    moves = generate_moves(
-        board, rack, vocab=vocab,
-        allow_blanks=(difficulty != 'easy'),
-        seconds=_TIME_BUDGET[difficulty], yield_fn=yield_fn,
-    )
+    pass_p = _PROFILES[level].get('pass_p', 0)
+    if pass_p and rng.random() < pass_p:
+        # "Nem talál" lépést (a legalsó fokozat néha elakad, mint a kezdő játékosok)
+        if bag_remaining >= HAND_SIZE:
+            return {'action': 'exchange', 'indices': choose_exchange(rack, rng)}
+        return {'action': 'pass'}
+
+    moves = generate_moves(board, rack, vocab=vocab, allow_blanks=True,
+                           seconds=_TIME_BUDGET, yield_fn=yield_fn)
     if avoid:
         moves = [m for m in moves if frozenset(m.tiles) not in avoid]
-    if difficulty == 'hard' or bag_remaining == 0:
+    if _uses_equity(level):
         _rate(moves, rack, bag_remaining)
-    candidates = _ordered_candidates(moves, difficulty, rng)
+    candidates = _ordered_candidates(moves, level, rng)
     best = _first_valid(candidates)
 
     if best:
@@ -485,6 +548,6 @@ def choose_action(board, rack, difficulty, bag_remaining, rng=None, vocab=None, 
 def best_moves(board, rack, count=3, vocab=None, yield_fn=None):
     """A `count` legjobb (szótár szerint érvényes) lépés tippként, pontszám szerint rendezve."""
     moves = generate_moves(board, rack, vocab=vocab, allow_blanks=True,
-                           seconds=_TIME_BUDGET['hard'], yield_fn=yield_fn)
+                           seconds=_HINT_TIME_BUDGET, yield_fn=yield_fn)
     moves.sort(key=lambda m: -m.score)
     return _first_valid(moves, wanted=count)

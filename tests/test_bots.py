@@ -15,8 +15,14 @@ class TestGameBots:
         ok, _ = game.add_bot('Robi', 'easy')
         assert ok
         bot = game.players[1]
-        assert bot.is_bot and bot.difficulty == 'easy'
+        assert bot.is_bot and bot.difficulty == 3  # a régi 'easy' a 3. fokozat
         assert bot.id.startswith('bot-')
+
+    def test_bot_keeps_the_given_level(self):
+        game = Game('g')
+        game.add_player('H', 'Human')
+        game.add_bot('Robi', 8)
+        assert game.players[1].difficulty == 8
 
     def test_bot_ids_are_unique(self):
         game = Game('g')
@@ -57,7 +63,7 @@ class TestGameBots:
         states = game.get_all_states()
         assert list(states) == ['H']  # robotnak nem készül állapot
         bot = next(p for p in states['H']['players'] if p['is_bot'])
-        assert bot['difficulty'] == 'hard'
+        assert bot['difficulty'] == 10
         assert 'hand' not in bot
         assert bot['hand_count'] == 7
 
@@ -102,8 +108,39 @@ class TestGameBots:
         data = json.loads(json.dumps(game.to_save_dict()))
         restored = Game.from_save_dict(data)
         bot = restored.players[1]
-        assert bot.is_bot and bot.difficulty == 'hard' and bot.name == 'Rezső'
+        assert bot.is_bot and bot.difficulty == 10 and bot.name == 'Rezső'
         assert not bot.disconnected
+
+    def test_save_roundtrip_keeps_every_level(self):
+        game = Game('g')
+        game.add_player('H', 'Human')
+        for level in (1, 5, 8):
+            game.add_bot(f'B{level}', level)
+        game.start()
+        restored = Game.from_save_dict(json.loads(json.dumps(game.to_save_dict())))
+        assert [p.difficulty for p in restored.players[1:]] == [1, 5, 8]
+
+    def test_old_saves_with_named_difficulty_load_on_the_new_scale(self):
+        game = Game('g')
+        game.add_player('H', 'Human')
+        game.add_bot('A', 'easy')
+        game.add_bot('B', 'medium')
+        game.add_bot('C', 'hard')
+        game.start()
+        data = game.to_save_dict()
+        for pd, old in zip(data['players'][1:], ('easy', 'medium', 'hard')):
+            pd['difficulty'] = old  # így mentette a régi változat
+        restored = Game.from_save_dict(data)
+        assert [p.difficulty for p in restored.players[1:]] == [3, 6, 10]
+
+    def test_old_saves_without_a_bot_level_get_the_default(self):
+        game = Game('g')
+        game.add_player('H', 'Human')
+        game.add_bot('Robi', 'hard')
+        game.start()
+        data = game.to_save_dict()
+        data['players'][1].pop('difficulty')
+        assert Game.from_save_dict(data).players[1].difficulty == 6
 
     def test_restored_bot_is_never_disconnected(self):
         game = Game('g')
@@ -316,14 +353,39 @@ def _no_bg(monkeypatch):
 
 class TestCreateRoomWithBots:
     def test_creates_bots(self, make_client):
-        room = _create(make_client(), ai_players=['hard', 'easy'])
+        room = _create(make_client(), ai_players=[10, 2])
         assert [p.is_bot for p in room.game.players] == [False, True, True]
-        assert [p.difficulty for p in room.game.players[1:]] == ['hard', 'easy']
+        assert [p.difficulty for p in room.game.players[1:]] == [10, 2]
+
+    def test_legacy_difficulty_names_are_still_accepted(self, make_client):
+        room = _create(make_client(), ai_players=['hard', 'easy'])
+        assert [p.difficulty for p in room.game.players[1:]] == [10, 3]
+
+    def test_numeric_string_levels_are_accepted(self, make_client):
+        room = _create(make_client(), ai_players=['4', '9'])
+        assert [p.difficulty for p in room.game.players[1:]] == [4, 9]
 
     def test_bot_names_are_unique_and_match_difficulty(self, make_client):
         room = _create(make_client(), ai_players=['easy', 'easy', 'easy'])
         names = [p.name for p in room.game.players]
         assert len(set(names)) == 4
+
+    def test_bot_names_follow_the_level_band(self):
+        import server
+        assert [server._bot_tier(lv) for lv in range(1, 11)] == [
+            'easy', 'easy', 'easy', 'medium', 'medium', 'medium', 'medium', 'hard', 'hard', 'hard']
+        game = Game('g')
+        game.add_player('H', 'Human')
+        names = [server._bot_name(game, lv) for lv in (1, 5, 9)]
+        assert names[0] in server._BOT_NAMES['easy']
+        assert names[1] in server._BOT_NAMES['medium']
+        assert names[2] in server._BOT_NAMES['hard']
+
+    def test_think_delay_exists_for_every_level(self):
+        import server
+        for level in range(1, 11):
+            low, high = server._BOT_THINK_DELAY[server._bot_tier(level)]
+            assert 0 < low <= high
 
     def test_bots_are_limited_by_free_seats(self, make_client):
         room = _create(make_client(), max_players=2, ai_players=['easy', 'easy', 'easy'])
@@ -334,8 +396,8 @@ class TestCreateRoomWithBots:
         assert len(room.game.players) == 4
 
     def test_unknown_difficulties_are_ignored(self, make_client):
-        room = _create(make_client(), ai_players=['nonsense', 'hard', 5, None])
-        assert [p.difficulty for p in room.game.players[1:]] == ['hard']
+        room = _create(make_client(), ai_players=['nonsense', 'hard', 5, None, 0, 11, True, 2.5, {}])
+        assert [p.difficulty for p in room.game.players[1:]] == [10, 5]
 
     def test_non_list_is_ignored(self, make_client):
         room = _create(make_client(), ai_players='hard')
