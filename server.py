@@ -17,6 +17,7 @@ import ai_player
 import async_games
 import daily
 import dictionary
+import practice
 import push_service
 from game import Game, CHALLENGE_TIMEOUT, ALLOWED_HINT_LIMITS, DEFAULT_HINT_LIMIT
 from room import Room
@@ -2510,6 +2511,7 @@ if __name__ == '__main__':
     _cleanup_finished_saves()
     dictionary.warm_up()  # a szótár betöltése indításkor (az első lerakásnál ne kelljen várni)
     ai_player.get_vocabulary()  # a robot szókincse (a ragozott alakokkal ~2 mp) is előre épüljön fel
+    practice.warm_up()  # gyakorló módok: tőszavak, a 2–3 zsetonos szavak listái
     try:
         daily.ensure_puzzle()  # a mai feladvány is készen álljon
     except Exception as e:

@@ -24,7 +24,7 @@ Böngészőben: http://localhost:5000
 - `async_games.py` — Levelezős játék: `build_game`, névütközés-kezelés, a lobby-lista összegzése
 - `daily.py` — Napi feladvány: dátumból determinisztikusan előállított tábla + kéz, játék felállítása, eredmény rögzítése
 - `elo.py` — Többjátékos ELO (páronként számolva, K = 32 / 20)
-- `practice.py` — Szókvíz és a rövid (2–3 zsetonos) szavak listája
+- `practice.py` — Gyakorló módok motorja: szókvíz (`make_quiz`, módok: vegyes / 2 / 3 zsetonos / hosszú–rövid csapdák), betűvadász és bingó-edző (`make_rack`, `rack_words`, `check_rack_word`), a rövid (2–3 zsetonos) szavak listája; állapotmentes
 - `push_service.py` — Web Push: VAPID kulcsok, feliratkozások, „Te jössz!” üzenet (opcionális `pywebpush`)
 - `tiles.py` — Magyar betűkészlet (100 zseton), TileBag osztály, `tokenize_word` (szó → zsetonok)
 - `challenge.py` — Challenge (megtámadás) logika, szavazási állapotgép, vote resolution
@@ -40,12 +40,12 @@ Böngészőben: http://localhost:5000
 - `dict/` — Beágyazott hu_HU hunspell szótár fájlok (hu_HU.dic, hu_HU.aff)
 - `templates/index.html` — Egyoldalas UI: auth (3 tab), lobby (Kezdőlap / Új szoba / Mentett játékok / Barátok / Levelezős / Gyakorlás / Ranglista), várakozó szoba, játék, profil, visszajátszás (+ elemzés); közös SVG ikon-sprite, minden képernyőn egységes felső sáv (`app-topbar`); minden szöveg `data-i18n*` jelölésű
 - `templates/sw.js` — Service worker (Jinja sablon, `VERSION` = kliens fájlok mtime-ja)
-- `static/app.js` — Kliens logika, drag & drop, pinch-to-zoom, Socket.IO kommunikáció, auth flow, téma váltás, hang rendszer (SoundManager, SoundSettings), megfigyelő mód, ranglista, szótár-böngésző, előnézet, zsetonszámláló, tipp, gyorsbillentyűk, PWA telepítés; modulok: `Daily`, `Practice`, `AsyncGames`, `Push`, `Badges`, `Replay` (elemzés, megosztás)
+- `static/app.js` — Kliens logika, drag & drop, pinch-to-zoom, Socket.IO kommunikáció, auth flow, téma váltás, hang rendszer (SoundManager, SoundSettings), megfigyelő mód, ranglista, szótár-böngésző, előnézet, zsetonszámláló, tipp, gyorsbillentyűk, PWA telepítés; modulok: `Daily`, `Practice` (+ `PracticeStore`: a gyakorlás statisztikája a `localStorage`-ban), `AsyncGames`, `LobbyNav`, `Push`, `Badges`, `Replay` (elemzés, megosztás); közös segédek: `makeEl`, `makeAvatar`, `tokenizeWord` (a szerver `tokenize_word`-jének mása), `fillWordTiles`
 - `static/i18n.js` + `static/i18n-data.js` — Többnyelvű felület: `t()`, `tServer()`, `I18N.setLang()`; a fordítások (hu/en) szigorú JSON-ban
-- `static/style.css` — Apple HIG ihletésű design rendszer (tokenek, iOS-szerű komponensek), sötét/világos téma, reszponzív layout (asztali / tablet / telefon, álló és fekvő), 17. szakasz: új funkciók és animációk
+- `static/style.css` — Apple HIG ihletésű design rendszer (tokenek, iOS-szerű komponensek), sötét/világos téma, reszponzív layout (asztali / tablet / telefon, álló és fekvő), 17. szakasz: új funkciók és animációk, 18. szakasz: Gyakorlás és Levelezős (újratervezve: közös elemek, hub, szókvíz, betűvadász, szólisták, levelezős kártyák és lap)
 - `static/manifest.webmanifest`, `static/offline.html`, `static/icons/` — PWA
 - `tools/bot_arena.py` — Robot-aréna: a fokozatok erejének mérése bot–bot játékokkal (`ladder`, `match`, `adapt`; kalibrációhoz, nem része a szervernek)
-- `tests/` — Tesztek (pytest, 1264 teszt)
+- `tests/` — Tesztek (pytest, 1302 teszt)
 - `requirements.txt` — Python függőségek (flask, flask-socketio, gevent, gevent-websocket, opcionálisan pywebpush)
 - `.venv/` — Virtual environment
 
@@ -55,8 +55,8 @@ Böngészőben: http://localhost:5000
 - **Megfigyelő mód**: nyilvános, folyamatban lévő játék megfigyelése (lobby „Élő játékok”), privát játék kóddal
 - **Ranglista**: **értékszám (ELO, alapértelmezett)** / győzelmek / nyerési arány / átlagpont / legjobb játék (csak regisztrált, robot nélküli, befejezett játékok)
 - **Napi feladvány**: naponta egy közös tábla + kéz, cél a legtöbb pontot érő lépés; napi ranglista, tegnapi megoldás
-- **Gyakorlás**: „Melyik szó érvényes?” kvíz, a 2–3 zsetonos szavak teljes listája
-- **Levelezős játék**: barátokkal órák / napok alatt lépkedve (24 óra – 7 nap/lépés), push értesítéssel
+- **Gyakorlás** (főoldal + al-nézetek): **Szókvíz** (vegyes / 2 / 3 zsetonos / hosszú–rövid csapdák, 10 vagy 20 kérdés, sorozat, magyarázat és javaslatok), **Betűvadász** (hét zsetonból minél több szó, opcionális 60 / 120 mp, tipp, bónusz szavak), **Bingó-edző** (a hét zsetonos szó megtalálása, sorozat), **Hibáim** (a kvízben eltévesztett szavak pakli, kétszeri helyes válasz kivesz), **Szólisták** (2–3 zsetonos szavak keresővel, kezdőbetű-szűrővel, rendezéssel + zsetontáblázat); napi sorozat és statisztika az eszközön; a napi feladvány kiemelt kártyaként a tetején
+- **Levelezős játék**: barátokkal órák / napok alatt lépkedve (24 óra – 7 nap/lépés), push értesítéssel; játékkártyák (soron lévő, hátralévő idő sáv), új játék alsó lapon (idő: szegmentált választó, barátok: kijelölhető sorok)
 - **Játékelemzés**: a játék végén lépésenként a legjobb lehetséges lépés és a kint maradt pont
 - **Kitüntetések** (bingó, 100+ pontos lépés, 8+ zsetonos szó, joker, 300 pontos játék, robotverő, napi feladvány…), **visszajátszás megosztása linkkel** (`/?replay=TOKEN`), **visszavonás** (függő lerakás visszavonása szavazás előtt, Ctrl+Z)
 - **Web Push**: értesítés, ha rád kerül a sor, miközben nem nézed a játékot (profil → kapcsoló)
@@ -171,7 +171,8 @@ Vendég mód: a régi név-megadós flow megmarad (statisztikák nem mentődnek)
 - `GET /api/game/<id>/analysis` — játékelemzés (háttérben számolódik: `status: running|ready|unavailable|error`)
 - `GET /api/async/games` — a felhasználó folyamatban lévő levelezős játékai (akinél a sor, az elöl)
 - `GET /api/daily` / `GET /api/daily/leaderboard?date=` — napi feladvány, napi ranglista
-- `GET /api/practice/quiz?n=&length=`, `POST /api/practice/answer`, `GET /api/practice/short-words?length=2|3`
+- `GET /api/practice/quiz?n=&mode=mixed|2|3|tricky` (a kérdések + `tiles`), `POST /api/practice/answer`, `GET /api/practice/short-words?length=2|3`
+- `GET /api/practice/rack?kind=hunt|bingo` (7 zseton + az összes kirakható szó pontértékkel), `POST /api/practice/rack-word` (`{rack, word}`: kirakható-e és érvényes-e a listán nem szereplő szó)
 - `GET /api/push/public-key`, `POST /api/push/subscribe|unsubscribe` — Web Push (bejelentkezve)
 - `GET /api/leaderboard?metric=rating|wins|win_rate|avg_score|best_game&limit=50` — ranglista (nyilvános; bejelentkezve a saját helyezés is: `me`, `is_me`)
 - `GET|POST /api/dictionary/check` (`q` / `words`, max. 8 szó) — szó-ellenőrzés: `valid`, `tiles`, `score`, `reason`, `suggestions`
@@ -232,11 +233,12 @@ Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztésh
 | `tests/test_replay_share.py` | 11 | Megosztási token, nyilvános replay, jogosultság, rate limit |
 | `tests/test_analysis.py` | 23 | Kezek rögzítése, lépéselemzés, gyorsítótár, háttérszámítás, API |
 | `tests/test_daily.py` | 49 | Napi feladvány: előállítás (determinizmus), játék, ranglista, socket, HTTP |
-| `tests/test_practice.py` | 24 | Szókvíz, rövid szavak, válasz-ellenőrzés, API |
+| `tests/test_practice.py` | 47 | Szókvíz (csapda mód), rövid szavak, válasz-ellenőrzés, betűvadász / bingó (kéz, szólista, szó-bírálat), API |
+| `tests/test_practice_client.py` | 15 | A kliens gyakorló logikája node-ban: zsetonokra bontás a szerverrel egyezik, magyar ábécé-rendezés, napi sorozat, „Hibáim” pakli, tároló |
 | `tests/test_push.py` | 42 | VAPID, feliratkozások, küldés (mockolva), API, „Te jössz!” kiváltása |
 | `tests/test_async_games.py` | 55 | Levelezős játék: játéklogika (határidő, lejárat, feladás), szerver, mentés / visszaállítás, lista, útvonalak |
 
-**Összesen: 1264 teszt**
+**Összesen: 1302 teszt**
 
 Fixture: `tests/conftest.py` — temp_db (auto-applied, ideiglenes SQLite DB minden teszthez)
 Segédek: `tests/helpers.py` — `registered_set_name_payload()` (érvényes socket-tokennel), `verify_email()`
@@ -400,7 +402,7 @@ Játék közben a side panelen chat szekció érhető el:
 
 ### Képernyők
 1. **Auth képernyő**: 3 tab (Bejelentkezés, Regisztráció, Vendég), lebegő téma gomb
-2. **Lobby**: középre igazított szegmentált navigáció (Kezdőlap / Új szoba / Mentett játékok / Barátok / Ranglista), szoba létrehozás (regisztráltaknak; robotok száma + nehézsége), kóddal csatlakozás / megfigyelés, nyilvános szobák és élő játékok listája
+2. **Lobby**: középre igazított szegmentált navigáció (Kezdőlap / Új szoba / Mentett játékok / Barátok / Levelezős / Gyakorlás / Ranglista; keskeny képernyőn görgethető: a kijelölt fül középre görgetődik, a széleken elhalványul — `LobbyNav`; telefonon a cím röviden, „Scrabble”), szoba létrehozás (regisztráltaknak; robotok száma + nehézsége), kóddal csatlakozás / megfigyelés, nyilvános szobák és élő játékok listája
 3. **Várakozó szoba**: badge-ek (challenge/privát/időlimit), csatlakozási kód, játékoslista, start gomb (owner)
 4. **Játék képernyő**: info panel + tábla + betűtartó (lásd lent)
 5. **Profil** és **Visszajátszás**
@@ -609,8 +611,13 @@ A tábla cellái `container-type: inline-size` + `cqw` egységekkel méreteződn
 
 ## Gyakorló módok
 
-- `practice.make_quiz`: a fele érvényes szó (tőszavak + ~30% ragozott alak), a fele hihető félreírás (egy zsetonnyi módosítás, amelyet a szótár elutasít); `length=2|3` esetén csak annyi zsetonos szavak. A kérdés csak a szót adja, a választ `POST /api/practice/answer` a játék szótárával értékeli (állapot nélkül), hibás válasznál javaslatokkal.
-- `practice.short_words(2|3)`: az összes érvényes 2 / 3 zsetonos szó pontértékkel (lustán számolva, gyorsítótárazva).
+A Gyakorlás lap főoldalból (statisztika-sáv: napi sorozat / mai gyakorlat / kvíz-pontosság; a napi feladvány kiemelt kártyája; a módok iOS-szerű csoportosított listája) és al-nézetekből áll (`.practice-view`, `Practice.open(nézet)` / `back()`; a telefonon nincs egyetlen hosszú görgetés). Az eredmények és a „Hibáim” pakli az eszközön élnek (`PracticeStore`, `localStorage('scrabble-practice')`: napok, mai szám, kvíz-számlálók, betűvadász legjobb pontja időkorlátonként, bingó-sorozat, `missed`), vendégnek is működnek.
+
+- **Szókvíz** (`practice.make_quiz(count, mode)`): a fele érvényes szó (tőszavak + ~30% ragozott alak), a fele hihető félreírás, amelyet a szótár elutasít; minden hamis szó más forrásszóból készül. Módok: `mixed` (3–9 zsetonos, egy zsetonnyi módosítás), `2` / `3` (csak annyi zsetonos szavak), `tricky` (csapdák: egy magánhangzó hosszúságának cseréje, a↔á, e↔é, i↔í, o↔ó, ö↔ő, u↔ú, ü↔ű — `_mutate_length`). A kérdés csak a szót és a zsetonjait adja, a választ `POST /api/practice/answer` a játék szótárával értékeli (állapot nélkül), hibás válasznál javaslatokkal. A kliens a szót játékbeli zsetonokkal rajzolja (`fillWordTiles`); ←/→ billentyű: nem érvényes / érvényes, Enter / szóköz: következő. A tévesztett szó a „Hibáim” pakliba kerül (legfeljebb 200); a pakliból a kétszer egymás után helyes válasz kivesz, egy újabb tévedés nullázza a számlálót.
+- **Betűvadász / Bingó-edző** (`practice.make_rack(kind)`): 7 zseton (joker nélkül, a játék zsákjának darabszámai szerint, 2–4 magánhangzóval). `rack_words` a robot szókincsében prefix-vágással keresi az összes kirakható szót (a szótárral megerősítve; kb. 3 ms), a pont a zsetonértékek összege, mind a hét zseton +`BINGO_BONUS` (50). `hunt`: 12–150 szó, legalább egy 5+ zsetonos; `bingo`: a kéz egy 7 zsetonos szóból készül (75% szótári tőszó, hogy ne furcsa ragozott alak legyen), a lista a 7 zsetonos szavak. A kliens a listából azonnal pontoz; a listán nem szereplő, de érvényes szót `POST /api/practice/rack-word` (`check_rack_word`: `too_short` / `invalid_chars` / `not_in_rack` / `not_a_word`, a kétjegyű betű egy vagy két zseton is lehet, a több pontot érő kirakás számít) bírálja el, és bónusz szóként számít. Bevitel: zsetonokra koppintás, vagy billentyűzet (a kétjegyű betű két billentyű, ha nincs külön S / C… zseton); Enter / Backspace / szóköz (keverés). Időkorlát (nincs / 60 / 120 mp) csak a vadászaton; az óra megáll, ha a lap nem látszik. A tipp a legtöbb pontot érő megtalálatlan szó hosszát és kezdőbetűit adja (ismétléskor több betűt).
+- **Szólisták**: `practice.short_words(2|3)` — az összes érvényes 2 / 3 zsetonos szó pontértékkel (lustán számolva, gyorsítótárazva; `practice.warm_up()` indításkor előállítja). A kliens a magyar ábécé szerint (`HU_ALPHABET`, a kétjegyű betűk külön betűk) rendezi, kereső (a szó bármely részére), kezdőbetű-szűrő, ABC / pont rendezés; a „Zsetonok” fül a 100 zseton értéke és darabszáma pontérték szerint csoportosítva (a `TILE_VALUES` / `TILE_COUNTS` kliensoldali mása).
+- A `tokenizeWord` (JS) a szerver `tokenize_word`-jével azonos dinamikus programozás (kevesebb zseton, döntetlennél több pont: KÉSZSÉG = K É S ZS É G); a `tests/test_practice_client.py` több ezer szón összeveti.
+- A végpontok közös őre: `routes._practice_guard()` (IP-alapú rate limit `practice`: 120 / perc, és a szótár elérhetősége — hiányában 503).
 
 ## Levelezős (aszinkron) játék
 
@@ -618,6 +625,7 @@ A tábla cellái `container-type: inline-size` + `cqw` egységekkel méreteződn
 - A játék otthona az adatbázis: `saved_games.is_async`; `_persist_async` minden változás után ment (`_emit_all_states` hívja), `restore_async_games()` induláskor újraépíti a szobákat (minden játékos lecsatlakozottként, helyettesítő azonosítóval: `async_games.placeholder_id`), `open_async_game` szükség esetén betölti. `_async_sweeper` percenként `_expire_async_turns()`-t hív. A mentett játékok fülön / `restore_game` / `abandon` nem érinti őket.
 - Szoba: privát, `room.is_async`; lecsatlakozás / `leave_room` csak a nézetet zárja be (nincs türelmi idő, nincs feloszlatás). Játék vége után a szoba megszűnik, ha senki sincs bent.
 - Létrehozás: csak regisztrált, 1–3 **barát** (`friend_ids`), nincs robot, nincs megtámadás, nincs tipp. Értesítés: Web Push (meghívó / „Te jössz!”), `async_invited` / `async_your_turn` esemény a lobbyban lévőknek, jelvény a Levelezős fülön.
+- Felület (`AsyncGames`): a lista játékkártyákból áll (`.async-card`: a soron lévő monogramja, pontállás, „Te jössz!” / „X következik” jelvény, hátralévő idő és elfogyó sáv; sürgős, ha 6 óránál / a határidő 15%-ánál kevesebb van, vagy lejárt); üres állapotban magyarázat és gomb. Az **új játék alsó lap** (`#async-new-dialog`, `.dialog-sheet`): név, gondolkodási idő szegmentált választóval (24 ó / 48 ó / 3 nap / 7 nap), barátok kijelölhető sorokban (monogram, online jelző, `n/3` számláló; három kijelölése után a többi zárolt), a „Játék indítása” gomb legalább egy barátnál él. Barátok nélkül a lap a Barátok fülre irányít.
 
 ## Web Push
 
