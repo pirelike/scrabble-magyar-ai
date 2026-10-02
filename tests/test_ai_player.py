@@ -1,5 +1,6 @@
 """Az AI ellenfél motorjának tesztjei (ai_player.py)."""
 import random
+import statistics
 
 import pytest
 
@@ -7,6 +8,7 @@ import ai_player
 from ai_player import Vocabulary, Move, generate_moves, choose_action, best_moves
 from board import Board, CENTER
 from game import Game
+from player import Player
 from tiles import TILE_VALUES
 
 
@@ -175,30 +177,38 @@ class TestDifficultyPolicy:
             moves.append(move)
         return moves
 
-    def test_hard_orders_by_equity(self):
+    def test_top_level_orders_by_equity(self):
         moves = self._moves()
         moves[0].equity = 999.0
-        ordered = ai_player._ordered_candidates(moves, 'hard', random.Random(1))
+        ordered = ai_player._ordered_candidates(moves, ai_player.MAX_LEVEL, random.Random(1))
         assert ordered[0] is moves[0]
         equities = [m.equity for m in ordered]
         assert equities == sorted(equities, reverse=True)
 
-    def test_easy_prefers_short_weak_moves(self):
+    def test_mean_picked_score_rises_with_every_level(self):
+        """Fokozatonként nő az átlagosan választott lépés pontszáma (a skála monoton)."""
         moves = self._moves()
-        short_scores = sorted((m.score for m in moves if len(m.tiles) <= 4), reverse=True)
-        lower_half_max = short_scores[len(short_scores) // 2]
-        for seed in range(30):
-            first = ai_player._ordered_candidates(moves, 'easy', random.Random(seed))[0]
-            assert len(first.tiles) <= 4
-            assert first.score <= lower_half_max
+        means = []
+        for level in ai_player.DIFFICULTIES:
+            picks = [ai_player._ordered_candidates(moves, level, random.Random(seed))[0].score
+                     for seed in range(300)]
+            means.append(statistics.mean(picks))
+        assert all(a < b for a, b in zip(means, means[1:])), means
 
-    def test_medium_picks_from_top_third(self):
+    def test_lowest_level_plays_the_weakest_moves(self):
         moves = self._moves()
-        by_score = sorted(moves, key=lambda m: -m.score)
-        top = set(map(id, by_score[:max(3, len(by_score) * 3 // 10)]))
-        for seed in range(15):
-            ordered = ai_player._ordered_candidates(moves, 'medium', random.Random(seed))
-            assert id(ordered[0]) in top
+        weakest_few = sorted(m.score for m in moves)[:3]
+        for seed in range(100):
+            first = ai_player._ordered_candidates(moves, ai_player.MIN_LEVEL, random.Random(seed))[0]
+            assert first.score in weakest_few
+
+    def test_middle_level_picks_near_its_target(self):
+        """A 6. fokozat (célpontszám ~20) sem a legjobb, sem a leggyengébb lépést nem választja."""
+        moves = self._moves()
+        picks = [ai_player._ordered_candidates(moves, 6, random.Random(seed))[0].score
+                 for seed in range(200)]
+        assert 10 < statistics.mean(picks) < 32
+        assert min(picks) < max(picks)  # nem mindig ugyanazt
 
     def test_all_moves_kept_as_fallbacks(self):
         moves = self._moves()
@@ -206,6 +216,50 @@ class TestDifficultyPolicy:
             ordered = ai_player._ordered_candidates(moves, level, random.Random(2))
             assert len(ordered) == len(moves)
             assert {id(m) for m in ordered} == {id(m) for m in moves}
+
+
+class TestLevels:
+    def test_there_are_ten_levels(self):
+        assert ai_player.DIFFICULTIES == tuple(range(1, 11))
+        assert set(ai_player._PROFILES) == set(ai_player.DIFFICULTIES)
+
+    def test_legacy_names_map_onto_the_new_scale(self):
+        assert ai_player.parse_level('easy') == 3
+        assert ai_player.parse_level('medium') == 6
+        assert ai_player.parse_level('hard') == 10
+
+    def test_numbers_and_numeric_strings_are_accepted(self):
+        assert ai_player.parse_level(1) == 1
+        assert ai_player.parse_level(10) == 10
+        assert ai_player.parse_level('7') == 7
+        assert ai_player.parse_level(' Hard ') == 10
+        assert ai_player.parse_level(4.0) == 4
+
+    @pytest.mark.parametrize('bad', [0, 11, -1, 2.5, True, False, None, 'nonsense', '', '0', '11',
+                                     '²', [], {}, (6,)])
+    def test_invalid_values_are_rejected(self, bad):
+        assert ai_player.parse_level(bad) is None
+
+    def test_normalize_falls_back_to_the_default(self):
+        assert ai_player.normalize_level(None) == ai_player.DEFAULT_LEVEL
+        assert ai_player.normalize_level('nonsense') == ai_player.DEFAULT_LEVEL
+        assert ai_player.normalize_level(8) == 8
+
+    def test_default_level_is_the_old_medium(self):
+        assert ai_player.DEFAULT_LEVEL == ai_player.LEGACY_LEVELS['medium']
+
+    def test_bots_store_the_normalized_level(self):
+        assert Player('b', 'Robi', is_bot=True, difficulty='hard').difficulty == 10
+        assert Player('b', 'Robi', is_bot=True, difficulty=4).difficulty == 4
+        assert Player('b', 'Robi', is_bot=True).difficulty == ai_player.DEFAULT_LEVEL
+        assert Player('h', 'Ember', difficulty=4).difficulty is None
+
+
+class _ZeroRng(random.Random):
+    """Mindig 0-t ad: a "véletlen" esemény biztosan bekövetkezik."""
+
+    def random(self):
+        return 0.0
 
 
 class TestChooseAction:
@@ -234,6 +288,22 @@ class TestChooseAction:
     def test_passes_when_bag_too_small_to_exchange(self):
         vocab = Vocabulary(['ALMA'])
         assert choose_action(Board(), ['Ű'] * 7, 'medium', 3, vocab=vocab)['action'] == 'pass'
+
+    def test_lowest_level_sometimes_gets_stuck(self):
+        """Az 1. fokozat néha "nem talál" lépést: cserél, ha a zsák engedi, különben passzol."""
+        rack = list('ALMAKÖR')
+        assert choose_action(Board(), rack, 1, 80, rng=_ZeroRng())['action'] == 'exchange'
+        assert choose_action(Board(), rack, 1, 3, rng=_ZeroRng()) == {'action': 'pass'}
+
+    def test_other_levels_never_get_stuck_by_chance(self):
+        rack = list('ALMAKÖR')
+        for level in range(2, 11):
+            assert choose_action(Board(), rack, level, 80, rng=_ZeroRng())['action'] == 'place'
+
+    def test_legacy_names_still_choose_actions(self):
+        for name in ('easy', 'medium', 'hard'):
+            assert choose_action(Board(), list('ALMAKÖR'), name, 80,
+                                 rng=random.Random(1))['action'] == 'place'
 
     def test_unknown_difficulty_falls_back_to_default(self):
         action = choose_action(Board(), list('ALMAKÖR'), 'nonsense', 80, rng=random.Random(1))
@@ -291,3 +361,35 @@ def test_tile_values_are_consistent_with_move_scores():
     assert moves
     # AL a középső (DW) mezőt fedi: (1+1)*2
     assert max(m.score for m in moves) == (TILE_VALUES['A'] + TILE_VALUES['L']) * 2
+
+
+class TestStrengthOrdering:
+    @staticmethod
+    def _final_scores(levels, seed):
+        random.seed(seed)  # a zsák keverése
+        rng = random.Random(seed)
+        game = Game('s')
+        for i, level in enumerate(levels):
+            game.add_bot(f'B{i}', level)
+        game.start()
+        for _ in range(200):
+            if game.finished:
+                break
+            player = game.current_player()
+            action = choose_action(game.board, list(player.hand), player.difficulty,
+                                   game.bag.remaining(), rng=rng)
+            ok = False
+            if action['action'] == 'place':
+                ok = game.place_tiles(player.id, action['tiles'])[0]
+            elif action['action'] == 'exchange':
+                ok = game.exchange_tiles(player.id, action['indices'])[0]
+            if not ok:
+                game.pass_turn(player.id)
+        return [p.score for p in game.players]
+
+    def test_a_much_stronger_level_outscores_a_weak_one(self):
+        weak = strong = 0
+        for seed in range(3):
+            a, b = self._final_scores([2, 9], seed)
+            weak, strong = weak + a, strong + b
+        assert strong > weak * 2

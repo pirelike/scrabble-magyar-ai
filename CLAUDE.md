@@ -14,8 +14,8 @@ Böngészőben: http://localhost:5000
 ## Fájlstruktúra
 - `server.py` — Flask + SocketIO szerver, lobby/szoba kezelés, Cloudflare tunnel integráció, Socket.IO event handlerek, reconnection grace period, robotlépések (`_schedule_bot_turn` / `_play_bot_turn`), megfigyelők, előnézet, tipp
 - `game.py` — Játéklogika (Game osztály), körök, pontozás, játék vége, challenge rendszer, kör időlimit, robotok (`add_bot`), szerkezetes `last_action_info`, lépéstörténet (`get_history`), előnézet (`preview_placement`)
-- `player.py` — Player osztály (id, név, kéz, pontszám, disconnected állapot, `is_bot`, `difficulty`)
-- `ai_player.py` — Robot ellenfél: szókincs (a szótár tőszavai), horgonyalapú lépésgenerátor, nehézségi szintek, tippek
+- `player.py` — Player osztály (id, név, kéz, pontszám, disconnected állapot, `is_bot`, `difficulty`: a robot fokozata 1–10, a régi `easy`/`medium`/`hard` átképeződik)
+- `ai_player.py` — Robot ellenfél: szókincs (a szótár tőszavai), horgonyalapú lépésgenerátor, 10 fokozatú nehézség (`parse_level`, `_PROFILES`), tippek
 - `board.py` — 15×15 tábla, premium mezők, szó elhelyezés validáció és pontozás
 - `dictionary.py` — Magyar szótár-ellenőrzés a beágyazott `affix_checker`-rel (nincs rendszerfüggőség), magánhangzó nélküli rövidítések kizárása, `is_available`/`warm_up`, tömeges `filter_valid` (gyorsítótárral), `suggest_words` (egy betűnyi szerkesztés)
 - `affix_checker.py` — Tisztán Python, Hunspell-szerű szóellenőrző a `dict/hu_HU.{aff,dic}` fájlokhoz: szótő, előtag, legfeljebb két toldalék, folytatási osztályok (AF aliasok), NEEDAFFIX/ONLYINCOMPOUND/FORBIDDENWORD; **összetételi szabályok nélkül**
@@ -37,13 +37,14 @@ Böngészőben: http://localhost:5000
 - `static/i18n.js` + `static/i18n-data.js` — Többnyelvű felület: `t()`, `tServer()`, `I18N.setLang()`; a fordítások (hu/en) szigorú JSON-ban
 - `static/style.css` — Apple HIG ihletésű design rendszer (tokenek, iOS-szerű komponensek), sötét/világos téma, reszponzív layout (asztali / tablet / telefon, álló és fekvő), 17. szakasz: új funkciók és animációk
 - `static/manifest.webmanifest`, `static/offline.html`, `static/icons/` — PWA
-- `tests/` — Tesztek (pytest, 889 teszt)
+- `tools/bot_arena.py` — Robot-aréna: a fokozatok erejének mérése bot–bot játékokkal (kalibrációhoz, nem része a szervernek)
+- `tests/` — Tesztek (pytest, 933 teszt)
 - `requirements.txt` — Python függőségek (flask, flask-socketio, eventlet)
 - `.venv/` — Virtual environment
 
 ## Funkciók
 - 1-4 játékos (egyedül is játszható)
-- **Robot ellenfelek**: 1–3 robot, könnyű / közepes / nehéz; egyedül játszva tipp (3 legjobb lépés, szobánként állítható / kikapcsolható limit: 0/1/3/5/10); robotos játék nem számít a ranglistába
+- **Robot ellenfelek**: 1–3 robot, 10 nehézségi fokozat (1 újonc · 2 kezdő · 3 könnyű · 4 mérsékelt · 5 alkalmi · 6 közepes · 7 ügyes · 8 haladó · 9 erős · 10 mester); egyedül játszva tipp (3 legjobb lépés, szobánként állítható / kikapcsolható limit: 0/1/3/5/10); robotos játék nem számít a ranglistába
 - **Megfigyelő mód**: nyilvános, folyamatban lévő játék megfigyelése (lobby „Élő játékok”), privát játék kóddal
 - **Ranglista**: győzelmek / nyerési arány / átlagpont / legjobb játék (csak regisztrált, robot nélküli, befejezett játékok)
 - **Szótár-böngésző**: szó-ellenőrző párbeszéd (érvényes-e, pontérték, zsetonok, javaslatok)
@@ -197,15 +198,15 @@ Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztésh
 | `tests/test_friends.py` | 27 | Barát CRUD, kérések, felhasználókeresés, szobameghívó, online státusz |
 | `tests/test_timer_and_replay.py` | 27 | Kör időlimit, replay perzisztencia |
 | `tests/test_regressions.py` | 80 | Kódátvizsgálás során talált hibák: zsák, dupla cella, passz-végjáték, mentés szavazás közben, IP rate limit, e-mail megerősítés, socket-token, session átvétel, visszaállítás/késői csatlakozás, várakozó szoba türelmi ideje |
-| `tests/test_ai_player.py` | 39 | Robot motor: szókincs, lépésgenerátor (pontszám = játék pontozása), nehézségi szintek, csere/passz, tipp |
-| `tests/test_bots.py` | 106 | Robotok a játékmodellben (szavazás, mentés), szerver (lépés, ütemezés, tipp, előnézet), `last_action_info`, lépéstörténet |
+| `tests/test_ai_player.py` | 72 | Robot motor: szókincs, lépésgenerátor (pontszám = játék pontozása), 10 fokozat (monoton skála, régi nevek átképezése, érvénytelen értékek), csere/passz, tipp, erősségpróba |
+| `tests/test_bots.py` | 114 | Robotok a játékmodellben (szavazás, mentés), szerver (lépés, ütemezés, tipp, előnézet), `last_action_info`, lépéstörténet |
 | `tests/test_spectator.py` | 30 | Megfigyelő mód, élő játékok, szoba életciklus |
 | `tests/test_public_api.py` | 52 | Ranglista (DB + route, robotos játékok kizárása), szótár API, PWA végpontok |
 | `tests/test_tiles_dictionary.py` | 30 | `tokenize_word`, `filter_valid`, `suggest_words` |
 | `tests/test_i18n.py` | 27 | Fordítások teljessége, szerverüzenet-lefedettség (AST), HTML lefedettség, a fordító futtatása node-ban |
-| `tests/test_frontend_consistency.py` | 20 | Kliens ↔ szerver: konstansok (TILE_VALUES, premium mezők), elem-azonosítók, Socket.IO események, API útvonalak, JS szintaxis |
+| `tests/test_frontend_consistency.py` | 23 | Kliens ↔ szerver: konstansok (TILE_VALUES, premium mezők), elem-azonosítók, robot-fokozat választó, Socket.IO események, API útvonalak, JS szintaxis |
 
-**Összesen: 889 teszt**
+**Összesen: 933 teszt**
 
 Fixture: `tests/conftest.py` — temp_db (auto-applied, ideiglenes SQLite DB minden teszthez)
 Segédek: `tests/helpers.py` — `registered_set_name_payload()` (érvényes socket-tokennel), `verify_email()`
@@ -275,7 +276,7 @@ Játék közben a side panelen chat szekció érhető el:
 |---|---|
 | `set_name` | Játékosnév / auth adatok beállítása. Regisztrált felhasználónál az `auth_token` (lásd `/api/auth/socket-token`) kötelező: a kliens által küldött `user_id` önmagában nem elég, a név a fiókból jön. Érvénytelen token → vendég + hibaüzenet |
 | `logout` | Kijelentkezés: kilépés a szobából, online azonosság törlése |
-| `create_room` | Szoba létrehozása (név, max_players, challenge_mode, is_private, turn_time_limit, `ai_players`: nehézségek listája, max. 3 és `max_players-1`, `hint_limit`: 0/1/3/5/10, alapért. 3) |
+| `create_room` | Szoba létrehozása (név, max_players, challenge_mode, is_private, turn_time_limit, `ai_players`: a robotok fokozatainak (1–10) listája, a régi `easy`/`medium`/`hard` is elfogadott; max. 3 és `max_players-1`, `hint_limit`: 0/1/3/5/10, alapért. 3) |
 | `join_room` | Csatlakozás kóddal vagy room_id-val |
 | `leave_room` | Szoba elhagyása |
 | `get_rooms` | Nyilvános szobák listázása |
@@ -442,7 +443,8 @@ A tábla cellái `container-type: inline-size` + `cqw` egységekkel méreteződn
 - `ALLOWED_HINT_LIMITS = (0, 1, 3, 5, 10)`, `DEFAULT_HINT_LIMIT = 3`; `Game.hint_limit` / `hints_used` (mentésbe kerül, régi mentésnél az alapérték), `hints_left()`, `use_hint()`; az állapotban `hint_limit`, `hints_left`
 
 ### ai_player.py
-- `DIFFICULTIES = ('easy', 'medium', 'hard')`, `_TIME_BUDGET` (1.0 / 2.0 / 3.5 mp keresési időkeret)
+- `MIN_LEVEL = 1`, `MAX_LEVEL = 10`, `DEFAULT_LEVEL = 6`, `DIFFICULTIES = (1..10)`, `LEGACY_LEVELS = {'easy': 3, 'medium': 6, 'hard': 10}`
+- `_TIME_BUDGET = 1.5` mp keresési időkeret (minden fokozaton), `_HINT_TIME_BUDGET = 3.5` (tipp); `_PROFILES` (fokozatonkénti `mu` / `sigma` / `pass_p`), `_TARGET_CV = 0.5`
 
 ### auth.py
 - `LEADERBOARD_METRICS`, `LEADERBOARD_MIN_GAMES` (`win_rate`, `avg_score`: 3), `LEADERBOARD_MAX_LIMIT = 100`
@@ -508,8 +510,11 @@ A tábla cellái `container-type: inline-size` + `cqw` egységekkel méreteződn
 ### Motor (`ai_player.py`)
 - Szókincs: `dict/hu_HU.dic` tőszavai (csak kisbetűs, magánhangzót tartalmazó, 2–15 betű; ~68 000 szó), rendezett lista + `bisect` prefixkereséssel (nincs trie: kevés memória).
 - `generate_moves`: Appel–Jacobson horgonykeresés vízszintesen és (átfordított rácson) függőlegesen; a többkarakteres zsetonok (SZ, CS...) több karaktert lépnek a prefixben; joker bármely betű. A keresztszavak érvényességét **egyetlen** `filter_valid` hívás dönti el az egész táblára. A pontozás a játék saját `Board.validate_placement`-jével történik egy privát másolaton.
-- Szintek: könnyű (≤4 zseton, a gyengébb fél), közepes (felső ~30% véletlen), nehéz (`equity` = pont + `leave_value`, végjátékban a kézben maradó zsetonok levonva). A kiválasztott lépés minden szavát `_first_valid` ellenőrzi a játék szótárával; ha nincs lépés: csere (zsák ≥ 7) vagy passz.
-- A keresés időkerete szintenként korlátos (`_TIME_BUDGET`); lejártakor a addigi legjobbal dolgozik.
+- **10 fokozat** (`_PROFILES`, `_ordered_candidates`): az erőt a **lépéskiválasztás** szabja meg, nem a szókincs (a szókincs szűkítése mérés szerint alig gyengít, mert a robot a megmaradtak közül is a legjobbat választja). Az 1–7. fokozat *célpontszámos*: minden körben célpontszámot sorsol (átlag `mu`, lognormális szórás `_TARGET_CV`), és a hozzá legközelebbi pontszámú lépést rakja le. A 8–10. fokozat *értékeléses*: a legnagyobb `equity` (= pont + `leave_value`, végjátékban a kézben maradó zsetonok levonva), Gauss-zajjal (`sigma` 8 / 4 / 0). Az 1. fokozat 15% eséllyel „nem talál" lépést (csere, ha a zsák ≥ 7, különben passz). Jokert minden fokozat használ.
+- **Mért erősség** (bot–bot önjáték, átlagos pont/kör): 4,5 · 6,2 · 7,7 · 10,1 · 12,7 · 15,2 · 16,8 · 19,0 · 20,9 · 23,1. A régi szintek helye: könnyű = 3, közepes = 6 (alapértelmezett), nehéz = 10. A régi mentések és kliensek `easy`/`medium`/`hard` értéke `parse_level`-lel képeződik át (a `Player` is normalizál). Újramérés a paraméterek módosítása után: `python tools/bot_arena.py ladder -n 24 -j 4` (fokozatonként), `python tools/bot_arena.py match 3 6` (két fokozat egymás ellen); a bot–bot játék kevésbé szór, mint egy ember, ezért ott a szomszédos fokozatok közti győzelmi arány élesebb, mint embernél.
+- A kiválasztott lépés minden szavát `_first_valid` ellenőrzi a játék szótárával; ha nincs lépés: csere (zsák ≥ 7) vagy passz.
+- A keresés időkerete (`_TIME_BUDGET`) csak védőkorlát: a keresés a legtöbb táblán jóval hamarabb véget ér, így a fokozatok ereje nem függ a szerver sebességétől; lejártakor az addigi legjobbal dolgozik.
+- Szerver: a robot neve és gondolkodási ideje a fokozat sávjától függ (`_bot_tier`: 1–3 könnyű, 4–7 közepes, 8–10 nehéz). A lobbyban egy `select` (`#room-ai-difficulty`, 10 opció, `ai.level_N` fordításokkal) állítja az összes robot fokozatát; a szerver robotonként külön fokozatot is kezel.
 
 ## Megfigyelő mód
 
@@ -574,5 +579,6 @@ A tábla cellái `container-type: inline-size` + `cqw` egységekkel méreteződn
 
 ### Ötletek
 - [ ] Robot: ragozott főszavak (tőszó + toldalék szótár-ellenőrzéssel), tapasztalati értékelés (szimuláció)
+- [ ] Robot: „igazodik hozzám” mód (a robot az ember utolsó ~6 körének átlagához állítja az erejét; a fokozatok keverésével törtszint), emberszerűbb lépések (kevesebb egyzsetonos lépés az alsó fokozatokon), gyakori szavak listája a ritka szavak elkerülésére, fokozat robotonként a felületen
 - [ ] Több nyelv a felületen (a `i18n-data.js` blokkja és a `SUPPORTED` lista bővítésével)
 - [ ] Értesítések (Web Push) a saját körre

@@ -818,7 +818,7 @@ const Lobby = {
         const isPrivate = document.getElementById('room-private').checked;
         const turnTimeLimit = parseInt(document.getElementById('room-turn-limit').value) || 0;
         const aiCount = parseInt(document.getElementById('room-ai-count').value) || 0;
-        const aiDifficulty = document.getElementById('room-ai-difficulty').value;
+        const aiDifficulty = parseInt(document.getElementById('room-ai-difficulty').value) || 6;
         const hintLimit = Number(document.getElementById('room-hint-limit').value);
         socket.emit('create_room', {
             name, max_players: maxPlayers,
@@ -1369,7 +1369,7 @@ const WaitingRoom = {
                         : escapeHtml(Array.from(p.name)[0] || '?')}</span>
                     <span class="player-name">${escapeHtml(p.name)}</span>
                     ${i === 0 ? `<span class="player-tag">${escapeHtml(t('wait.owner'))}</span>` : ''}
-                    ${p.is_bot ? `<span class="player-tag">${escapeHtml(t('ai.' + (p.difficulty || 'medium')))}</span>` : ''}
+                    ${p.is_bot ? `<span class="player-tag">${escapeHtml(t('ai.level_' + (p.difficulty || 6)))}</span>` : ''}
                     ${p.disconnected ? `<span class="player-tag">${escapeHtml(t('wait.offline'))}</span>` : ''}
                 </div>
             `).join('');
