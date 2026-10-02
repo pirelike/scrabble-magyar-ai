@@ -15,9 +15,10 @@ Böngészőben: http://localhost:5000
 - `server.py` — Flask + SocketIO szerver, lobby/szoba kezelés, Cloudflare tunnel integráció, Socket.IO event handlerek, reconnection grace period, robotlépések (`_schedule_bot_turn` / `_play_bot_turn`), megfigyelők, előnézet, tipp
 - `game.py` — Játéklogika (Game osztály), körök, pontozás, játék vége, challenge rendszer, kör időlimit, robotok (`add_bot`), szerkezetes `last_action_info`, lépéstörténet (`get_history`), előnézet (`preview_placement`)
 - `player.py` — Player osztály (id, név, kéz, pontszám, disconnected állapot, `is_bot`, `difficulty`)
-- `ai_player.py` — Robot ellenfél: szókincs (hunspell tőszavak), horgonyalapú lépésgenerátor, nehézségi szintek, tippek
+- `ai_player.py` — Robot ellenfél: szókincs (a szótár tőszavai), horgonyalapú lépésgenerátor, nehézségi szintek, tippek
 - `board.py` — 15×15 tábla, premium mezők, szó elhelyezés validáció és pontozás
-- `dictionary.py` — Magyar szótár-ellenőrzés (pyenchant / hunspell CLI fallback), tömeges `filter_valid` (gyorsítótárral), `suggest_words`
+- `dictionary.py` — Magyar szótár-ellenőrzés a beágyazott `affix_checker`-rel (nincs rendszerfüggőség), magánhangzó nélküli rövidítések kizárása, `is_available`/`warm_up`, tömeges `filter_valid` (gyorsítótárral), `suggest_words` (egy betűnyi szerkesztés)
+- `affix_checker.py` — Tisztán Python, Hunspell-szerű szóellenőrző a `dict/hu_HU.{aff,dic}` fájlokhoz: szótő, előtag, legfeljebb két toldalék, folytatási osztályok (AF aliasok), NEEDAFFIX/ONLYINCOMPOUND/FORBIDDENWORD; **összetételi szabályok nélkül**
 - `tiles.py` — Magyar betűkészlet (100 zseton), TileBag osztály, `tokenize_word` (szó → zsetonok)
 - `challenge.py` — Challenge (megtámadás) logika, szavazási állapotgép, vote resolution
 - `room.py` — Room osztály (szoba állapot, owner, beállítások, chat, timer invalidálás, megfigyelők, robotlépés-azonosító)
@@ -36,8 +37,8 @@ Böngészőben: http://localhost:5000
 - `static/i18n.js` + `static/i18n-data.js` — Többnyelvű felület: `t()`, `tServer()`, `I18N.setLang()`; a fordítások (hu/en) szigorú JSON-ban
 - `static/style.css` — Apple HIG ihletésű design rendszer (tokenek, iOS-szerű komponensek), sötét/világos téma, reszponzív layout (asztali / tablet / telefon, álló és fekvő), 17. szakasz: új funkciók és animációk
 - `static/manifest.webmanifest`, `static/offline.html`, `static/icons/` — PWA
-- `tests/` — Tesztek (pytest, 802 teszt)
-- `requirements.txt` — Python függőségek (flask, flask-socketio, pyenchant, eventlet)
+- `tests/` — Tesztek (pytest, 889 teszt)
+- `requirements.txt` — Python függőségek (flask, flask-socketio, eventlet)
 - `.venv/` — Virtual environment
 
 ## Funkciók
@@ -64,10 +65,10 @@ Böngészőben: http://localhost:5000
 - Játék közbeni chat: szöveges üzenetküldés a szobában
 - **Sötét / világos téma**: automatikus detektálás (`prefers-color-scheme`), manuális váltás, `localStorage`-ban mentve, villanásmentes betöltés
 - **Hang effektek**: Web Audio API (nincs külső fájl), szintetizált hangok — betű lerakás, szavazás, challenge eredmény, kör értesítő, chat, játék kezdés/vége; hangerő-csúszka + kategóriánkénti kapcsolók, `localStorage`-ban mentve
-- **Újracsatlakozás (grace period)**: 120 másodperc a visszacsatlakozásra ha a kapcsolat megszakad játék közben (token alapú)
+- **Újracsatlakozás (grace period)**: 120 másodperc a visszacsatlakozásra ha a kapcsolat megszakad játék közben; a várakozó szoba tulajdonosának 10 perc (token alapú)
 - **Pinch-to-zoom**: mobilon a tábla nagyítható/kicsinyíthető csípő mozdulattal
 - **Szótár-böngésző (Challenge fázis)**: A megtámadás során a lerakott szavak kattintható linkek, amelyek egy új lapon indítanak Google keresést az adott szóra ("A magyar nyelv értelmező szótára" fókusszal).
-- Szótár-ellenőrzés: pyenchant + beágyazott hu_HU szótár (cross-platform, Windows-kompatibilis). A szavakat kisbetűvel keresi, így a tulajdonnevek (pl. DUNA, BUDAPEST) nem érvényesek
+- Szótár-ellenőrzés: beágyazott hu_HU szótár (`affix_checker.py`, tisztán Python — ugyanúgy működik fejlesztői gépen, Windowson és tárhelyen; korábban a pyenchant/hunspell hiánya miatt a szerveren minden szó érvényesnek látszott). A szavakat kisbetűvel keresi, így a tulajdonnevek (pl. DUNA, BUDAPEST) nem érvényesek; a Hunspell összetételi szabályait nem használja (értelmetlen összetételeket, pl. PAGONYAGY, nem fogad el); a magánhangzó nélküli tételek (KG, DB, TV, betűnevek) nem érvényesek, az indulatszavak (BRR, HM, PSZT) igen. Ha a szótár nem tölthető be, a Szótár-eszköz 503-at ad (nem jelöl érvényesnek semmit)
 - **Játék mentés / visszatöltés**: manuális mentés (owner-only) a kilépés menüből, lobby-first restore flow
 - **Visszajátszás**: befejezett játékok lépésről lépésre visszanézhetők (board snapshot-okkal)
 - **Kilépés menü**: owner: mentés+kilépés / kilépés mentés nélkül / mégsem; nem-owner: kilépés / mégsem
@@ -79,7 +80,7 @@ Böngészőben: http://localhost:5000
 - Rate limiting: minden Socket.IO event-re (SID-alapú, `rate_limiter.py`) + IP-alapú HTTP auth endpointokra
 - Input validáció: játékos nevek, szoba nevek, tile placement, email, jelszó szerver oldali validálás
 - Board bounds check: a `board.py` és `server.py` is ellenőrzi a pozíciók érvényességét
-- Dictionary sanitizálás: szavak regex-szel validálva hunspell hívás előtt
+- Dictionary sanitizálás: szavak regex-szel validálva a szótár-keresés előtt
 - Production szerver: eventlet WSGI (nem Werkzeug dev server), `allow_unsafe_werkzeug` nem használt
 - XSS védelem: frontend innerHTML helyett DOM API (textContent, createElement, addEventListener)
 - Jelszó: `werkzeug.security` PBKDF2-SHA256, 260k iteráció, random salt
@@ -111,6 +112,8 @@ Böngészőben: http://localhost:5000
 - A játék automatikusan átugorja a lecsatlakozott játékosokat a körök váltásakor (`_next_turn`)
 - Token alapú újracsatlakozás: `rejoin_room` event a korábbi tokennel bármikor az aktív játék alatt
 - A játékoslista (roster) a kezdés pillanatában rögzül az adatbázisban is
+- **Várakozó szoba (a játék indítása előtt) is türelmi időt kap**: ha a kapcsolat megszakad (pl. telefonon átvált az üzenetküldő appra, hogy elküldje a kódot / meghívó linket, vagy újratölt az oldal), a játékos `disconnected` lesz, a szoba és a kód megmarad, és a kliens a tokennel visszatér (`rejoin_room`). A tulajdonosnak `_WAITING_OWNER_GRACE_PERIOD = 600` mp, mindenki másnak (és az aktív játékban mindenkinek) `_DISCONNECT_GRACE_PERIOD = 120` mp jár. Lejártakor a játékos kikerül (a tulajdonjog továbbszáll, üres szoba megszűnik). A várakozó szobában a lecsatlakozott játékos „offline” jelzést kap. Az explicit kilépés (`leave_room`) továbbra is azonnal eltávolít.
+- Minden lecsatlakozás sorszámot kap (`state.mark_disconnected` → `seq`, `disconnect_is_current`): ha a játékos időközben visszatért, majd újra megszakadt a kapcsolata, a régi időzítő lejárta nem zárja le az újabb türelmi időt
 
 ### Adatstruktúrák (`state.py` — ServerState singleton)
 ```python
@@ -187,21 +190,22 @@ Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztésh
 | `tests/test_server_auth.py` | 52 | HTTP auth route-ok, cookie flow |
 | `tests/test_server_socket.py` | 67 | Socket.IO eventek, lobby, szobák, privát szobák, challenge szavazás, chat, owner kilépés, kör időlimit |
 | `tests/test_challenge.py` | 17 | Challenge szavazásos rendszer |
-| `tests/test_dictionary.py` | 23 | Szótár-ellenőrzés (kisbetűs keresés, tulajdonnevek) |
+| `tests/test_dictionary.py` | 59 | Szótár-ellenőrzés (valódi szótárral: kisbetűs keresés, tulajdonnevek, rövidítések, értelmetlen szavak pl. SALYT), elérhetőség, javaslatok, tábla-validáció |
+| `tests/test_affix_checker.py` | 39 | Beépített szóellenőrző: toldalékok, előtagok, folytatási osztályok, speciális jelzők, a valódi szótár (hunspellel összevetve) |
 | `tests/test_email_service.py` | 4 | Email küldés |
 | `tests/test_room.py` | 12 | Room osztály |
 | `tests/test_friends.py` | 27 | Barát CRUD, kérések, felhasználókeresés, szobameghívó, online státusz |
 | `tests/test_timer_and_replay.py` | 27 | Kör időlimit, replay perzisztencia |
-| `tests/test_regressions.py` | 70 | Kódátvizsgálás során talált hibák: zsák, dupla cella, passz-végjáték, mentés szavazás közben, IP rate limit, e-mail megerősítés, socket-token, session átvétel, visszaállítás/késői csatlakozás |
+| `tests/test_regressions.py` | 80 | Kódátvizsgálás során talált hibák: zsák, dupla cella, passz-végjáték, mentés szavazás közben, IP rate limit, e-mail megerősítés, socket-token, session átvétel, visszaállítás/késői csatlakozás, várakozó szoba türelmi ideje |
 | `tests/test_ai_player.py` | 39 | Robot motor: szókincs, lépésgenerátor (pontszám = játék pontozása), nehézségi szintek, csere/passz, tipp |
 | `tests/test_bots.py` | 106 | Robotok a játékmodellben (szavazás, mentés), szerver (lépés, ütemezés, tipp, előnézet), `last_action_info`, lépéstörténet |
 | `tests/test_spectator.py` | 30 | Megfigyelő mód, élő játékok, szoba életciklus |
-| `tests/test_public_api.py` | 50 | Ranglista (DB + route, robotos játékok kizárása), szótár API, PWA végpontok |
+| `tests/test_public_api.py` | 52 | Ranglista (DB + route, robotos játékok kizárása), szótár API, PWA végpontok |
 | `tests/test_tiles_dictionary.py` | 30 | `tokenize_word`, `filter_valid`, `suggest_words` |
 | `tests/test_i18n.py` | 27 | Fordítások teljessége, szerverüzenet-lefedettség (AST), HTML lefedettség, a fordító futtatása node-ban |
 | `tests/test_frontend_consistency.py` | 20 | Kliens ↔ szerver: konstansok (TILE_VALUES, premium mezők), elem-azonosítók, Socket.IO események, API útvonalak, JS szintaxis |
 
-**Összesen: 802 teszt**
+**Összesen: 889 teszt**
 
 Fixture: `tests/conftest.py` — temp_db (auto-applied, ideiglenes SQLite DB minden teszthez)
 Segédek: `tests/helpers.py` — `registered_set_name_payload()` (érvényes socket-tokennel), `verify_email()`
@@ -275,7 +279,7 @@ Játék közben a side panelen chat szekció érhető el:
 | `join_room` | Csatlakozás kóddal vagy room_id-val |
 | `leave_room` | Szoba elhagyása |
 | `get_rooms` | Nyilvános szobák listázása |
-| `rejoin_room` | Újracsatlakozás tokennel (grace period alatt, vagy a még „élőnek” hitt régi kapcsolat átvételével — pl. háttérbe került telefon, újratöltött oldal) |
+| `rejoin_room` | Újracsatlakozás tokennel (grace period alatt — várakozó szobába is —, vagy a még „élőnek” hitt régi kapcsolat átvételével — pl. háttérbe került telefon, újratöltött oldal) |
 | `start_game` | Játék indítása (owner only) |
 | `spectate_room` | Megfigyelés: `{room_id}` (nyilvános) vagy `{code}` (privát is); csak folyamatban lévő játék |
 | `leave_spectate` | Kilépés a megfigyelésből |
@@ -429,6 +433,7 @@ A tábla cellái `container-type: inline-size` + `cqw` egységekkel méreteződn
 
 ### server.py
 - `_DISCONNECT_GRACE_PERIOD = 120` (mp)
+- `_WAITING_OWNER_GRACE_PERIOD = 600` (mp) — a várakozó szoba tulajdonosának türelmi ideje
 - `ALLOWED_TURN_TIME_LIMITS = {0, 60, 90, 120, 180, 300}`
 - `MAX_BOTS = 3`, `_BOT_THINK_DELAY` (szintenként min/max mp), `_BOT_NAMES`
 - `Room.MAX_SPECTATORS = 30`
@@ -568,6 +573,6 @@ A tábla cellái `container-type: inline-size` + `cqw` egységekkel méreteződn
 - [x] Kényelmi funkciók — élő előnézet, zsetonszámláló, keverés/rendezés + gyorsbillentyűk, meghívó link, lépéstörténet
 
 ### Ötletek
-- [ ] Robot: ragozott főszavak (tőszó + toldalék hunspell-ellenőrzéssel), tapasztalati értékelés (szimuláció)
+- [ ] Robot: ragozott főszavak (tőszó + toldalék szótár-ellenőrzéssel), tapasztalati értékelés (szimuláció)
 - [ ] Több nyelv a felületen (a `i18n-data.js` blokkja és a `SUPPORTED` lista bővítésével)
 - [ ] Értesítések (Web Push) a saját körre

@@ -505,6 +505,10 @@ def dictionary_check():
         return jsonify({'success': False, 'message': 'Adj meg legalább egy szót.'}), 400
     words = words[:_MAX_DICT_WORDS]
 
+    if not dictionary.is_available():
+        # Szótár híján a játék minden szót elfogadna: a Szótár-eszköz ne mondjon hamis "érvényes"-t
+        return jsonify({'success': False, 'message': 'A szótár jelenleg nem elérhető.'}), 503
+
     results = []
     checkable = []
     for word in words:

@@ -25,8 +25,11 @@ class ServerState:
         self._reconnect_tokens = {}
         # Sid -> reconnect token mapping: {sid: token}
         self._sid_to_token = {}
-        # Disconnected játékosok grace period: {token: {room_id, sid, player_name}}
+        # Disconnected játékosok grace period: {token: {room_id, sid, player_name, auth_info, seq}}
         self._disconnected_players = {}
+        # Minden lecsatlakozás kap egy sorszámot, hogy a régi türelmi idő lejárta ne a
+        # későbbi (újabb) lecsatlakozást zárja le
+        self._disconnect_seq = 0
         
         # Megfigyelők: {sid: room_id}
         self.spectator_rooms = {}
@@ -118,13 +121,27 @@ class ServerState:
         return self._reconnect_tokens.get(token)
 
     def mark_disconnected(self, token, sid, room_id, player_name, auth_info=None):
-        """Játékos ideiglenesen lecsatlakozottnak jelölése (grace period indítás)."""
+        """Játékos ideiglenesen lecsatlakozottnak jelölése (grace period indítás).
+
+        Visszaadja a lecsatlakozás sorszámát: a türelmi idő lejártakor csak akkor szabad a
+        játékost véglegesen eltávolítani, ha még ugyanez a lecsatlakozás van érvényben
+        (`disconnect_is_current`).
+        """
+        self._disconnect_seq += 1
         self._disconnected_players[token] = {
             'room_id': room_id,
             'sid': sid,
             'player_name': player_name,
             'auth_info': auth_info,
+            'seq': self._disconnect_seq,
         }
+        return self._disconnect_seq
+
+    def disconnect_is_current(self, token, seq):
+        """Igaz, ha a tokenhez még a `seq` sorszámú lecsatlakozás tartozik (nem csatlakozott
+        vissza, és nem is szakadt meg újra azóta)."""
+        info = self._disconnected_players.get(token)
+        return bool(info) and info.get('seq') == seq
 
     def complete_rejoin(self, token, new_sid):
         """Token alapú újracsatlakozás: dict-ek frissítése.

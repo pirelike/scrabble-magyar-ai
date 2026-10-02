@@ -153,6 +153,20 @@ class TestDictionaryRoute:
         assert entry['valid'] is False and entry['reason'] == 'not_in_dictionary'
         assert isinstance(entry['suggestions'], list)
 
+    def test_salyt_is_reported_invalid(self, client):
+        """Regresszió: a SALYT (nem magyar szó) "Érvényes"-nek látszott a Szótár-eszközben."""
+        entry = client.get('/api/dictionary/check?q=salyt').get_json()['results'][0]
+        assert entry['word'] == 'SALYT'
+        assert entry['valid'] is False and entry['reason'] == 'not_in_dictionary'
+        assert entry['suggestions']  # pl. SALYI, SÚLYT
+
+    def test_unavailable_dictionary_is_not_reported_as_valid(self, client):
+        from unittest.mock import patch
+        with patch('dictionary.is_available', return_value=False):
+            res = client.get('/api/dictionary/check?q=salyt')
+        assert res.status_code == 503
+        assert res.get_json()['success'] is False
+
     def test_digraph_tiles_and_score(self, client):
         entry = client.get('/api/dictionary/check?q=szék').get_json()['results'][0]
         assert entry['tiles'] == ['SZ', 'É', 'K'] and entry['score'] == 3 + 3 + 1

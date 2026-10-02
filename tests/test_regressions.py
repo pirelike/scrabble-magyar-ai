@@ -553,15 +553,181 @@ class TestSessionTakeover:
         c.emit('rejoin_room', {'token': 'nope'})
         assert 'rejoin_failed' in _names(c.get_received())
 
-    def test_no_takeover_for_a_game_that_has_not_started(self):
+    def test_takeover_in_a_waiting_room(self):
+        """A várakozó szobában is átvehető a "még élőnek hitt" munkamenet (újratöltött oldal)."""
         import server
         owner = _guest('Owner')
         owner.emit('create_room', {'name': 'Lobby', 'max_players': 2})
-        owner.get_received()
+        code = _last(owner.get_received(), 'room_code')['code']
         token = next(iter(server.state._reconnect_tokens))
         fresh = server.socketio.test_client(server.app)
         fresh.emit('rejoin_room', {'token': token})
-        assert 'rejoin_failed' in _names(fresh.get_received())
+        received = fresh.get_received()
+        assert 'rejoin_failed' not in _names(received)
+        assert _last(received, 'room_joined')['is_owner'] is True
+        assert _last(received, 'room_code')['code'] == code
+        assert _last(received, 'game_state')['started'] is False
+
+
+class TestWaitingRoomGrace:
+    """A várakozó szoba nem szűnik meg azonnal, ha a tulajdonos kapcsolata megszakad
+    (telefonon az üzenetküldő appra váltás a kód elküldéséhez)."""
+
+    @staticmethod
+    def _owner_with_room(**opts):
+        owner = _guest('Owner')
+        owner.emit('create_room', {'name': 'Lobby', 'max_players': 3, **opts})
+        code = _last(owner.get_received(), 'room_code')['code']
+        return owner, code
+
+    def test_room_survives_the_owner_disconnecting(self):
+        import server
+        owner, code = self._owner_with_room()
+        owner.disconnect()
+        assert len(server.state.rooms) == 1
+        assert server.state.join_codes[code] in server.state.rooms
+
+    def test_room_can_still_be_joined_by_code_while_the_owner_is_away(self):
+        import server
+        owner, code = self._owner_with_room()
+        owner.disconnect()
+        friend = _guest('Friend')
+        friend.emit('join_room', {'code': code})
+        received = friend.get_received()
+        assert 'error' not in _names(received)
+        state = _last(received, 'game_state')
+        assert [p['name'] for p in state['players']] == ['Owner', 'Friend']
+        assert state['players'][0]['disconnected'] is True
+        assert state['players'][1]['disconnected'] is False
+
+    def test_owner_returns_with_the_token_and_keeps_the_room(self):
+        import server
+        owner, code = self._owner_with_room()
+        sid = next(iter(server.state.player_rooms))
+        token = server.state.get_reconnect_token_for_sid(sid)
+        friend = _guest('Friend')
+        friend.emit('join_room', {'code': code})
+        friend.get_received()
+        owner.disconnect()
+        friend.get_received()
+
+        back = _guest('Owner')
+        back.emit('rejoin_room', {'token': token})
+        received = back.get_received()
+
+        assert 'rejoin_failed' not in _names(received)
+        assert _last(received, 'room_joined')['is_owner'] is True
+        assert _last(received, 'room_code')['code'] == code
+        state = _last(received, 'game_state')
+        assert state['started'] is False
+        assert all(not p['disconnected'] for p in state['players'])
+        room = next(iter(server.state.rooms.values()))
+        assert room.owner != sid and room.owner in server.state.player_rooms
+        assert 'player_reconnected' in _names(friend.get_received())
+        # a visszatért tulajdonos el tudja indítani a játékot
+        back.emit('start_game')
+        assert _last(back.get_received(), 'game_state')['started'] is True
+
+    def test_empty_room_is_removed_when_the_grace_period_expires(self):
+        import server
+        owner, code = self._owner_with_room()
+        owner.disconnect()
+        server._finalize_player_disconnect(list(server.state._disconnected_players)[0])
+        assert server.state.rooms == {}
+        assert code not in server.state.join_codes
+        assert server.state.player_rooms == {} and server.state.player_auth == {}
+
+    def test_ownership_moves_on_when_the_away_owner_times_out(self):
+        import server
+        owner, code = self._owner_with_room()
+        friend = _guest('Friend')
+        friend.emit('join_room', {'code': code})
+        friend.get_received()
+        owner.disconnect()
+        friend.get_received()
+
+        server._finalize_player_disconnect(list(server.state._disconnected_players)[0])
+
+        room = next(iter(server.state.rooms.values()))
+        assert [p.name for p in room.game.players] == ['Friend']
+        assert room.owner_name == 'Friend'
+        received = friend.get_received()
+        assert 'player_left' in _names(received)
+        assert _last(received, 'room_code')['code'] == code
+
+    def test_other_players_in_a_waiting_room_also_get_a_grace_period(self):
+        import server
+        owner, code = self._owner_with_room()
+        friend = _guest('Friend')
+        friend.emit('join_room', {'code': code})
+        friend.get_received()
+        friend.disconnect()
+        room = next(iter(server.state.rooms.values()))
+        assert [p.name for p in room.game.players] == ['Owner', 'Friend']
+        assert room.game.players[1].disconnected is True
+        assert 'player_disconnected' in _names(owner.get_received())
+
+    def test_grace_period_lengths(self, monkeypatch):
+        import server
+        timers = []
+        monkeypatch.setattr(server.socketio, 'start_background_task', lambda fn, *a, **k: timers.append(fn))
+        slept = []
+        monkeypatch.setattr(server.time, 'sleep', lambda seconds: slept.append(seconds))
+
+        owner, code = self._owner_with_room()
+        friend = _guest('Friend')
+        friend.emit('join_room', {'code': code})
+        friend.get_received()
+        friend.disconnect()
+        owner.disconnect()
+        for timer in timers:
+            timer()  # a háttérszál törzse, várakozás nélkül
+
+        assert slept == [server._DISCONNECT_GRACE_PERIOD, server._WAITING_OWNER_GRACE_PERIOD]
+        assert server._WAITING_OWNER_GRACE_PERIOD >= 600
+        assert server.state.rooms == {}  # mindkét türelmi idő lejárt
+
+    def test_an_old_timer_does_not_cut_a_newer_disconnect_short(self, monkeypatch):
+        """Ha a játékos visszatért, majd újra megszakadt a kapcsolata, a régi időzítő lejárta
+        nem távolíthatja el az újabb türelmi idő közben."""
+        import server
+        timers = []
+        monkeypatch.setattr(server.socketio, 'start_background_task', lambda fn, *a, **k: timers.append(fn))
+        monkeypatch.setattr(server.time, 'sleep', lambda seconds: None)
+
+        owner, code = self._owner_with_room()
+        token = server.state.get_reconnect_token_for_sid(next(iter(server.state.player_rooms)))
+        owner.disconnect()                        # 1. lecsatlakozás → 1. időzítő
+        back = _guest('Owner')
+        back.emit('rejoin_room', {'token': token})
+        back.get_received()
+        back.disconnect()                         # 2. lecsatlakozás → 2. időzítő
+        assert len(timers) == 2
+
+        timers[0]()                               # a régi időzítő lejár: nem szabad hatnia
+        assert len(server.state.rooms) == 1
+        assert token in server.state._disconnected_players
+        timers[1]()                               # az aktuális lejár: megszűnik a szoba
+        assert server.state.rooms == {}
+
+    def test_leaving_a_waiting_room_still_removes_the_player_at_once(self):
+        import server
+        owner, code = self._owner_with_room()
+        owner.emit('leave_room')
+        assert server.state.rooms == {}
+        assert server.state._disconnected_players == {}
+
+    def test_disconnect_seq_helper(self):
+        import server
+        s = server.state
+        first = s.mark_disconnected('tok', 'sid1', 'room', 'N')
+        assert s.disconnect_is_current('tok', first)
+        second = s.mark_disconnected('tok', 'sid2', 'room', 'N')
+        assert second != first
+        assert not s.disconnect_is_current('tok', first)
+        assert s.disconnect_is_current('tok', second)
+        s.finalize_disconnect('tok')
+        assert not s.disconnect_is_current('tok', second)
 
 
 class TestRoomJoinGuards:

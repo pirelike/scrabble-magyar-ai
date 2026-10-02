@@ -1363,13 +1363,14 @@ const WaitingRoom = {
             }).join('');
         } else {
             container.innerHTML = gs.players.map((p, i) => `
-                <div class="player-item ${i === 0 ? 'owner' : ''} ${p.is_bot ? 'bot' : ''}">
+                <div class="player-item ${i === 0 ? 'owner' : ''} ${p.is_bot ? 'bot' : ''} ${p.disconnected ? 'offline' : ''}">
                     <span class="player-avatar">${p.is_bot
                         ? '<svg class="icon"><use href="#i-robot"/></svg>'
                         : escapeHtml(Array.from(p.name)[0] || '?')}</span>
                     <span class="player-name">${escapeHtml(p.name)}</span>
                     ${i === 0 ? `<span class="player-tag">${escapeHtml(t('wait.owner'))}</span>` : ''}
                     ${p.is_bot ? `<span class="player-tag">${escapeHtml(t('ai.' + (p.difficulty || 'medium')))}</span>` : ''}
+                    ${p.disconnected ? `<span class="player-tag">${escapeHtml(t('wait.offline'))}</span>` : ''}
                 </div>
             `).join('');
         }
