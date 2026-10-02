@@ -30,6 +30,7 @@ class Room:
         self._bot_turn_id = 0
         self.spectators = {}  # {sid: név} — megfigyelők
         self.turn_timer_expires_at = None  # float Unix timestamp or None
+        self.withdraw_time_left = None  # a szavazásra váró lerakáskor hátralévő köridő (visszavonáshoz)
         # Persistence tracking (korábban a Game-ben volt)
         self.db_game_id = None
         self.last_saved_move_count = 0

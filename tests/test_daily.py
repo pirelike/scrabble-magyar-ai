@@ -347,6 +347,21 @@ class TestSocket:
         client.emit('start_daily')
         assert any('szobában' in (e or {}).get('message', '') for e in _events(client, 'error'))
 
+    def test_second_start_during_generation_leaves_no_orphan_room(self, puzzle, monkeypatch):
+        import server
+        client, _ = _registered('a@example.com', 'Anna')
+        real = daily.ensure_puzzle
+
+        def slow(*args, **kwargs):
+            # az előállítás közben (kooperatív váltásnál) ugyanez a kliens újra kérte a feladványt
+            monkeypatch.setattr(daily, 'ensure_puzzle', real)
+            client.emit('start_daily')
+            return real(*args, **kwargs)
+        monkeypatch.setattr(daily, 'ensure_puzzle', slow)
+        client.emit('start_daily')
+        assert len(server.state.rooms) == 1
+        assert server.state.player_rooms[next(iter(server.state.player_rooms))] in server.state.rooms
+
     def test_unavailable_puzzle_is_reported(self, monkeypatch):
         client, _ = _registered('a@example.com', 'Anna')
 

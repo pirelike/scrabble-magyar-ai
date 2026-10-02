@@ -45,7 +45,7 @@ Böngészőben: http://localhost:5000
 - `static/style.css` — Apple HIG ihletésű design rendszer (tokenek, iOS-szerű komponensek), sötét/világos téma, reszponzív layout (asztali / tablet / telefon, álló és fekvő), 17. szakasz: új funkciók és animációk
 - `static/manifest.webmanifest`, `static/offline.html`, `static/icons/` — PWA
 - `tools/bot_arena.py` — Robot-aréna: a fokozatok erejének mérése bot–bot játékokkal (`ladder`, `match`, `adapt`; kalibrációhoz, nem része a szervernek)
-- `tests/` — Tesztek (pytest, 1264 teszt)
+- `tests/` — Tesztek (pytest, 1274 teszt)
 - `requirements.txt` — Python függőségek (flask, flask-socketio, gevent, gevent-websocket, opcionálisan pywebpush)
 - `.venv/` — Virtual environment
 
@@ -166,7 +166,7 @@ Vendég mód: a régi név-megadós flow megmarad (statisztikák nem mentődnek)
 - `GET /api/auth/me` — session cookie ellenőrzés
 - `GET /api/auth/profile` — statisztikák és játékelőzmények (session cookie)
 - `GET /api/auth/socket-token` — rövid életű (5 perc) aláírt token a Socket.IO `set_name`-hez (session cookie)
-- `GET /api/game/<int:game_id>/moves` — lépések listája (replay-hez; `players`, `finished` is)
+- `GET /api/game/<int:game_id>/moves` — lépések listája (replay-hez; `players`, `finished` is; folyamatban lévő játéknál a kezek — `rack` — nélkül)
 - `POST /api/game/<id>/share` — megosztható replay-link (csak résztvevő, befejezett játék); `GET /api/replay/<token>` — nyilvános megosztott visszajátszás
 - `GET /api/game/<id>/analysis` — játékelemzés (háttérben számolódik: `status: running|ready|unavailable|error`)
 - `GET /api/async/games` — a felhasználó folyamatban lévő levelezős játékai (akinél a sor, az elöl)
@@ -216,8 +216,8 @@ Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztésh
 | `tests/test_email_service.py` | 4 | Email küldés |
 | `tests/test_room.py` | 12 | Room osztály |
 | `tests/test_friends.py` | 27 | Barát CRUD, kérések, felhasználókeresés, szobameghívó, online státusz |
-| `tests/test_timer_and_replay.py` | 28 | Kör időlimit, replay perzisztencia |
-| `tests/test_regressions.py` | 81 | Kódátvizsgálás során talált hibák: zsák, dupla cella, passz-végjáték, döntetlen mentése, mentés szavazás közben, IP rate limit, e-mail megerősítés, socket-token, session átvétel, visszaállítás/késői csatlakozás, várakozó szoba türelmi ideje |
+| `tests/test_timer_and_replay.py` | 30 | Kör időlimit, replay perzisztencia |
+| `tests/test_regressions.py` | 82 | Kódátvizsgálás során talált hibák: zsák, dupla cella, passz-végjáték, döntetlen mentése, mentés szavazás közben, IP rate limit, e-mail megerősítés, socket-token, session átvétel, visszaállítás/késői csatlakozás, várakozó szoba türelmi ideje |
 | `tests/test_ai_player.py` | 81 | Robot motor: szókincs (ragozott alakok, zsetonokra bontható szavak), lépésgenerátor (pontszám = játék pontozása), 10 fokozat (monoton skála, régi nevek átképezése, érvénytelen értékek), csere/passz, tipp, erősségpróba |
 | `tests/test_bots.py` | 114 | Robotok a játékmodellben (szavazás, mentés), szerver (lépés, ütemezés, tipp, előnézet), `last_action_info`, lépéstörténet |
 | `tests/test_spectator.py` | 30 | Megfigyelő mód, élő játékok, szoba életciklus |
@@ -227,16 +227,16 @@ Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztésh
 | `tests/test_frontend_consistency.py` | 23 | Kliens ↔ szerver: konstansok (TILE_VALUES, premium mezők), elem-azonosítók, robot-fokozat választó, Socket.IO események, API útvonalak, JS szintaxis |
 
 | `tests/test_adaptive_bot.py` | 40 | „Igazodik hozzám”: `parse_difficulty`, fokozat az átlagból, keverés, `Game.recent_stats`/`bot_level`, mentés, szerver |
-| `tests/test_achievements.py` | 26 | Kitüntetések: kiértékelés, összesítők, tárolás, profil, szerver |
+| `tests/test_achievements.py` | 27 | Kitüntetések: kiértékelés, összesítők, tárolás, profil, szerver |
 | `tests/test_elo.py` | 27 | ELO számítás, értékelt játékok, ranglista értékszám szerint, `rating_update`, feladó |
 | `tests/test_replay_share.py` | 11 | Megosztási token, nyilvános replay, jogosultság, rate limit |
-| `tests/test_analysis.py` | 23 | Kezek rögzítése, lépéselemzés, gyorsítótár, háttérszámítás, API |
-| `tests/test_daily.py` | 49 | Napi feladvány: előállítás (determinizmus), játék, ranglista, socket, HTTP |
+| `tests/test_analysis.py` | 25 | Kezek rögzítése, lépéselemzés, gyorsítótár, háttérszámítás, API |
+| `tests/test_daily.py` | 50 | Napi feladvány: előállítás (determinizmus), játék, ranglista, socket, HTTP |
 | `tests/test_practice.py` | 24 | Szókvíz, rövid szavak, válasz-ellenőrzés, API |
-| `tests/test_push.py` | 42 | VAPID, feliratkozások, küldés (mockolva), API, „Te jössz!” kiváltása |
-| `tests/test_async_games.py` | 55 | Levelezős játék: játéklogika (határidő, lejárat, feladás), szerver, mentés / visszaállítás, lista, útvonalak |
+| `tests/test_push.py` | 44 | VAPID, feliratkozások, küldés (mockolva), API, „Te jössz!” kiváltása |
+| `tests/test_async_games.py` | 56 | Levelezős játék: játéklogika (határidő, lejárat, feladás), szerver, mentés / visszaállítás, lista, útvonalak |
 
-**Összesen: 1264 teszt**
+**Összesen: 1274 teszt**
 
 Fixture: `tests/conftest.py` — temp_db (auto-applied, ideiglenes SQLite DB minden teszthez)
 Segédek: `tests/helpers.py` — `registered_set_name_payload()` (érvényes socket-tokennel), `verify_email()`
@@ -328,7 +328,7 @@ Játék közben a side panelen chat szekció érhető el:
 | `pass_turn` | Kör passzolása |
 | `accept_words` | Lerakás elfogadása / challenge elfogadás / elfogadó szavazat |
 | `reject_words` | Lerakás elutasítása (2 játékos) / megtámadás indítása (3+ játékos) |
-| `withdraw_words` | A lerakó visszavonja a szavazásra váró lerakását (amíg senki sem szavazott) |
+| `withdraw_words` | A lerakó visszavonja a szavazásra váró lerakását (amíg senki sem szavazott); időlimitnél a kör hátralévő ideje folytatódik (legalább `_MIN_TIME_AFTER_WITHDRAW` = 10 mp), nem indul újra |
 | `send_chat` | Chat üzenet küldése |
 | `save_game` | Manuális mentés (owner only) |
 | `restore_game` | Mentett játék visszaállítása (várakozó szoba létrehozás) |
@@ -575,7 +575,7 @@ A tábla cellái `container-type: inline-size` + `cqw` egységekkel méreteződn
 ## Megfigyelő mód
 
 - `Room.spectators {sid: név}` + `ServerState.spectator_rooms {sid: room_id}`; a megfigyelő a Socket.IO szobába is belép (chat, események), de a `player_rooms`-ban nem szerepel, így a játékos-eventek (lerakás, chat küldés...) hatástalanok.
-- `_emit_all_states` a megfigyelőknek `Game.get_spectator_state()`-et küld (kezek nélkül, `spectator: true`); minden játékos állapotában `spectator_count`.
+- `_emit_all_states` a megfigyelőknek `Game.get_spectator_state()`-et küld (kezek nélkül, `spectator: true`); minden játékos állapotában `spectator_count`. A lecsatlakozott (`disconnected`) játékosnak nem küld állapotot: a SID-je még élhet a lobbyban (pl. kilépett, vagy levelezős játékból bezárta a nézetet), és a kliense visszaugrana a játékba.
 - Életciklus: `disconnect`/`logout`/`leave_spectate` eltávolítja; `_cleanup_room` és `_disband_active_room` `room_disbanded`-et küld nekik. Kliens oldalon újracsatlakozáskor `Spectate.resume()` újraindítja a megfigyelést.
 - A `get_rooms` a `live_games` eseményt is kiküldi; játék indításakor/végén broadcast.
 
@@ -621,7 +621,7 @@ A tábla cellái `container-type: inline-size` + `cqw` egységekkel méreteződn
 
 ## Web Push
 
-- `push_service`: VAPID kulcspár (`VAPID_PRIVATE_KEY` / `VAPID_PUBLIC_KEY` környezeti változó, ennek híján az első induláskor generálódik és az `app_settings` táblában marad), `VAPID_SUBJECT` (alapért.: `mailto:SMTP_FROM`). `pywebpush` nélkül a funkció kikapcsol. Küldés háttérfeladatban; a 404/410 válaszú feliratkozás törlődik.
+- `push_service`: VAPID kulcspár (`VAPID_PRIVATE_KEY` környezeti változó: PEM vagy a `web-push` eszköz base64url formája — a nyilvános kulcs ebből számolódik; ennek híján az első induláskor generálódik és az `app_settings` táblában marad), `VAPID_SUBJECT` (alapért.: `mailto:SMTP_FROM`). `pywebpush` nélkül a funkció kikapcsol. Küldés háttérfeladatban; a 404/410 válaszú feliratkozás törlődik.
 - `push_subscriptions` tábla (felhasználónként több eszköz, nyelvvel: hu/en). A szerver `_maybe_push_turn`-nel értesít, ha a soron lévő regisztrált ember távol van (lecsatlakozott, vagy a lapja a `set_visibility` szerint háttérben): körönként egyszer, robotnak / vendégnek / napi feladványban soha.
 - Service worker: `push` (értesítés) és `notificationclick` (az alkalmazás előtérbe hozása). Kliens: profil → kapcsoló (`Push` modul, engedélykérés, iOS-n a Főképernyőhöz adás tanácsa).
 

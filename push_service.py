@@ -1,7 +1,8 @@
 """Web Push értesítések: VAPID kulcsok, feliratkozások és a „Te jössz!” üzenet.
 
-A kulcspár a `VAPID_PRIVATE_KEY` / `VAPID_PUBLIC_KEY` környezeti változókból jön (PEM, illetve
-base64url), ennek híján az első induláskor készül és az adatbázisban (`app_settings`) marad, hogy
+A kulcspár a `VAPID_PRIVATE_KEY` környezeti változóból jön (PEM, vagy a `web-push` eszköz base64url
+formája; a nyilvános kulcs ebből számolódik), ennek híján az első induláskor készül és az
+adatbázisban (`app_settings`) marad, hogy
 a feliratkozások újraindítás után is érvényesek legyenek. Ha a `pywebpush` nincs telepítve, a
 funkció kikapcsol (`is_available()` hamis), a játék többi része érintetlen.
 """
@@ -62,17 +63,33 @@ def _public_b64(vapid):
     return _b64url(raw)
 
 
+def _key_from_env():
+    """A `VAPID_PRIVATE_KEY` kulcs (PEM, vagy a `web-push` / `vapid` eszközök base64url formája),
+    vagy None, ha nincs megadva / nem olvasható."""
+    configured = os.environ.get('VAPID_PRIVATE_KEY', '').replace('\\n', '\n').strip()
+    if not configured:
+        return None
+    try:
+        if configured.startswith('-----'):
+            return Vapid.from_pem(configured.encode())
+        return Vapid.from_string(configured)
+    except Exception as e:
+        print(f"[push] A VAPID_PRIVATE_KEY nem olvasható, a tárolt kulcsot használom: {e}")
+        return None
+
+
 def _load_keys():
-    """(Vapid, nyilvános kulcs): környezetből, az adatbázisból, vagy újonnan generálva."""
-    pem = os.environ.get('VAPID_PRIVATE_KEY', '').replace('\\n', '\n').strip()
-    if not pem:
+    """(Vapid, nyilvános kulcs): környezetből, az adatbázisból, vagy újonnan generálva.
+    A generált kulcs az adatbázisba kerül (a környezetből jövő sosem írja felül)."""
+    vapid = _key_from_env()
+    if vapid is None:
         pem = auth.get_setting('vapid_private_pem') or ''
-    if pem.startswith('-----'):
-        vapid = Vapid.from_pem(pem.encode())
-    else:
-        vapid = Vapid()
-        vapid.generate_keys()
-        auth.set_setting('vapid_private_pem', vapid.private_pem().decode())
+        if pem.startswith('-----'):
+            vapid = Vapid.from_pem(pem.encode())
+        else:
+            vapid = Vapid()
+            vapid.generate_keys()
+            auth.set_setting('vapid_private_pem', vapid.private_pem().decode())
     return vapid, _public_b64(vapid)
 
 

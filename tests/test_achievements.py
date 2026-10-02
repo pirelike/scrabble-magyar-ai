@@ -90,6 +90,12 @@ class TestEvaluateGame:
         assert 'bot_slayer' not in achievements.evaluate_game(
             _game(scores=(100, 50), bot_level=7), {'Anna': 1})[1]
 
+    def test_adaptive_bot_does_not_break_the_evaluation(self):
+        # az "igazodik hozzám" robot fokozata 'auto' (nem szám): nem robotverő, de a többi jár
+        g = _game([_move('Anna', tiles=7, score=70)], scores=(300, 50), bot_level='auto')
+        earned = achievements.evaluate_game(g, {'Anna': 1})[1]
+        assert earned == {'bingo', 'game_300'}
+
     def test_guests_and_bots_get_no_entry(self):
         g = _game([_move('Anna', tiles=7)], bot_level=9)
         assert achievements.evaluate_game(g, {}) == {}

@@ -216,7 +216,7 @@ A szerver opcionális környezeti változókat olvas. Egyik sem kötelező — m
 | `SMTP_USER` | *(üres)* | SMTP felhasználó |
 | `SMTP_PASSWORD` | *(üres)* | SMTP jelszó (app password) |
 | `SMTP_FROM` | *(üres)* | Feladó email cím |
-| `VAPID_PRIVATE_KEY` | *(első induláskor generált, az adatbázisban marad)* | Web Push VAPID privát kulcs (PEM; sortörések `\n`-nel) |
+| `VAPID_PRIVATE_KEY` | *(első induláskor generált, az adatbázisban marad)* | Web Push VAPID privát kulcs (PEM, sortörések `\n`-nel; vagy a `web-push generate-vapid-keys` base64url kulcsa) |
 | `VAPID_SUBJECT` | `mailto:SMTP_FROM` | Web Push `sub` mező (`mailto:` vagy `https:` cím) |
 
 Ha az SMTP változók nincsenek beállítva, a verifikációs kódok a szerver konzolra íródnak ki (fejlesztéshez elegendő).
@@ -276,7 +276,7 @@ static/
   i18n-data.js     — Fordítások (hu / en) — szigorú JSON, a tesztek is ezt olvassák
   style.css        — Stílusok, sötét/világos téma (Slate+Gold paletta), reszponzív layout, animációk
   manifest.webmanifest, offline.html, icons/ — PWA: manifest, kapcsolat nélküli oldal, ikonok
-tests/             — Tesztek (pytest, 1264 teszt)
+tests/             — Tesztek (pytest, 1274 teszt)
 ```
 
 ---
@@ -397,8 +397,8 @@ Támogatott böngészőben a lobby felső sávjában megjelenik a **Telepítés*
 | `tests/test_email_service.py` | 4 | Email küldés |
 | `tests/test_room.py` | 12 | Room osztály |
 | `tests/test_friends.py` | 27 | Barát CRUD, kérések, felhasználókeresés, szobameghívó, online státusz |
-| `tests/test_timer_and_replay.py` | 28 | Körszámláló UI, kör időlimit, replay perzisztencia |
-| `tests/test_regressions.py` | 81 | Kódátvizsgálás során talált hibák regressziós tesztjei |
+| `tests/test_timer_and_replay.py` | 30 | Körszámláló UI, kör időlimit, replay perzisztencia |
+| `tests/test_regressions.py` | 82 | Kódátvizsgálás során talált hibák regressziós tesztjei |
 | `tests/test_ai_player.py` | 81 | Robot: szókincs (ragozott alakok), lépésgenerátor, nehézségi szintek, tipp |
 | `tests/test_bots.py` | 114 | Robotok a játékmodellben és a szerveren, lépéstörténet, előnézet, tipp |
 | `tests/test_spectator.py` | 30 | Megfigyelő mód, élő játékok listája |
@@ -408,16 +408,16 @@ Támogatott böngészőben a lobby felső sávjában megjelenik a **Telepítés*
 | `tests/test_frontend_consistency.py` | 23 | Kliens ↔ szerver összhang: konstansok, elem-azonosítók, Socket.IO események, JS szintaxis |
 
 | `tests/test_adaptive_bot.py` | 40 | „Igazodik hozzám” robot |
-| `tests/test_achievements.py` | 26 | Kitüntetések |
+| `tests/test_achievements.py` | 27 | Kitüntetések |
 | `tests/test_elo.py` | 27 | ELO értékszám, értékszám szerinti ranglista |
 | `tests/test_replay_share.py` | 11 | Megosztható visszajátszás |
-| `tests/test_analysis.py` | 23 | Játékelemzés |
-| `tests/test_daily.py` | 49 | Napi feladvány és ranglistája |
+| `tests/test_analysis.py` | 25 | Játékelemzés |
+| `tests/test_daily.py` | 50 | Napi feladvány és ranglistája |
 | `tests/test_practice.py` | 24 | Szókvíz, rövid szavak |
-| `tests/test_push.py` | 42 | Web Push |
-| `tests/test_async_games.py` | 55 | Levelezős játék |
+| `tests/test_push.py` | 44 | Web Push |
+| `tests/test_async_games.py` | 56 | Levelezős játék |
 
-**Összesen: 1264 teszt** (a node-ot igénylő tesztek node nélkül kimaradnak)
+**Összesen: 1274 teszt** (a node-ot igénylő tesztek node nélkül kimaradnak)
 
 ---
 

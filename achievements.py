@@ -58,7 +58,9 @@ def evaluate_game(game, name_to_user):
         if any(len(tokenize_word(w)) >= LONG_WORD_TILES for w in details.get('words', [])):
             earned[uid].add('long_word')
 
-    strong_bot = any(p.is_bot and (p.difficulty or 0) >= STRONG_BOT_LEVEL for p in game.players)
+    # Az "igazodik hozzám" robot ('auto') nem számít erősnek: az ember szintjére áll be
+    strong_bot = any(p.is_bot and isinstance(p.difficulty, int) and p.difficulty >= STRONG_BOT_LEVEL
+                     for p in game.players)
     winners = {p.name for p in game.winners}
     for player in game.players:
         uid = name_to_user.get(player.name)

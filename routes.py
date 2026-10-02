@@ -716,13 +716,27 @@ def dictionary_check():
 
 # ===== GAME ROUTES =====
 
-def _moves_payload(game_id):
+def _without_rack(details_json):
+    """A lépés részletei a játékos keze (`rack`) nélkül."""
+    try:
+        details = json.loads(details_json or '{}')
+    except (TypeError, ValueError):
+        return details_json
+    if not isinstance(details, dict) or 'rack' not in details:
+        return details_json
+    details.pop('rack')
+    return json.dumps(details, ensure_ascii=False)
+
+
+def _moves_payload(game_id, hide_racks=False):
+    """A lépésnapló a kliensnek. `hide_racks`: folyamatban lévő játéknál a kezek rejtve maradnak
+    (különben a játékosok lépésenként látnák egymás zsetonjait)."""
     return [
         {
             'move_number': m['move_number'],
             'player_name': m['player_name'],
             'action_type': m['action_type'],
-            'details_json': m['details_json'],
+            'details_json': _without_rack(m['details_json']) if hide_racks else m['details_json'],
             'board_snapshot_json': m['board_snapshot_json'],
         }
         for m in get_game_moves(game_id)
@@ -779,11 +793,12 @@ def game_moves(game_id):
     if not is_user_in_game(game_id, user['id']):
         return jsonify({'success': False, 'message': 'Nincs jogosultságod a játék megtekintéséhez.'}), 403
 
+    finished = game_row['status'] == 'finished'
     return jsonify({
         'success': True,
-        'moves': _moves_payload(game_id),
+        'moves': _moves_payload(game_id, hide_racks=not finished),
         'players': get_game_results(game_id),
-        'finished': game_row['status'] == 'finished',
+        'finished': finished,
     })
 
 
