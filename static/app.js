@@ -1,43 +1,39 @@
 // ===== THEME SYSTEM =====
-(function initTheme() {
-    const saved = localStorage.getItem('scrabble-theme');
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const theme = saved || (prefersDark ? 'dark' : 'light');
-    document.body.setAttribute('data-theme', theme);
-})();
+// A kezdeti témát a <head> inline szkriptje már beállította (nincs villanás);
+// itt csak a váltást és a böngésző témaszínét kezeljük.
 
-document.getElementById('theme-toggle').addEventListener('click', () => {
-    const current = document.body.getAttribute('data-theme');
-    const next = current === 'dark' ? 'light' : 'dark';
-    document.body.setAttribute('data-theme', next);
-    localStorage.setItem('scrabble-theme', next);
-});
+const THEME_COLORS = { light: '#f5f5f7', dark: '#000000' };
 
-// Shared topbar buttons (appear on multiple screens)
-function toggleTheme() {
-    const current = document.body.getAttribute('data-theme');
-    const next = current === 'dark' ? 'light' : 'dark';
-    document.body.setAttribute('data-theme', next);
-    localStorage.setItem('scrabble-theme', next);
+function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', THEME_COLORS[theme]);
 }
-document.addEventListener('click', (e) => {
-    const themeBtn = e.target.closest('.btn-theme-toggle');
-    if (themeBtn) { toggleTheme(); return; }
 
-    const profileBtn = e.target.closest('.btn-profile-nav');
-    if (profileBtn) {
+function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme');
+    const next = current === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    try { localStorage.setItem('scrabble-theme', next); } catch { /* localStorage tiltva */ }
+}
+
+applyTheme(document.documentElement.getAttribute('data-theme') || 'light');
+
+// Közös felső sáv gombok (több képernyőn is megjelennek)
+document.addEventListener('click', (e) => {
+    if (e.target.closest('.btn-theme-toggle')) { toggleTheme(); return; }
+
+    if (e.target.closest('.btn-profile-nav')) {
         if (typeof Profile !== 'undefined') Profile.show();
         return;
     }
 
-    const logoutBtn = e.target.closest('.btn-logout-nav');
-    if (logoutBtn) {
+    if (e.target.closest('.btn-logout-nav')) {
         if (typeof Auth !== 'undefined') Auth.logout();
         return;
     }
 
-    const exitPanelBtn = e.target.closest('.btn-exit-panel');
-    if (exitPanelBtn) {
+    if (e.target.closest('.btn-exit-panel')) {
         if (typeof ExitGame !== 'undefined') ExitGame.showDialog();
         return;
     }
@@ -107,10 +103,15 @@ function escapeHtml(str) {
 function showScreen(screenId) {
     document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
     document.getElementById(screenId).classList.remove('hidden');
-    // Hide global theme toggle on screens that have their own in the topbar
+    // A globális téma gomb csak a bejelentkező képernyőn kell: a többin a felső sávban van
     const globalToggle = document.getElementById('theme-toggle');
-    const hasOwnToggle = screenId === 'lobby-screen' || screenId === 'game-screen' || screenId === 'profile-screen' || screenId === 'replay-screen' || screenId === 'waiting-screen';
-    if (globalToggle) globalToggle.classList.toggle('hidden', hasOwnToggle);
+    if (globalToggle) globalToggle.classList.toggle('hidden', screenId !== 'auth-screen');
+    window.scrollTo(0, 0);
+}
+
+// A szoba neve a felső sávban és (telefonon) a játék menüsorában is megjelenik
+function setGameRoomName(name) {
+    document.querySelectorAll('.game-room-name').forEach(el => { el.textContent = name; });
 }
 
 function showMessage(msg, isError = false) {
@@ -248,16 +249,26 @@ const BoardState = {
 const TouchDrag = {
     tileIdx: null,
     ghost: null,
+    half: 22,
 
     createGhost(tile, x, y) {
+        const size = tile.getBoundingClientRect().width || 44;
+        this.half = size / 2;
         const ghost = document.createElement('div');
-        ghost.className = 'hand-tile drag-ghost touch-drag-ghost';
-        ghost.style.left = (x - 22) + 'px';
-        ghost.style.top = (y - 22) + 'px';
+        ghost.className = 'hand-tile drag-ghost touch-drag-ghost' + (tile.classList.contains('long-letter') ? ' long-letter' : '');
+        ghost.style.setProperty('--tile', size + 'px');
+        ghost.style.left = (x - this.half) + 'px';
+        ghost.style.top = (y - this.half) + 'px';
         ghost.innerHTML = tile.innerHTML;
         document.body.appendChild(ghost);
         this.ghost = ghost;
         return ghost;
+    },
+
+    moveGhost(x, y) {
+        if (!this.ghost) return;
+        this.ghost.style.left = (x - this.half) + 'px';
+        this.ghost.style.top = (y - this.half) + 'px';
     },
 
     cleanup() {
@@ -295,7 +306,13 @@ const Auth = {
             this.login();
         });
 
-        // Regisztráció lépések
+        // Regisztráció lépések (Enter is továbblép)
+        const onEnter = (id, fn) => document.getElementById(id).addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); fn(); }
+        });
+        onEnter('reg-email', () => this.sendCode());
+        onEnter('reg-code', () => this.verifyCode());
+        onEnter('reg-password2', () => this.register());
         document.getElementById('btn-reg-send-code').addEventListener('click', () => this.sendCode());
         document.getElementById('btn-reg-resend').addEventListener('click', () => this.resendCode());
         document.getElementById('btn-reg-verify-code').addEventListener('click', () => this.verifyCode());
@@ -360,6 +377,7 @@ const Auth = {
                 this.regEmail = email;
                 document.getElementById('reg-step-1').classList.add('hidden');
                 document.getElementById('reg-step-2').classList.remove('hidden');
+                document.getElementById('reg-code').focus();
                 if (data.dev_code) {
                     document.getElementById('reg-code').value = data.dev_code;
                     document.querySelector('#reg-step-2 .step-info').textContent =
@@ -413,6 +431,7 @@ const Auth = {
             if (data.success) {
                 document.getElementById('reg-step-2').classList.add('hidden');
                 document.getElementById('reg-step-3').classList.remove('hidden');
+                document.getElementById('reg-display-name').focus();
             } else {
                 showAuthError(errorEl, data.message);
             }
@@ -521,6 +540,7 @@ const Auth = {
                 Lobby.enter(data.user.display_name);
             }
         } catch { /* no session */ }
+        document.documentElement.classList.remove('booting');
     },
 };
 
@@ -538,18 +558,6 @@ const Lobby = {
         document.querySelectorAll('.lobby-nav-tab').forEach(tab => {
             tab.addEventListener('click', () => this.switchTab(tab.dataset.lobbyTab));
         });
-
-        // Theme toggle in lobby topbar
-        const lobbyThemeBtn = document.getElementById('theme-toggle-lobby');
-        if (lobbyThemeBtn) {
-            lobbyThemeBtn.addEventListener('click', () => {
-                const body = document.body;
-                const current = body.getAttribute('data-theme');
-                const next = current === 'dark' ? 'light' : 'dark';
-                body.setAttribute('data-theme', next);
-                localStorage.setItem('scrabble-theme', next);
-            });
-        }
 
         socket.on('rooms_list', (rooms) => this.renderRoomsList(rooms));
     },
@@ -1078,11 +1086,19 @@ const WaitingRoom = {
             // Restore lobby: show expected + joined status
             container.innerHTML = AppState.expectedPlayers.map(name => {
                 const joined = joinedNames.includes(name);
-                return `<div class="player-item ${joined ? 'joined' : 'missing'}">${escapeHtml(name)} ${joined ? '(csatlakozott)' : '(v\u00e1rakoz\u00e1s...)'}</div>`;
+                return `<div class="player-item ${joined ? 'joined' : 'missing'}">
+                    <span class="player-avatar">${escapeHtml(Array.from(name)[0] || '?')}</span>
+                    <span class="player-name">${escapeHtml(name)}</span>
+                    <span class="player-tag">${joined ? 'csatlakozott' : 'v\u00e1rakoz\u00e1s...'}</span>
+                </div>`;
             }).join('');
         } else {
             container.innerHTML = gs.players.map((p, i) => `
-                <div class="player-item ${i === 0 ? 'owner' : ''}">${escapeHtml(p.name)}</div>
+                <div class="player-item ${i === 0 ? 'owner' : ''}">
+                    <span class="player-avatar">${escapeHtml(Array.from(p.name)[0] || '?')}</span>
+                    <span class="player-name">${escapeHtml(p.name)}</span>
+                    ${i === 0 ? '<span class="player-tag">tulajdonos</span>' : ''}
+                </div>
             `).join('');
         }
 
@@ -1113,11 +1129,7 @@ const GameBoard = {
                     roomId: AppState.currentRoomId,
                 }));
             }
-            // Update game topbar + panel room name
-            const gameRoomName = document.getElementById('game-room-name');
-            if (gameRoomName) gameRoomName.textContent = AppState.roomName || 'Szoba';
-            const panelRoomName = document.getElementById('panel-room-name');
-            if (panelRoomName) panelRoomName.textContent = AppState.roomName || 'Szoba';
+            setGameRoomName(AppState.roomName || 'Szoba');
             // Update lobby room tab
             const roomTab = document.getElementById('nav-tab-room');
             if (roomTab) roomTab.textContent = 'Aktív játék';
@@ -1182,11 +1194,7 @@ const GameBoard = {
             }
             this._prevCurrentPlayer = state.current_player;
 
-            // Update game topbar + panel room name if not set
-            const gameRoomName = document.getElementById('game-room-name');
-            if (gameRoomName && AppState.roomName) gameRoomName.textContent = AppState.roomName;
-            const panelRoomName = document.getElementById('panel-room-name');
-            if (panelRoomName && AppState.roomName) panelRoomName.textContent = AppState.roomName;
+            if (AppState.roomName) setGameRoomName(AppState.roomName);
 
             if (state.finished) {
                 ChallengeUI.stopCountdown(); TurnTimerUI._stop();
@@ -1301,7 +1309,7 @@ const GameBoard = {
             const placed = placedMap.get(key);
             const pending = pendingMap.get(key);
 
-            cell.classList.remove('has-tile', 'placed-this-turn', 'can-place', 'pending-challenge-tile');
+            cell.classList.remove('has-tile', 'placed-this-turn', 'can-place', 'pending-challenge-tile', 'long-letter');
 
             if (pending) {
                 cell.classList.add('has-tile', 'pending-challenge-tile');
@@ -1317,6 +1325,10 @@ const GameBoard = {
                 const premium = PREMIUM_MAP[key];
                 cell.innerHTML = premium ? `<span class="premium-label">${PREMIUM_LABELS[premium]}</span>` : '';
             }
+
+            // Többkarakteres betű (SZ, CS, ZS...): kisebb betűméret, hogy ne érjen az értékszámra
+            const tile = pending || placed || boardCell;
+            if (tile && tile.letter.length > 1) cell.classList.add('long-letter');
         });
     },
 
@@ -1334,7 +1346,7 @@ const GameBoard = {
             if (placedHandIndices.has(idx)) return;
 
             const el = document.createElement('div');
-            el.className = 'hand-tile';
+            el.className = 'hand-tile' + (tile.length > 1 ? ' long-letter' : '');
             if (tile === '') {
                 el.classList.add('blank-tile');
                 el.innerHTML = `?<span class="tile-value">0</span>`;
@@ -1394,10 +1406,7 @@ const GameBoard = {
             if (TouchDrag.tileIdx !== null) {
                 e.preventDefault();
                 const touch = e.touches[0];
-                if (TouchDrag.ghost) {
-                    TouchDrag.ghost.style.left = (touch.clientX - 22) + 'px';
-                    TouchDrag.ghost.style.top = (touch.clientY - 22) + 'px';
-                }
+                TouchDrag.moveGhost(touch.clientX, touch.clientY);
                 const rawEl = document.elementFromPoint(touch.clientX, touch.clientY);
                 const targetCell = rawEl && rawEl.closest('.cell');
                 if (targetCell !== BoardState.lastDropTarget) {
@@ -1578,7 +1587,7 @@ const BlankDialog = {
         });
 
         const cancelBtn = document.createElement('button');
-        cancelBtn.className = 'btn btn-secondary blank-cancel-btn';
+        cancelBtn.className = 'secondary blank-cancel-btn';
         cancelBtn.textContent = 'Mégsem';
         cancelBtn.addEventListener('click', () => {
             dialog.classList.add('hidden');
@@ -1704,6 +1713,9 @@ const ChallengeUI = {
         if (!this.timer) {
             this.startCountdown(pc.expires_at);
             if (!isMyPlacement) SoundManager.play('vote');
+            // Telefonon a panel görgethető: új szavazásnál a tetejére ugrik, hogy a gombok látsszanak
+            const panel = document.querySelector('.side-panel');
+            if (panel) panel.scrollTop = 0;
         } else if (pc.expires_at) {
             // Re-sync with server timestamp on each game_state update
             this.timeLeft = Math.max(0, Math.ceil((pc.expires_at * 1000 - Date.now()) / 1000));
@@ -1841,10 +1853,28 @@ const Chat = {
         input.value = '';
     },
 
+    // Látszik-e a chat ablak a képernyőn, és nem takarja-e el valami (pl. a ragadós gombsor)?
+    _isVisible() {
+        const el = document.getElementById('chat-messages');
+        if (!el || el.offsetParent === null) return false;
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 || r.bottom <= 0 || r.top >= window.innerHeight) return false;
+        const x = r.left + r.width / 2;
+        const y = Math.min(Math.max(r.top + r.height / 2, 1), window.innerHeight - 1);
+        const hit = document.elementFromPoint(x, y);
+        return !!hit && el.contains(hit);
+    },
+
     onMessage(msg, skipSound = false) {
         AppState.chatMessages.push(msg);
-        if (!skipSound && (!msg.sid || msg.sid !== socket.id)) {
+        const fromOther = !msg.sid || msg.sid !== socket.id;
+        if (!skipSound && fromOther) {
             SoundManager.play('chat');
+            // Telefonon a chat gyakran a képernyőn kívül van: ilyenkor értesítésként is megjelenik
+            if (!this._isVisible()) {
+                const text = String(msg.message);
+                showMessage(`${msg.name}: ${text.length > 80 ? text.slice(0, 80) + '…' : text}`);
+            }
         }
         const container = document.getElementById('chat-messages');
         if (!container) return;
@@ -2179,13 +2209,24 @@ const ExitGame = {
 const Profile = {
     init() {
         document.getElementById('btn-profile').addEventListener('click', () => this.show());
-        document.getElementById('btn-profile-back').addEventListener('click', () => {
-            showScreen('lobby-screen');
-            socket.emit('get_rooms');
-        });
+        document.getElementById('btn-profile-back').addEventListener('click', () => this.back());
+    },
+
+    // Vissza arra a képernyőre, ahonnan a profilt megnyitottuk (lobby, várakozó szoba vagy játék)
+    back() {
+        let target = this._returnTo || 'lobby-screen';
+        this._returnTo = null;
+        const inRoom = target === 'waiting-screen' || target === 'game-screen';
+        if (inRoom && !AppState.currentRoomId) target = 'lobby-screen';
+        showScreen(target);
+        if (target === 'lobby-screen') socket.emit('get_rooms');
     },
 
     async show() {
+        const current = document.querySelector('.screen:not(.hidden)');
+        if (current && current.id !== 'profile-screen' && current.id !== 'replay-screen') {
+            this._returnTo = current.id;
+        }
         try {
             const resp = await fetch('/api/auth/profile');
             const data = await resp.json();
@@ -2234,7 +2275,7 @@ const Profile = {
     renderHistory(history) {
         const container = document.getElementById('profile-history');
         if (!history.length) {
-            container.innerHTML = '<p class="empty-msg">Nincs még befejezett játék.</p>';
+            container.innerHTML = '<div class="empty-state"><p class="empty-msg">Nincs még befejezett játék.</p></div>';
             return;
         }
         container.innerHTML = '';
@@ -2290,9 +2331,13 @@ const Profile = {
 const Replay = {
     moves: [],
     currentIdx: -1,
+    _returnTo: null,
 
     init() {
-        document.getElementById('btn-replay-back').addEventListener('click', () => Profile.show());
+        document.getElementById('btn-replay-back').addEventListener('click', () => {
+            showScreen(this._returnTo || 'profile-screen');
+            this._returnTo = null;
+        });
         document.getElementById('btn-replay-prev').addEventListener('click', () => this.prev());
         document.getElementById('btn-replay-next').addEventListener('click', () => this.next());
     },
@@ -2306,6 +2351,8 @@ const Replay = {
                 return;
             }
 
+            const current = document.querySelector('.screen:not(.hidden)');
+            if (current && current.id !== 'replay-screen') this._returnTo = current.id;
             this.moves = data.moves;
             this.currentIdx = -1;
             this.buildBoard();
@@ -2391,11 +2438,12 @@ const Replay = {
             const c = parseInt(cell.dataset.col);
             const key = `${r},${c}`;
 
-            cell.classList.remove('has-tile');
+            cell.classList.remove('has-tile', 'long-letter');
 
             if (boardData && boardData[r] && boardData[r][c]) {
                 const tile = boardData[r][c];
                 cell.classList.add('has-tile');
+                if (tile.letter.length > 1) cell.classList.add('long-letter');
                 const value = tile.is_blank ? 0 : (TILE_VALUES[tile.letter] || 0);
                 cell.innerHTML = `${escapeHtml(tile.letter)}<span class="tile-value">${value}</span>`;
             } else {
@@ -2812,7 +2860,7 @@ const Friends = {
     renderList() {
         const container = document.getElementById('friends-list-container');
         if (!this.friendsList.length) {
-            container.innerHTML = '<div class="empty-state"><i>👥</i><p>Még nincsenek barátaid.</p></div>';
+            container.innerHTML = '<div class="empty-state"><p class="empty-msg">Még nincsenek barátaid.</p></div>';
             return;
         }
 
@@ -2840,7 +2888,7 @@ const Friends = {
             <div class="friend-item">
                 <div class="friend-item-name">${escapeHtml(r.display_name)}</div>
                 <div class="friend-item-actions">
-                    <button class="small-btn btn-primary" onclick="Friends.acceptRequest(${r.id})">Elfogad</button>
+                    <button class="small-btn" onclick="Friends.acceptRequest(${r.id})">Elfogad</button>
                     <button class="small-btn danger" onclick="Friends.declineRequest(${r.id})">Elutasít</button>
                 </div>
             </div>
@@ -2895,7 +2943,7 @@ const Friends = {
                 }).join('');
                 resultsEl.classList.remove('hidden');
             } else {
-                resultsEl.innerHTML = '<div class="padding-3 text-muted">Nincs találat.</div>';
+                resultsEl.innerHTML = '<div class="empty-state"><p class="empty-msg">Nincs találat.</p></div>';
                 resultsEl.classList.remove('hidden');
             }
         } catch {
@@ -2938,11 +2986,11 @@ const Friends = {
             } else {
                 container.innerHTML = onlineFriends.map(f => `
                     <div class="friend-item">
-                        <div class="friend-item-name text-sm">
+                        <div class="friend-item-name">
                             <span class="status-dot online"></span>
                             ${escapeHtml(f.display_name)}
                         </div>
-                        <button class="small-btn" onclick="Friends.inviteToRoom(${f.id})">Meghívás</button>
+                        <button class="small-btn tinted" onclick="Friends.inviteToRoom(${f.id})">Meghívás</button>
                     </div>
                 `).join('');
             }
@@ -2960,34 +3008,25 @@ const Friends = {
         if (!container) return;
         
         const toast = document.createElement('div');
-        toast.className = 'toast';
-        toast.style.display = 'flex';
-        toast.style.flexDirection = 'column';
-        toast.style.gap = '12px';
-        toast.style.borderLeft = '4px solid var(--accent)';
-        
+        toast.className = 'toast toast-invite';
+
         const text = document.createElement('div');
-        text.style.fontWeight = '500';
         text.textContent = `${data.from_name} meghívott ide: "${data.room_name}"`;
-        
+
         const btnContainer = document.createElement('div');
-        btnContainer.style.display = 'flex';
-        btnContainer.style.gap = '8px';
-        
-        const acceptBtn = document.createElement('button');
-        acceptBtn.className = 'btn-primary small-btn';
-        acceptBtn.textContent = 'Csatlakozás';
-        acceptBtn.style.flex = '1';
-        
+        btnContainer.className = 'toast-invite-actions';
+
         const declineBtn = document.createElement('button');
-        declineBtn.className = 'danger small-btn';
+        declineBtn.className = 'secondary small-btn';
         declineBtn.textContent = 'Elutasítás';
-        declineBtn.style.flex = '1';
-        declineBtn.style.marginTop = '0'; // Override default danger margin-top
-        
-        btnContainer.appendChild(acceptBtn);
+
+        const acceptBtn = document.createElement('button');
+        acceptBtn.className = 'small-btn';
+        acceptBtn.textContent = 'Csatlakozás';
+
         btnContainer.appendChild(declineBtn);
-        
+        btnContainer.appendChild(acceptBtn);
+
         toast.appendChild(text);
         toast.appendChild(btnContainer);
         
@@ -3023,10 +3062,34 @@ const Friends = {
     }
 };
 
+// ===== DIALOGS (Esc billentyű, háttérre koppintás) =====
+
+const Dialogs = {
+    init() {
+        // Lapok (joker választó, kilépés): a háttérre koppintás elveti őket
+        for (const id of ['blank-dialog', 'exit-dialog']) {
+            document.getElementById(id).addEventListener('click', (e) => {
+                if (e.target === e.currentTarget) e.currentTarget.classList.add('hidden');
+            });
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            const open = ['confirm-dialog', 'sound-settings-overlay', 'blank-dialog', 'exit-dialog']
+                .map(id => document.getElementById(id))
+                .find(el => el && !el.classList.contains('hidden'));
+            if (!open) return;
+            if (open.id === 'confirm-dialog') document.getElementById('btn-confirm-no').click();
+            else open.classList.add('hidden');
+        });
+    },
+};
+
 // ===== INITIALIZATION =====
 
 SoundManager.init();
 SoundSettings.init();
+Dialogs.init();
 Auth.init();
 Lobby.init();
 WaitingRoom.init();
