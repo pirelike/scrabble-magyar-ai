@@ -4,3 +4,4 @@ python-engineio>=4.8
 python-socketio>=5.10
 gevent>=24.2
 gevent-websocket>=0.10.1
+pywebpush>=2.0   # opcionális: Web Push értesítések a saját körre

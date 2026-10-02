@@ -29,4 +29,5 @@ AUTH_RATE_LIMITS = {
     'analysis': (30, 60),        # 30 kérés / 1 perc (játékelemzés lekérdezése)
     'daily': (60, 60),           # 60 kérés / 1 perc (napi feladvány, ranglista)
     'practice': (120, 60),       # 120 kérés / 1 perc (kvíz, rövid szavak)
+    'push': (20, 60),            # 20 kérés / 1 perc (push feliratkozás)
 }

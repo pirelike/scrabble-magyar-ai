@@ -20,6 +20,7 @@ class Room:
         self.is_private = is_private
         self.is_restored = False
         self.is_puzzle = False  # napi feladvány (egyjátékos, nem mentődik)
+        self.pushed_turn = -1   # melyik körhöz küldtünk már push értesítést
         self.chat_messages = []
         self._challenge_timer_id = 0
         self._turn_timer_id = 0

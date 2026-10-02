@@ -3486,6 +3486,97 @@ const Practice = {
     },
 };
 
+// ===== WEB PUSH: értesítés, ha te jössz =====
+
+const Push = {
+    supported: ('serviceWorker' in navigator) && ('PushManager' in window) && ('Notification' in window),
+
+    init() {
+        const toggle = document.getElementById('push-toggle');
+        toggle.addEventListener('change', () => (toggle.checked ? this.enable() : this.disable()));
+        // A háttérbe került lapnak a szerver push értesítést küld a saját körről
+        document.addEventListener('visibilitychange', () => this.reportVisibility());
+        socket.on('connect', () => this.reportVisibility());
+        window.addEventListener('langchange', () => this.syncLanguage());
+    },
+
+    reportVisibility() {
+        if (socket.connected && document.hidden !== undefined) socket.emit('set_visibility', { hidden: document.hidden });
+    },
+
+    _key(base64) {
+        const padding = '='.repeat((4 - (base64.length % 4)) % 4);
+        const raw = atob((base64 + padding).replace(/-/g, '+').replace(/_/g, '/'));
+        return Uint8Array.from(raw, ch => ch.charCodeAt(0));
+    },
+
+    async _subscription() {
+        const registration = await navigator.serviceWorker.ready;
+        return registration.pushManager.getSubscription();
+    },
+
+    // A profil megnyitásakor: látszik-e a kapcsoló, és be van-e kapcsolva
+    async refresh() {
+        const box = document.getElementById('push-settings');
+        const hint = document.getElementById('push-hint');
+        const toggle = document.getElementById('push-toggle');
+        box.classList.add('hidden');
+        if (!this.supported || AppState.isGuest) return;
+        try {
+            const res = await fetch('/api/push/public-key');
+            const data = await res.json();
+            if (!data.success || !data.available) return;
+            this._publicKey = data.public_key;
+            const sub = await this._subscription();
+            toggle.checked = !!sub && data.subscribed && Notification.permission === 'granted';
+            if (Notification.permission === 'denied') hint.textContent = t('push.denied');
+            else if (PWA.isIosSafari() && !PWA.isStandalone()) hint.textContent = t('push.ios_hint');
+            else hint.textContent = '';
+            box.classList.remove('hidden');
+        } catch { /* az értesítés nem kritikus */ }
+    },
+
+    async enable() {
+        const toggle = document.getElementById('push-toggle');
+        try {
+            const permission = await Notification.requestPermission();
+            if (permission !== 'granted') throw new Error('denied');
+            const registration = await navigator.serviceWorker.ready;
+            const sub = await registration.pushManager.subscribe({
+                userVisibleOnly: true, applicationServerKey: this._key(this._publicKey),
+            });
+            const data = await postJson('/api/push/subscribe', { ...sub.toJSON(), lang: I18N.lang });
+            if (!data.success) throw new Error('server');
+            showMessage(t('push.enabled'));
+        } catch {
+            toggle.checked = false;
+            showMessage(Notification.permission === 'denied' ? t('push.denied') : t('push.error'), true);
+        }
+    },
+
+    async disable() {
+        try {
+            const sub = await this._subscription();
+            if (sub) {
+                await postJson('/api/push/unsubscribe', { endpoint: sub.endpoint });
+                await sub.unsubscribe();
+            }
+            showMessage(t('push.disabled'));
+        } catch {
+            showMessage(t('push.error'), true);
+        }
+    },
+
+    // Nyelvváltáskor a szerver a feliratkozás nyelvén küldi az értesítést
+    async syncLanguage() {
+        if (!this.supported || AppState.isGuest || Notification.permission !== 'granted') return;
+        try {
+            const sub = await this._subscription();
+            if (sub) await postJson('/api/push/subscribe', { ...sub.toJSON(), lang: I18N.lang });
+        } catch { /* nem kritikus */ }
+    },
+};
+
 // ===== KITÜNTETÉSEK =====
 
 const BADGE_ICONS = {
@@ -3599,6 +3690,7 @@ const Profile = {
             this.renderStats(data.stats);
             Badges.renderProfile(data.badges || []);
             this.renderHistory(data.history);
+            Push.refresh();
             const nameEl = document.getElementById('profile-user-name');
             if (nameEl) nameEl.textContent = AppState.currentUser?.display_name || '';
             showScreen('profile-screen');
@@ -5037,6 +5129,7 @@ Profile.init();
 Badges.init();
 Daily.init();
 Practice.init();
+Push.init();
 Replay.init();
 GameOver.init();
 Reconnection.init();

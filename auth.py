@@ -125,6 +125,23 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_game_players_user_id ON game_players(user_id);
         CREATE INDEX IF NOT EXISTS idx_game_moves_game_id ON game_moves(game_id);
 
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS push_subscriptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            endpoint TEXT NOT NULL UNIQUE,
+            p256dh TEXT NOT NULL,
+            auth TEXT NOT NULL,
+            lang TEXT NOT NULL DEFAULT 'hu',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id);
+
         CREATE TABLE IF NOT EXISTS daily_puzzles (
             puzzle_date TEXT PRIMARY KEY,
             board_json TEXT NOT NULL,
@@ -764,6 +781,53 @@ def get_game_results(game_id):
         ).fetchall()
     return [{'player_name': r['player_name'], 'final_score': r['final_score'],
              'is_winner': bool(r['is_winner'])} for r in rows]
+
+
+# --- Beállítások és push feliratkozások ---
+
+def get_setting(key):
+    with _db() as conn:
+        row = conn.execute('SELECT value FROM app_settings WHERE key = ?', (key,)).fetchone()
+    return row['value'] if row else None
+
+
+def set_setting(key, value):
+    with _db() as conn:
+        conn.execute('INSERT INTO app_settings (key, value) VALUES (?, ?) '
+                     'ON CONFLICT(key) DO UPDATE SET value = excluded.value', (key, value))
+
+
+def save_push_subscription(user_id, endpoint, p256dh, auth_key, lang='hu'):
+    """Web Push feliratkozás mentése (egy végpont egyszer szerepelhet; másik felhasználóhoz is átkerülhet,
+    ha ugyanazon az eszközön másik fiókkal léptek be)."""
+    with _db() as conn:
+        conn.execute(
+            'INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, lang) VALUES (?, ?, ?, ?, ?) '
+            'ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh, '
+            'auth = excluded.auth, lang = excluded.lang',
+            (user_id, endpoint, p256dh, auth_key, lang))
+
+
+def delete_push_subscription(endpoint, user_id=None):
+    """Feliratkozás törlése (a `user_id` megadásakor csak a sajátja). Visszatér: törölt sorok száma."""
+    with _db() as conn:
+        if user_id is None:
+            return conn.execute('DELETE FROM push_subscriptions WHERE endpoint = ?', (endpoint,)).rowcount
+        return conn.execute('DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?',
+                            (endpoint, user_id)).rowcount
+
+
+def get_push_subscriptions(user_id):
+    with _db() as conn:
+        rows = conn.execute('SELECT endpoint, p256dh, auth, lang FROM push_subscriptions WHERE user_id = ?',
+                            (user_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def count_push_subscriptions(user_id):
+    with _db() as conn:
+        return conn.execute('SELECT COUNT(*) FROM push_subscriptions WHERE user_id = ?',
+                            (user_id,)).fetchone()[0]
 
 
 # --- Napi feladvány ---

@@ -16,6 +16,7 @@ import achievements
 import ai_player
 import daily
 import dictionary
+import push_service
 from game import Game, CHALLENGE_TIMEOUT, ALLOWED_HINT_LIMITS, DEFAULT_HINT_LIMIT
 from room import Room
 from config import AUTH_RATE_LIMITS
@@ -72,6 +73,7 @@ _SOCKET_RATE_LIMITS = {
     'respond_invite': (10, 10),
     'preview_move': (30, 10),
     'request_hint': (3, 30),
+    'set_visibility': (20, 10),
     'start_daily': (3, 30),
     'retry_daily': (10, 30),
     'reveal_daily': (5, 30),
@@ -80,6 +82,7 @@ _SOCKET_RATE_LIMITS = {
 }
 
 rate_limiter = RateLimiter(_SOCKET_RATE_LIMITS, AUTH_RATE_LIMITS)
+push_service.init(socketio.start_background_task)
 
 # --- Backward compatibility ---
 # A tesztek közvetlenül elérik ezeket a dict-eket (server.rooms, server.player_names, stb.)
@@ -260,6 +263,22 @@ def _emit_all_states(game, room_id=None):
         spectator_state['spectator_count'] = spectator_count
         for sid in list(room.spectators):
             socketio.emit('game_state', spectator_state, room=sid)
+    _maybe_push_turn(room, game)
+
+
+def _maybe_push_turn(room, game):
+    """Web Push „Te jössz!”, ha a soron lévő regisztrált játékos nincs jelen (lecsatlakozott vagy a
+    böngészőlapja háttérbe került). Körönként legfeljebb egyszer."""
+    if not room or room.is_puzzle or not game.started or game.finished or game.pending_challenge:
+        return
+    player = game.current_player()
+    if not player or player.is_bot or room.pushed_turn == game.turn_number:
+        return
+    if not (player.disconnected or player.id in state.hidden_sids):
+        return
+    user_id = _user_id_for_player(room, player)
+    if user_id and push_service.notify_turn(user_id, room.name, room.id):
+        room.pushed_turn = game.turn_number
 
 
 def _broadcast_rooms():
@@ -744,6 +763,7 @@ def handle_disconnect():
             state.cleanup_player_token(sid)
 
     state.player_names.pop(sid, None)
+    state.hidden_sids.discard(sid)
     state.remove_online_user(sid)
     if is_registered_user and was_online and not state.is_user_online(user_id):
         _notify_friends_presence_change(user_id, False)
@@ -1790,6 +1810,21 @@ def handle_request_hint():
             for m in moves
         ],
     })
+
+
+@socketio.on('set_visibility')
+def handle_set_visibility(data):
+    """A kliens jelzi, ha a lapja háttérbe került: ilyenkor a saját körről push értesítést kap."""
+    sid = request.sid
+    if not rate_limiter.check_socket(sid, 'set_visibility') or not isinstance(data, dict):
+        return
+    if data.get('hidden') is True:
+        state.hidden_sids.add(sid)
+        room_id, room, game = state.get_room_for_player(sid)
+        if room:
+            _maybe_push_turn(room, game)   # már az ő köre van: azonnal értesítjük
+    else:
+        state.hidden_sids.discard(sid)
 
 
 # --- Napi feladvány ---

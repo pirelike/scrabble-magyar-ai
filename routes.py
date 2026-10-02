@@ -11,6 +11,7 @@ import analysis
 import daily
 import dictionary
 import practice
+import push_service
 from config import SMTP_CONFIGURED
 from tiles import tokenize_word, word_base_score, TILE_VALUES
 from auth import (
@@ -23,6 +24,7 @@ from auth import (
     get_or_create_share_token, get_game_by_share_token, get_game_results,
     get_user_achievements, get_game_analysis, save_game_analysis,
     get_daily_puzzle, get_daily_entry, get_daily_leaderboard,
+    save_push_subscription, delete_push_subscription, count_push_subscriptions,
     get_user_active_games, abandon_game_by_id, is_user_in_game,
     get_friends, get_pending_requests, get_sent_requests, search_users,
 )
@@ -538,6 +540,56 @@ def daily_leaderboard():
     for entry in entries:
         entry['is_me'] = entry['user_id'] == user_id
     return jsonify({'success': True, 'date': date_str, 'entries': entries, 'me': me})
+
+
+@auth_bp.route('/api/push/public-key', methods=['GET'])
+def push_public_key():
+    """A Web Push nyilvános kulcsa; `available` hamis, ha a szerveren nincs push támogatás."""
+    user = validate_session(request.cookies.get('session_token'))
+    if not user:
+        return jsonify({'success': False, 'message': 'Bejelentkezés szükséges.'}), 401
+    if not push_service.is_available():
+        return jsonify({'success': True, 'available': False})
+    return jsonify({'success': True, 'available': True, 'public_key': push_service.public_key(),
+                    'subscribed': count_push_subscriptions(user['id']) > 0})
+
+
+_PUSH_ENDPOINT_RE = re.compile(r'^https://[^\s]{10,1000}$')
+
+
+@auth_bp.route('/api/push/subscribe', methods=['POST'])
+def push_subscribe():
+    """Web Push feliratkozás (vagy a nyelvének frissítése) a bejelentkezett felhasználónak."""
+    user = validate_session(request.cookies.get('session_token'))
+    if not user:
+        return jsonify({'success': False, 'message': 'Bejelentkezés szükséges.'}), 401
+    if not _rate_limiter.check_ip(_get_client_ip(), 'push'):
+        return jsonify({'success': False, 'message': 'Túl sok kérés. Próbáld újra később.'}), 429
+    if not push_service.is_available():
+        return jsonify({'success': False, 'message': 'Az értesítések ezen a szerveren nem érhetők el.'}), 503
+    data = request.get_json(silent=True) or {}
+    keys = data.get('keys') if isinstance(data.get('keys'), dict) else {}
+    endpoint, p256dh, auth_key = data.get('endpoint'), keys.get('p256dh'), keys.get('auth')
+    if not (isinstance(endpoint, str) and _PUSH_ENDPOINT_RE.match(endpoint)
+            and isinstance(p256dh, str) and 20 <= len(p256dh) <= 200
+            and isinstance(auth_key, str) and 8 <= len(auth_key) <= 100):
+        return jsonify({'success': False, 'message': 'Érvénytelen feliratkozás.'}), 400
+    lang = data.get('lang') if data.get('lang') in push_service.MESSAGES else push_service.DEFAULT_LANG
+    save_push_subscription(user['id'], endpoint, p256dh, auth_key, lang)
+    return jsonify({'success': True})
+
+
+@auth_bp.route('/api/push/unsubscribe', methods=['POST'])
+def push_unsubscribe():
+    user = validate_session(request.cookies.get('session_token'))
+    if not user:
+        return jsonify({'success': False, 'message': 'Bejelentkezés szükséges.'}), 401
+    data = request.get_json(silent=True) or {}
+    endpoint = data.get('endpoint')
+    if not isinstance(endpoint, str):
+        return jsonify({'success': False, 'message': 'Érvénytelen feliratkozás.'}), 400
+    delete_push_subscription(endpoint, user['id'])
+    return jsonify({'success': True})
 
 
 @public_bp.route('/api/practice/quiz', methods=['GET'])
