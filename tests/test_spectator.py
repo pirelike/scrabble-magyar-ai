@@ -308,7 +308,7 @@ class TestRoomLifecycle:
         s = make_client('Néző')
         s.emit('spectate_room', {'room_id': room.id})
         s.get_received()
-        for _ in range(4):
+        for _ in range(6):
             current = a if room.game.current_player().name == 'Anna' else b
             import server
             server.rate_limiter._socket_history.clear()

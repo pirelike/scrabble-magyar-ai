@@ -9,7 +9,6 @@ class Player:
         self.name = name
         self.hand = []  # Betűzsetonok a kézben
         self.score = 0
-        self.consecutive_passes = 0
         self.skip_next_turn = False  # Challenge büntetés
         self.disconnected = False  # Ideiglenesen lecsatlakozott
         self.is_bot = is_bot  # Számítógépes ellenfél

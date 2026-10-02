@@ -551,7 +551,7 @@ def _save_game_to_db(room_id):
                     'player_name': p.name,
                     'user_id': _user_id_for_player(room, p),
                     'final_score': p.score,
-                    'is_winner': bool(game.winner and game.winner.name == p.name),
+                    'is_winner': any(w.name == p.name for w in game.winners),
                 })
             db_id = finish_game(room_id, state_json, players_data, room_name=room.name,
                                 has_bots=has_bots)
@@ -1553,7 +1553,10 @@ def handle_exchange_tiles(data):
     if success:
         room.invalidate_turn_timer()
         emit('action_result', {'success': True, 'message': msg, 'own_turn': True})
-        _start_turn_timer(room_id)
+        if game.finished:
+            _save_game_to_db(room_id)
+        else:
+            _start_turn_timer(room_id)
         _emit_all_states(game, room_id)
         _schedule_bot_turn(room_id)
     else:

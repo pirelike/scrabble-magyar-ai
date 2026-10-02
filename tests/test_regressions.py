@@ -66,7 +66,7 @@ def _three_player_game(**kwargs):
 
 
 class TestPassesWithDisconnectedPlayer:
-    def test_game_ends_when_all_connected_players_passed_twice(self):
+    def test_game_ends_after_six_scoreless_turns_with_a_disconnected_player(self):
         game = _three_player_game()
         game.mark_disconnected('c')
         for _ in range(10):
@@ -817,10 +817,9 @@ class TestFinishedGameSavedOnce:
         owner.emit('start_game')
         owner.get_received()
         room_id, room = next(iter(server.state.rooms.items()))
-        # Játék kényszerített befejezése (egyedül: két passz)
-        owner.emit('pass_turn')
-        owner.emit('pass_turn')
-        owner.get_received()
+        # Játék kényszerített befejezése (egyedül: hat pont nélküli kör)
+        for _ in range(6):
+            room.game.pass_turn(room.game.current_player().id)
         assert room.game.finished
         server._save_game_to_db(room_id)
         server._save_game_to_db(room_id)
@@ -828,6 +827,27 @@ class TestFinishedGameSavedOnce:
         history = auth.get_user_game_history(uid)
         assert len(history) == 1
         assert history[0]['room_name'] == 'Solo'
+
+
+class TestDrawIsSavedForEveryTopScorer:
+    def test_tied_players_both_get_the_win(self):
+        import auth
+        import server
+        alice, alice_id = _registered('alice@example.com', 'Alice')
+        bob, bob_id = _registered('bob@example.com', 'Bob')
+        _start_room(alice, [bob])
+        room_id, room = next(iter(server.state.rooms.items()))
+        game = room.game
+        for player in game.players:
+            player.hand = []
+            player.score = 50
+        game._end_game(None)
+        assert len(game.winners) == 2
+        server._save_game_to_db(room_id)
+        for uid in (alice_id, bob_id):
+            user = auth.get_user_by_id(uid)
+            assert user['games_won'] == 1
+            assert auth.get_user_game_history(uid)[0]['is_winner']
 
 
 # ------------------------------------------------------ mentés / visszaállítás

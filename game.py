@@ -8,6 +8,8 @@ from player import Player  # noqa: F401 — re-export for backward compat
 HAND_SIZE = 7
 BONUS_ALL_TILES = 50
 CHALLENGE_TIMEOUT = 30  # másodperc
+# Ennyi egymást követő pont nélküli kör (passz, csere, elutasított lerakás) után véget ér a játék
+SCORELESS_TURNS_LIMIT = 6
 # Tippek száma játékonként (0 = kikapcsolva); a szoba létrehozásakor választható
 ALLOWED_HINT_LIMITS = (0, 1, 3, 5, 10)
 DEFAULT_HINT_LIMIT = 3
@@ -25,7 +27,8 @@ class Game:
         self.current_player_idx = 0
         self.started = False
         self.finished = False
-        self.winner = None
+        self.winners = []  # döntetlennél több is lehet
+        self.scoreless_turns = 0  # egymást követő pont nélküli körök száma
         self.turn_number = 0
         self.last_action = None
         self.challenge_mode = challenge_mode
@@ -64,6 +67,15 @@ class Game:
             bot_id = f"bot-{self.id}-{self._bot_seq}"
         self.players.append(Player(bot_id, name, is_bot=True, difficulty=difficulty))
         return True, "Robot hozzáadva."
+
+    @property
+    def winner(self):
+        """Az egyetlen győztes; döntetlennél (vagy játék közben) None."""
+        return self.winners[0] if len(self.winners) == 1 else None
+
+    @winner.setter
+    def winner(self, player):
+        self.winners = [player] if player else []
 
     def hints_left(self):
         """Hány tipp kérhető még (0, ha kikapcsolták vagy elfogytak)."""
@@ -232,7 +244,7 @@ class Game:
         self._remove_tiles_from_hand(player, tiles_placed)
         new_tiles = self.bag.draw(HAND_SIZE - len(player.hand))
         player.hand.extend(new_tiles)
-        player.consecutive_passes = 0
+        self.scoreless_turns = 0
         self._set_last_action(f"{player.name}: {', '.join(word_strs)} ({total_score} pont)",
                               type='place', player=player.name, words=list(word_strs),
                               score=total_score)
@@ -353,7 +365,7 @@ class Game:
         player.score += pc.score
         new_tiles = self.bag.draw(HAND_SIZE - len(player.hand))
         player.hand.extend(new_tiles)
-        player.consecutive_passes = 0
+        self.scoreless_turns = 0
 
         self._set_last_action(f"{player.name}: {', '.join(pc.word_strs)} ({pc.score} pont)",
                               type='place', player=player.name, words=list(pc.word_strs),
@@ -373,7 +385,6 @@ class Game:
         self.pending_challenge = None
 
         player.hand.extend(pc.removed_from_hand)
-        player.consecutive_passes = 0
         self.rejected_placements.add(frozenset(pc.tiles_placed))
 
         self._set_last_action(
@@ -382,6 +393,9 @@ class Game:
             type='rejected', player=player.name, words=list(pc.word_strs))
         self._record_move(player.name, 'challenge_reject')
 
+        # Az elutasított lerakás pont nélküli körnek számít (különben végtelen próbálkozás lenne)
+        if self._register_scoreless_turn():
+            return
         if player.disconnected:
             # A lecsatlakozott lerakó nem tud újra lépni, ne akadjon el a játék.
             self._next_turn()
@@ -514,11 +528,11 @@ class Game:
         player.hand.extend(new_tiles)
         self.bag.put_back(tiles_to_exchange)
 
-        player.consecutive_passes = 0
         self._set_last_action(f"{player.name} cserélt {len(tiles_to_exchange)} zsetont",
                               type='exchange', player=player.name, count=len(tiles_to_exchange))
         self._record_move(player.name, 'exchange')
-        self._next_turn()
+        if not self._register_scoreless_turn():
+            self._next_turn()
 
         return True, f"{len(tiles_to_exchange)} zseton kicserélve."
 
@@ -533,20 +547,23 @@ class Game:
         if player.id != player_id:
             return False, "Nem te következel."
 
-        player.consecutive_passes += 1
         self._set_last_action(f"{player.name} passzolt", type='pass', player=player.name)
         self._record_move(player.name, 'pass')
-
-        # A lecsatlakozott játékosok nem tudnak passzolni, ők nem számítanak bele.
-        active = [p for p in self.players if not p.disconnected] or self.players
-        if all(p.consecutive_passes >= 2 for p in active):
-            self._end_game(None)
-        else:
+        if not self._register_scoreless_turn():
             self._next_turn()
 
         return True, "Passz."
 
     # --- Helpers ---
+
+    def _register_scoreless_turn(self):
+        """Pont nélküli kör (passz, csere, elutasított lerakás) rögzítése.
+        Visszatér True-val, ha ezzel véget ért a játék."""
+        self.scoreless_turns += 1
+        if self.scoreless_turns >= SCORELESS_TURNS_LIMIT:
+            self._end_game(None)
+            return True
+        return False
 
     def _find_player(self, player_id):
         """Játékos keresése ID alapján."""
@@ -569,9 +586,17 @@ class Game:
         if finisher:
             finisher.score += remaining_total
 
-        self.winner = max(self.players, key=lambda p: p.score)
-        self._set_last_action(f"Játék vége! Győztes: {self.winner.name} ({self.winner.score} pont)",
-                              type='game_over', player=self.winner.name, score=self.winner.score)
+        # Egyenlő pontnál mindenki nyer (döntetlen), nem a lista első játékosa
+        top_score = max(p.score for p in self.players)
+        self.winners = [p for p in self.players if p.score == top_score]
+        if len(self.winners) == 1:
+            winner = self.winners[0]
+            self._set_last_action(f"Játék vége! Győztes: {winner.name} ({top_score} pont)",
+                                  type='game_over', player=winner.name, score=top_score)
+        else:
+            names = [p.name for p in self.winners]
+            self._set_last_action(f"Játék vége! Döntetlen: {', '.join(names)} ({top_score} pont)",
+                                  type='game_over_draw', players=names, score=top_score)
 
     # --- Move logging & persistence ---
 
@@ -628,6 +653,7 @@ class Game:
             'finished': self.finished,
             'current_player_idx': self.current_player_idx,
             'turn_number': self.turn_number,
+            'scoreless_turns': self.scoreless_turns,
             'last_action': last_action,
             'last_action_info': last_action_info,
             'board': self.board.to_dict(),
@@ -639,7 +665,6 @@ class Game:
                     'name': p.name,
                     'hand': list(p.hand) + (returned_tiles if i == pending_idx else []),
                     'score': p.score,
-                    'consecutive_passes': p.consecutive_passes,
                     'skip_next_turn': p.skip_next_turn,
                     'disconnected': p.disconnected,
                     'is_bot': p.is_bot,
@@ -647,7 +672,7 @@ class Game:
                 }
                 for i, p in enumerate(self.players)
             ],
-            'winner_name': self.winner.name if self.winner else None,
+            'winner_names': [p.name for p in self.winners],
         }
 
     @classmethod
@@ -661,6 +686,10 @@ class Game:
         game.finished = data.get('finished', False)
         game.current_player_idx = data.get('current_player_idx', 0)
         game.turn_number = data.get('turn_number', 0)
+        # Régi mentésben nincs játékszintű számláló: a játékosonkénti passz-sorozat legnagyobbja
+        legacy_passes = max((pd.get('consecutive_passes', 0) for pd in data.get('players', [])),
+                            default=0)
+        game.scoreless_turns = max(0, int(data.get('scoreless_turns', legacy_passes) or 0))
         game.last_action = data.get('last_action')
         game.last_action_info = data.get('last_action_info')
 
@@ -682,18 +711,15 @@ class Game:
                             difficulty=pd.get('difficulty'))
             player.hand = list(pd.get('hand', []))
             player.score = pd.get('score', 0)
-            player.consecutive_passes = pd.get('consecutive_passes', 0)
             player.skip_next_turn = pd.get('skip_next_turn', False)
             player.disconnected = False if player.is_bot else pd.get('disconnected', False)
             game.players.append(player)
 
-        # Winner visszaállítás
-        winner_name = data.get('winner_name')
-        if winner_name:
-            for p in game.players:
-                if p.name == winner_name:
-                    game.winner = p
-                    break
+        # Győztes(ek) visszaállítása (régi mentésben egyetlen `winner_name`)
+        winner_names = data.get('winner_names')
+        if winner_names is None:
+            winner_names = [data['winner_name']] if data.get('winner_name') else []
+        game.winners = [p for p in game.players if p.name in winner_names]
 
         return game
 
@@ -747,6 +773,7 @@ class Game:
             'last_move_tiles': self._last_move_tiles(),
             'history': [{k: v for k, v in h.items() if k != 'tiles'} for h in self.get_history()],
             'winner': self.winner.to_dict() if self.winner else None,
+            'winners': [p.to_dict() for p in self.winners],
             'challenge_mode': self.challenge_mode,
             'turn_time_limit': self.turn_time_limit,
             'hint_limit': self.hint_limit,

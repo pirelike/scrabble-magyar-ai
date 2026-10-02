@@ -331,7 +331,7 @@ Támogatott böngészőben a lobby felső sávjában megjelenik a **Telepítés*
 - A lerakott szavakat a beágyazott magyar szótár ellenőrzi (szótári szavak és ragozott alakjaik; tulajdonnév, rövidítés, betűnév nem érvényes) (kivéve challenge módban, ahol nincs szótár-ellenőrzés — kizárólag a játékosok döntése számít)
 - Premium mezők: dupla/tripla betű (DL/TL) és dupla/tripla szó (DW/TW)
 - Ha valaki mind a 7 zsetonját lerakja, 50 pont bónuszt kap
-- A játék véget ér, ha valaki elfogyasztja az összes zsetonját (és a zsák üres), vagy ha mindenki 2× egymás után passzol
+- A játék véget ér, ha valaki elfogyasztja az összes zsetonját (és a zsák üres), vagy ha 6 egymást követő pont nélküli kör volt (passz, csere és elutasított lerakás is számít); egyenlő pontnál döntetlen, mindenki nyer
 
 ---
 
