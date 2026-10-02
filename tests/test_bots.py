@@ -753,3 +753,196 @@ class TestHintFailure:
         assert server._play_bot_turn(room.id) is True
         assert room.game.get_history()[-1]['type'] == 'pass'
         assert room.game.current_player().is_bot is False
+
+
+# ------------------------------------------------------------- tipp-limit
+
+class TestHintLimitModel:
+    def test_default_limit(self):
+        game = Game('g')
+        assert game.hint_limit == 3 and game.hints_used == 0 and game.hints_left() == 3
+
+    @pytest.mark.parametrize('limit', [0, 1, 3, 5, 10])
+    def test_allowed_limits(self, limit):
+        assert Game('g', hint_limit=limit).hint_limit == limit
+
+    @pytest.mark.parametrize('limit', [-1, 2, 7, 99, None, 'x'])
+    def test_invalid_limit_falls_back_to_default(self, limit):
+        assert Game('g', hint_limit=limit).hint_limit == 3
+
+    def test_use_hint_counts_down(self):
+        game = Game('g', hint_limit=1)
+        assert game.use_hint() is True
+        assert game.hints_left() == 0
+        assert game.use_hint() is False
+        assert game.hints_used == 1
+
+    def test_disabled_hints_cannot_be_used(self):
+        game = Game('g', hint_limit=0)
+        assert game.hints_left() == 0 and game.use_hint() is False
+
+    def test_state_exposes_limit_and_remaining(self):
+        game = Game('g', hint_limit=5)
+        game.add_player('A', 'A')
+        game.start()
+        game.use_hint()
+        state = game.get_state('A')
+        assert state['hint_limit'] == 5 and state['hints_left'] == 4
+
+    def test_save_roundtrip_keeps_used_hints(self):
+        game = Game('g', hint_limit=5)
+        game.add_player('A', 'A')
+        game.start()
+        game.use_hint()
+        game.use_hint()
+        restored = Game.from_save_dict(json.loads(json.dumps(game.to_save_dict())))
+        assert restored.hint_limit == 5 and restored.hints_used == 2 and restored.hints_left() == 3
+
+    def test_old_saves_without_hint_fields_get_the_default(self):
+        game = Game('g')
+        game.add_player('A', 'A')
+        game.start()
+        data = game.to_save_dict()
+        data.pop('hint_limit')
+        data.pop('hints_used')
+        restored = Game.from_save_dict(data)
+        assert restored.hint_limit == 3 and restored.hints_used == 0
+
+    def test_corrupt_saved_counter_is_tolerated(self):
+        game = Game('g')
+        game.add_player('A', 'A')
+        data = game.to_save_dict()
+        data['hints_used'] = -4
+        assert Game.from_save_dict(data).hints_used == 0
+
+
+class TestHintLimitRoom:
+    def test_default_when_not_specified(self, make_client):
+        room = _create(make_client(), ai_players=['easy'])
+        assert room.game.hint_limit == 3
+
+    @pytest.mark.parametrize('limit', [0, 1, 5, 10])
+    def test_room_setting(self, make_client, limit):
+        room = _create(make_client(), ai_players=['easy'], hint_limit=limit)
+        assert room.game.hint_limit == limit
+
+    @pytest.mark.parametrize('bad', [2, -1, 100, 'abc', None, [], {}, 3.5])
+    def test_invalid_values_fall_back_to_default(self, make_client, bad):
+        room = _create(make_client(), ai_players=['easy'], hint_limit=bad)
+        assert room.game.hint_limit == 3  # (a 3.5 egészre vágva 3, ami engedélyezett)
+
+    def test_numeric_string_is_accepted(self, make_client):
+        room = _create(make_client(), ai_players=['easy'], hint_limit='5')
+        assert room.game.hint_limit == 5
+
+    def test_room_joined_carries_the_limit(self, make_client):
+        client = make_client()
+        client.emit('create_room', {'name': 'R', 'ai_players': ['easy'], 'hint_limit': 1})
+        joined = _events(client, 'room_joined')[0]
+        assert joined['hint_limit'] == 1
+
+    def test_other_players_get_the_limit_on_join(self, make_client):
+        owner = make_client('Owner')
+        room = _create(owner, hint_limit=5)
+        other = make_client('Other')
+        other.emit('join_room', {'code': room.join_code})
+        assert _events(other, 'room_joined')[0]['hint_limit'] == 5
+
+
+class TestHintLimitEvent:
+    def _solo(self, make_client, monkeypatch, limit):
+        _no_bg(monkeypatch)
+        import server
+        server.rate_limiter._socket_history.clear()
+        client = make_client()
+        room = _create(client, ai_players=['easy'], hint_limit=limit)
+        client.emit('start_game')
+        client.get_received()
+        return client, room
+
+    def test_disabled_hints_are_refused(self, make_client, monkeypatch):
+        client, room = self._solo(make_client, monkeypatch, 0)
+        client.emit('request_hint')
+        result = _events(client, 'hint_result')[0]
+        assert result['success'] is False and 'ki vannak kapcsolva' in result['message']
+        assert room.game.hints_used == 0
+
+    def test_hints_are_counted_and_run_out(self, make_client, monkeypatch):
+        client, room = self._solo(make_client, monkeypatch, 1)
+        client.emit('request_hint')
+        first = _events(client, 'hint_result')[0]
+        assert first['success'] and first['moves'] and first['hints_left'] == 0
+        assert room.game.hints_left() == 0
+        client.emit('request_hint')
+        second = _events(client, 'hint_result')[0]
+        assert second['success'] is False and 'Elfogytak' in second['message']
+        assert second['hints_left'] == 0
+
+    def test_state_is_refreshed_after_a_hint(self, make_client, monkeypatch):
+        client, room = self._solo(make_client, monkeypatch, 3)
+        client.emit('request_hint')
+        states = _events(client, 'game_state')
+        assert states and states[-1]['hints_left'] == 2
+
+    def test_hint_without_moves_does_not_cost_a_hint(self, make_client, monkeypatch):
+        import ai_player
+        client, room = self._solo(make_client, monkeypatch, 3)
+        monkeypatch.setattr(ai_player, 'best_moves', lambda *a, **k: [])
+        client.emit('request_hint')
+        result = _events(client, 'hint_result')[0]
+        assert result['success'] and result['moves'] == [] and result['hints_left'] == 3
+        assert room.game.hints_used == 0
+
+    def test_hints_used_while_searching_are_not_double_spent(self, make_client, monkeypatch):
+        """Ha a keresés közben elfogy a tipp (másik kérés), nem adunk ki többet a limitnél."""
+        import ai_player
+        client, room = self._solo(make_client, monkeypatch, 1)
+        real = ai_player.best_moves
+
+        def slow(*args, **kwargs):
+            moves = real(*args, **kwargs)
+            room.game.use_hint()   # közben egy másik kérés elhasználta
+            return moves
+        monkeypatch.setattr(ai_player, 'best_moves', slow)
+        client.emit('request_hint')
+        result = _events(client, 'hint_result')[0]
+        assert result['success'] is False and 'Elfogytak' in result['message']
+        assert room.game.hints_used == 1
+
+    def test_limit_is_per_game(self, make_client, monkeypatch):
+        client_a, room_a = self._solo(make_client, monkeypatch, 1)
+        client_a.emit('request_hint')
+        client_b, room_b = self._solo(make_client, monkeypatch, 1)
+        client_b.emit('request_hint')
+        assert _events(client_b, 'hint_result')[0]['success'] is True
+        assert room_b.game.hints_used == 1
+
+    def test_hint_limit_survives_a_restore(self, make_client, monkeypatch):
+        import auth
+        import server
+        from helpers import registered_set_name_payload
+        _no_bg(monkeypatch)
+        _, uid = auth.create_user('hinter@example.com', 'Hinter', 'password123')
+        c = server.socketio.test_client(server.app)
+        c.emit('set_name', registered_set_name_payload(uid))
+        c.get_received()
+        room = _create(c, ai_players=['easy'], hint_limit=5)
+        c.emit('start_game')
+        c.get_received()
+        server.rate_limiter._socket_history.clear()
+        c.emit('request_hint')
+        c.get_received()
+        assert room.game.hints_used == 1
+        room.manually_saved = True
+        server._save_game_to_db(room.id)
+        c.emit('leave_room')
+        c.get_received()
+        saved = auth.get_user_active_games(uid)
+        c.emit('restore_game', {'game_id': saved[0]['game_id']})
+        joined = _events(c, 'room_joined')[0]
+        assert joined['hint_limit'] == 5
+        c.emit('start_game')
+        c.get_received()
+        new_room = list(server.state.rooms.values())[-1]
+        assert new_room.game.hint_limit == 5 and new_room.game.hints_used == 1
+        assert new_room.game.hints_left() == 4

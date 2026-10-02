@@ -261,6 +261,7 @@ const AppState = {
     spectateCode: null,
     roomIsPrivate: false,
     turnTimeLimit: 0,
+    hintLimit: 0,
 
     // Megfigyelőként nincs mentett újracsatlakozás: a játékos saját (esetleg függő) mentését nem érintjük
     resetSpectator() {
@@ -818,11 +819,13 @@ const Lobby = {
         const turnTimeLimit = parseInt(document.getElementById('room-turn-limit').value) || 0;
         const aiCount = parseInt(document.getElementById('room-ai-count').value) || 0;
         const aiDifficulty = document.getElementById('room-ai-difficulty').value;
+        const hintLimit = Number(document.getElementById('room-hint-limit').value);
         socket.emit('create_room', {
             name, max_players: maxPlayers,
             challenge_mode: challengeMode, is_private: isPrivate,
             turn_time_limit: turnTimeLimit,
             ai_players: Array(aiCount).fill(aiDifficulty),
+            hint_limit: hintLimit,
         });
     },
 
@@ -1246,6 +1249,7 @@ const WaitingRoom = {
 
         AppState.roomIsPrivate = !!data.is_private;
         AppState.turnTimeLimit = data.turn_time_limit || 0;
+        AppState.hintLimit = data.hint_limit || 0;
         this.refreshBadges();
 
         const codeSection = document.getElementById('room-code-display');
@@ -1272,6 +1276,19 @@ const WaitingRoom = {
             turnLimitBadge.classList.remove('hidden');
         } else {
             turnLimitBadge.classList.add('hidden');
+        }
+
+        // Tipp-jelvény: csak ott érdekes, ahol robotok is vannak (egyedül, robotok ellen érhető el)
+        const hintBadge = document.getElementById('waiting-hint-limit');
+        const gs = AppState.gameState;
+        const hasBots = !!(gs && gs.players && gs.players.some(p => p.is_bot));
+        if (hasBots) {
+            hintBadge.textContent = AppState.hintLimit > 0
+                ? t('room.hint_badge', { n: AppState.hintLimit })
+                : t('room.hint_off');
+            hintBadge.classList.remove('hidden');
+        } else {
+            hintBadge.classList.add('hidden');
         }
     },
 
@@ -1332,6 +1349,7 @@ const WaitingRoom = {
         if (!gs) return;
         const container = document.getElementById('waiting-players');
         const joinedNames = gs.players.map(p => p.name);
+        this.refreshBadges();
 
         if (AppState.isRestoreLobby && AppState.expectedPlayers.length > 0) {
             // Restore lobby: show expected + joined status
@@ -1982,8 +2000,12 @@ const GameBoard = {
         // Tipp: csak egyedül (nincs másik emberi játékos) elérhető
         const humans = gs.players.filter(p => !p.is_bot).length;
         const hintBtn = document.getElementById('btn-hint');
-        hintBtn.classList.toggle('hidden', spectator || humans !== 1);
-        hintBtn.disabled = !isMyTurn || hasPending;
+        const hintsOff = (gs.hint_limit || 0) === 0;
+        const hintsLeft = gs.hints_left || 0;
+        hintBtn.classList.toggle('hidden', spectator || humans !== 1 || hintsOff);
+        hintBtn.disabled = !isMyTurn || hasPending || hintsLeft <= 0;
+        hintBtn.querySelector('span').textContent = t('game.hint_n', { n: hintsLeft });
+        hintBtn.title = hintsLeft <= 0 ? t('game.hint_none_left') : t('game.hint_title');
         document.getElementById('btn-shuffle').disabled = spectator;
         document.getElementById('btn-sort').disabled = spectator;
     },
@@ -2247,7 +2269,9 @@ const Hint = {
             showMessage(tServer(data.message), true);
             return;
         }
-        text.textContent = data.moves.length ? t('hint.intro') : t('hint.none');
+        text.textContent = data.moves.length
+            ? `${t('hint.intro')} ${t('hint.left', { n: data.hints_left })}`
+            : t('hint.none');
         data.moves.forEach((move, i) => {
             const row = document.createElement('div');
             row.className = 'hint-item';

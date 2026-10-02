@@ -36,13 +36,13 @@ Böngészőben: http://localhost:5000
 - `static/i18n.js` + `static/i18n-data.js` — Többnyelvű felület: `t()`, `tServer()`, `I18N.setLang()`; a fordítások (hu/en) szigorú JSON-ban
 - `static/style.css` — Apple HIG ihletésű design rendszer (tokenek, iOS-szerű komponensek), sötét/világos téma, reszponzív layout (asztali / tablet / telefon, álló és fekvő), 17. szakasz: új funkciók és animációk
 - `static/manifest.webmanifest`, `static/offline.html`, `static/icons/` — PWA
-- `tests/` — Tesztek (pytest, 760 teszt)
+- `tests/` — Tesztek (pytest, 802 teszt)
 - `requirements.txt` — Python függőségek (flask, flask-socketio, pyenchant, eventlet)
 - `.venv/` — Virtual environment
 
 ## Funkciók
 - 1-4 játékos (egyedül is játszható)
-- **Robot ellenfelek**: 1–3 robot, könnyű / közepes / nehéz; egyedül játszva tipp (3 legjobb lépés); robotos játék nem számít a ranglistába
+- **Robot ellenfelek**: 1–3 robot, könnyű / közepes / nehéz; egyedül játszva tipp (3 legjobb lépés, szobánként állítható / kikapcsolható limit: 0/1/3/5/10); robotos játék nem számít a ranglistába
 - **Megfigyelő mód**: nyilvános, folyamatban lévő játék megfigyelése (lobby „Élő játékok”), privát játék kóddal
 - **Ranglista**: győzelmek / nyerési arány / átlagpont / legjobb játék (csak regisztrált, robot nélküli, befejezett játékok)
 - **Szótár-böngésző**: szó-ellenőrző párbeszéd (érvényes-e, pontérték, zsetonok, javaslatok)
@@ -194,14 +194,14 @@ Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztésh
 | `tests/test_timer_and_replay.py` | 27 | Kör időlimit, replay perzisztencia |
 | `tests/test_regressions.py` | 70 | Kódátvizsgálás során talált hibák: zsák, dupla cella, passz-végjáték, mentés szavazás közben, IP rate limit, e-mail megerősítés, socket-token, session átvétel, visszaállítás/késői csatlakozás |
 | `tests/test_ai_player.py` | 39 | Robot motor: szókincs, lépésgenerátor (pontszám = játék pontozása), nehézségi szintek, csere/passz, tipp |
-| `tests/test_bots.py` | 65 | Robotok a játékmodellben (szavazás, mentés), szerver (lépés, ütemezés, tipp, előnézet), `last_action_info`, lépéstörténet |
+| `tests/test_bots.py` | 106 | Robotok a játékmodellben (szavazás, mentés), szerver (lépés, ütemezés, tipp, előnézet), `last_action_info`, lépéstörténet |
 | `tests/test_spectator.py` | 30 | Megfigyelő mód, élő játékok, szoba életciklus |
 | `tests/test_public_api.py` | 50 | Ranglista (DB + route, robotos játékok kizárása), szótár API, PWA végpontok |
 | `tests/test_tiles_dictionary.py` | 30 | `tokenize_word`, `filter_valid`, `suggest_words` |
 | `tests/test_i18n.py` | 27 | Fordítások teljessége, szerverüzenet-lefedettség (AST), HTML lefedettség, a fordító futtatása node-ban |
-| `tests/test_frontend_consistency.py` | 19 | Kliens ↔ szerver: konstansok (TILE_VALUES, premium mezők), elem-azonosítók, Socket.IO események, API útvonalak, JS szintaxis |
+| `tests/test_frontend_consistency.py` | 20 | Kliens ↔ szerver: konstansok (TILE_VALUES, premium mezők), elem-azonosítók, Socket.IO események, API útvonalak, JS szintaxis |
 
-**Összesen: 760 teszt**
+**Összesen: 802 teszt**
 
 Fixture: `tests/conftest.py` — temp_db (auto-applied, ideiglenes SQLite DB minden teszthez)
 Segédek: `tests/helpers.py` — `registered_set_name_payload()` (érvényes socket-tokennel), `verify_email()`
@@ -271,7 +271,7 @@ Játék közben a side panelen chat szekció érhető el:
 |---|---|
 | `set_name` | Játékosnév / auth adatok beállítása. Regisztrált felhasználónál az `auth_token` (lásd `/api/auth/socket-token`) kötelező: a kliens által küldött `user_id` önmagában nem elég, a név a fiókból jön. Érvénytelen token → vendég + hibaüzenet |
 | `logout` | Kijelentkezés: kilépés a szobából, online azonosság törlése |
-| `create_room` | Szoba létrehozása (név, max_players, challenge_mode, is_private, turn_time_limit, `ai_players`: nehézségek listája, max. 3 és `max_players-1`) |
+| `create_room` | Szoba létrehozása (név, max_players, challenge_mode, is_private, turn_time_limit, `ai_players`: nehézségek listája, max. 3 és `max_players-1`, `hint_limit`: 0/1/3/5/10, alapért. 3) |
 | `join_room` | Csatlakozás kóddal vagy room_id-val |
 | `leave_room` | Szoba elhagyása |
 | `get_rooms` | Nyilvános szobák listázása |
@@ -292,7 +292,7 @@ Játék közben a side panelen chat szekció érhető el:
 | `save_game` | Manuális mentés (owner only) |
 | `restore_game` | Mentett játék visszaállítása (várakozó szoba létrehozás) |
 | `preview_move` | Lerakás kipróbálása véglegesítés nélkül `{tiles}` → `move_preview` (csendben rate limitelt) |
-| `request_hint` | Tipp kérése (csak ha egyetlen emberi játékos van) → `hint_result` |
+| `request_hint` | Tipp kérése (csak ha egyetlen emberi játékos van, a szobában engedélyezett és van még tipp) → `hint_result` `{success, message, hints_left, moves}`; csak akkor fogy, ha van javasolt lépés |
 
 ### Szerver broadcast (szerver→kliens)
 | Event | Leírás |
@@ -432,6 +432,9 @@ A tábla cellái `container-type: inline-size` + `cqw` egységekkel méreteződn
 - `ALLOWED_TURN_TIME_LIMITS = {0, 60, 90, 120, 180, 300}`
 - `MAX_BOTS = 3`, `_BOT_THINK_DELAY` (szintenként min/max mp), `_BOT_NAMES`
 - `Room.MAX_SPECTATORS = 30`
+
+### game.py (tippek)
+- `ALLOWED_HINT_LIMITS = (0, 1, 3, 5, 10)`, `DEFAULT_HINT_LIMIT = 3`; `Game.hint_limit` / `hints_used` (mentésbe kerül, régi mentésnél az alapérték), `hints_left()`, `use_hint()`; az állapotban `hint_limit`, `hints_left`
 
 ### ai_player.py
 - `DIFFICULTIES = ('easy', 'medium', 'hard')`, `_TIME_BUDGET` (1.0 / 2.0 / 3.5 mp keresési időkeret)

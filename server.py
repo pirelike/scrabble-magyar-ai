@@ -13,7 +13,7 @@ from flask import Flask, request
 from flask_socketio import SocketIO, emit, join_room, leave_room
 
 import ai_player
-from game import Game, CHALLENGE_TIMEOUT
+from game import Game, CHALLENGE_TIMEOUT, ALLOWED_HINT_LIMITS, DEFAULT_HINT_LIMIT
 from room import Room
 from config import AUTH_RATE_LIMITS
 from auth import (
@@ -888,6 +888,7 @@ def handle_rejoin_room(data):
         'challenge_mode': game.challenge_mode,
         'is_private': room.is_private,
         'turn_time_limit': game.turn_time_limit,
+        'hint_limit': game.hint_limit,
         'reconnect_token': token,
         'chat_messages': room.chat_messages
     })
@@ -964,6 +965,12 @@ def handle_create_room(data):
         turn_time_limit = 0
     if turn_time_limit not in ALLOWED_TURN_TIME_LIMITS:
         turn_time_limit = 0
+    try:
+        hint_limit = int(data.get('hint_limit', DEFAULT_HINT_LIMIT))
+    except (ValueError, TypeError):
+        hint_limit = DEFAULT_HINT_LIMIT
+    if hint_limit not in ALLOWED_HINT_LIMITS:
+        hint_limit = DEFAULT_HINT_LIMIT
     player_name = state.player_names.get(sid, 'Névtelen')
 
     # Számítógépes ellenfelek: a nehézségek listája; a robotok is férőhelyet foglalnak
@@ -975,7 +982,8 @@ def handle_create_room(data):
 
     room_id = str(uuid.uuid4())[:8]
     join_code = state.generate_join_code()
-    game = Game(room_id, challenge_mode=challenge_mode, turn_time_limit=turn_time_limit)
+    game = Game(room_id, challenge_mode=challenge_mode, turn_time_limit=turn_time_limit,
+                hint_limit=hint_limit)
     game.add_player(sid, player_name)
     for level in ai_levels:
         game.add_bot(_bot_name(game, level), level)
@@ -1000,6 +1008,7 @@ def handle_create_room(data):
         'challenge_mode': game.challenge_mode,
         'is_private': is_private,
         'turn_time_limit': game.turn_time_limit,
+        'hint_limit': game.hint_limit,
         'reconnect_token': token,
         'chat_messages': room.chat_messages
     })
@@ -1049,6 +1058,7 @@ def _try_late_join(sid, room_id, room, player_name, auth_info):
         'challenge_mode': game.challenge_mode,
         'is_private': room.is_private,
         'turn_time_limit': game.turn_time_limit,
+        'hint_limit': game.hint_limit,
         'reconnect_token': token,
         'chat_messages': room.chat_messages,
     })
@@ -1152,6 +1162,7 @@ def handle_join_room(data):
         'challenge_mode': game.challenge_mode,
         'is_private': room.is_private,
         'turn_time_limit': game.turn_time_limit,
+        'hint_limit': game.hint_limit,
         'reconnect_token': token,
         'chat_messages': room.chat_messages
     }
@@ -1427,7 +1438,8 @@ def handle_restore_game(data):
     # Várakozó szoba létrehozása
     room_id = str(uuid.uuid4())[:8]
     join_code = state.generate_join_code()
-    new_game = Game(room_id, challenge_mode=s.get('challenge_mode', False))
+    new_game = Game(room_id, challenge_mode=s.get('challenge_mode', False),
+                    hint_limit=s.get('hint_limit', DEFAULT_HINT_LIMIT))
     new_game.add_player(sid, player_name)
 
     token = state.generate_reconnect_token(sid, room_id, player_name,
@@ -1460,6 +1472,7 @@ def handle_restore_game(data):
         'reconnect_token': token,
         'is_restore_lobby': True,
         'expected_players': expected_players,
+        'hint_limit': new_game.hint_limit,
         'chat_messages': room.chat_messages
     })
     emit('room_code', {'code': join_code})
@@ -1630,8 +1643,15 @@ def handle_request_hint():
     room_id, room, game = state.get_room_for_player(sid)
     if not room:
         return
+    if game.hint_limit == 0:
+        emit('hint_result', {'success': False,
+                             'message': 'A tippek ki vannak kapcsolva ebben a szobában.'})
+        return
     if not game.started or game.finished or game.pending_challenge:
         emit('hint_result', {'success': False, 'message': 'Most nem kérhetsz tippet.'})
+        return
+    if game.hints_left() <= 0:
+        emit('hint_result', {'success': False, 'message': 'Elfogytak a tippjeid.', 'hints_left': 0})
         return
     if len(game.human_players()) != 1:
         emit('hint_result', {'success': False,
@@ -1649,9 +1669,20 @@ def handle_request_hint():
         print(f"[hint] Hiba a tipp keresésében ({room_id}): {e}")
         emit('hint_result', {'success': False, 'message': 'Nem sikerült tippet adni.'})
         return
+
+    # A keresés közben (eventlet-váltásnál) elfogyhatott a tipp vagy véget érhetett a kör
+    if game.finished or game.current_player() is not player:
+        emit('hint_result', {'success': False, 'message': 'Most nem kérhetsz tippet.'})
+        return
+    if moves and not game.use_hint():
+        emit('hint_result', {'success': False, 'message': 'Elfogytak a tippjeid.', 'hints_left': 0})
+        return
+    if moves:
+        _emit_all_states(game, room_id)  # a hátralévő tippek száma frissül
     emit('hint_result', {
         'success': True,
         'message': '',
+        'hints_left': game.hints_left(),
         'moves': [
             {
                 'tiles': [{'row': r, 'col': c, 'letter': l, 'is_blank': b} for r, c, l, b in m.tiles],
@@ -1719,6 +1750,7 @@ def handle_spectate_room(data):
         'room_name': room.name,
         'challenge_mode': game.challenge_mode,
         'turn_time_limit': game.turn_time_limit,
+        'hint_limit': game.hint_limit,
         'chat_messages': room.chat_messages,
     })
     _emit_all_states(game, room_id)

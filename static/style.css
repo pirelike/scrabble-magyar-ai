@@ -3058,6 +3058,10 @@ html.booting .lang-toggle {
     color: var(--text-secondary);
 }
 
+.form-hint-tight {
+    margin: var(--space-2) 0 0;
+}
+
 .form-hint:empty {
     display: none;
 }

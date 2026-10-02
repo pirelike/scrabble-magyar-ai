@@ -277,7 +277,7 @@ static/
   i18n-data.js     — Fordítások (hu / en) — szigorú JSON, a tesztek is ezt olvassák
   style.css        — Stílusok, sötét/világos téma (Slate+Gold paletta), reszponzív layout, animációk
   manifest.webmanifest, offline.html, icons/ — PWA: manifest, kapcsolat nélküli oldal, ikonok
-tests/             — Tesztek (pytest, 760 teszt)
+tests/             — Tesztek (pytest, 802 teszt)
 ```
 
 ---
@@ -306,6 +306,7 @@ A játék kiemelt figyelmet fordít a multiplayer sessionök stabilitására:
 - A robotok szókincse a beágyazott hunspell szótár **tőszavai** (kb. 68 000 szó); a keresztszavakat és a kiválasztott lépés szavait a teljes szótár ellenőrzi, így ragozott szavakhoz is kapcsolódnak.
 - Megtámadás módban a robotok **nem szavaznak**: ha a lerakónak nincs emberi ellenfele, a szótár dönt; a robot lerakására az emberek szavaznak.
 - Egyedül (robotok ellen) játszva a **Tipp** gomb a három legjobb lépést mutatja; az „Elhelyez” a táblára teszi, a lerakást te hagyod jóvá.
+- A tippek **korlátozottak**: szoba létrehozásakor (lobby → Új szoba → *Tippek száma*) kikapcsolhatók, vagy 1 / 3 (alapértelmezett) / 5 / 10 tipp engedélyezhető játékonként. A gomb a hátralévő számot mutatja (`Tipp (2)`), kikapcsolt tippnél nem jelenik meg. A felhasznált tippek száma a mentéssel együtt megmarad; ha nincs javasolható lépés, a tipp nem fogy.
 - A robotos játékok a profil statisztikájában szerepelnek, de a **ranglistában nem**.
 - Emberi néző vagy játékos nélkül a robotok nem játszanak egymás ellen.
 
@@ -374,14 +375,14 @@ Támogatott böngészőben a lobby felső sávjában megjelenik a **Telepítés*
 | `tests/test_timer_and_replay.py` | 27 | Körszámláló UI, kör időlimit, replay perzisztencia |
 | `tests/test_regressions.py` | 70 | Kódátvizsgálás során talált hibák regressziós tesztjei |
 | `tests/test_ai_player.py` | 39 | Robot: szókincs, lépésgenerátor, nehézségi szintek, tipp |
-| `tests/test_bots.py` | 65 | Robotok a játékmodellben és a szerveren, lépéstörténet, előnézet, tipp |
+| `tests/test_bots.py` | 106 | Robotok a játékmodellben és a szerveren, lépéstörténet, előnézet, tipp |
 | `tests/test_spectator.py` | 30 | Megfigyelő mód, élő játékok listája |
 | `tests/test_public_api.py` | 50 | Ranglista (DB + route), szótár-ellenőrző API, PWA végpontok |
 | `tests/test_tiles_dictionary.py` | 30 | Zseton-felbontás, tömeges szótár-ellenőrzés, javaslatok |
 | `tests/test_i18n.py` | 27 | Fordítások teljessége (kulcsok, helyőrzők, szerverüzenetek), a böngészős fordító futtatása node-ban |
-| `tests/test_frontend_consistency.py` | 19 | Kliens ↔ szerver összhang: konstansok, elem-azonosítók, Socket.IO események, JS szintaxis |
+| `tests/test_frontend_consistency.py` | 20 | Kliens ↔ szerver összhang: konstansok, elem-azonosítók, Socket.IO események, JS szintaxis |
 
-**Összesen: 760 teszt** (a node-ot igénylő tesztek node nélkül kimaradnak)
+**Összesen: 802 teszt** (a node-ot igénylő tesztek node nélkül kimaradnak)
 
 ---
 

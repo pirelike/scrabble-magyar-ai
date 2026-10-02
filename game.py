@@ -8,12 +8,16 @@ from player import Player  # noqa: F401 — re-export for backward compat
 HAND_SIZE = 7
 BONUS_ALL_TILES = 50
 CHALLENGE_TIMEOUT = 30  # másodperc
+# Tippek száma játékonként (0 = kikapcsolva); a szoba létrehozásakor választható
+ALLOWED_HINT_LIMITS = (0, 1, 3, 5, 10)
+DEFAULT_HINT_LIMIT = 3
 
 
 class Game:
     """Scrabble játék állapot és logika."""
 
-    def __init__(self, game_id, challenge_mode=False, turn_time_limit=0):
+    def __init__(self, game_id, challenge_mode=False, turn_time_limit=0,
+                 hint_limit=DEFAULT_HINT_LIMIT):
         self.id = game_id
         self.players = []
         self.board = Board()
@@ -26,6 +30,8 @@ class Game:
         self.last_action = None
         self.challenge_mode = challenge_mode
         self.turn_time_limit = turn_time_limit  # 0 = kikapcsolt
+        self.hint_limit = hint_limit if hint_limit in ALLOWED_HINT_LIMITS else DEFAULT_HINT_LIMIT
+        self.hints_used = 0
         self.pending_challenge = None  # Challenge instance or None
         self.move_log = []  # Lépések listája
         self.last_action_info = None  # Az utolsó akció szerkezetes leírása (a kliens ezt fordítja)
@@ -58,6 +64,17 @@ class Game:
             bot_id = f"bot-{self.id}-{self._bot_seq}"
         self.players.append(Player(bot_id, name, is_bot=True, difficulty=difficulty))
         return True, "Robot hozzáadva."
+
+    def hints_left(self):
+        """Hány tipp kérhető még (0, ha kikapcsolták vagy elfogytak)."""
+        return max(0, self.hint_limit - self.hints_used)
+
+    def use_hint(self):
+        """Elhasznál egy tippet. Visszatér: True, ha volt még elérhető."""
+        if self.hints_left() <= 0:
+            return False
+        self.hints_used += 1
+        return True
 
     def human_players(self):
         """A nem robot játékosok."""
@@ -605,6 +622,8 @@ class Game:
             'id': self.id,
             'challenge_mode': self.challenge_mode,
             'turn_time_limit': self.turn_time_limit,
+            'hint_limit': self.hint_limit,
+            'hints_used': self.hints_used,
             'started': self.started,
             'finished': self.finished,
             'current_player_idx': self.current_player_idx,
@@ -635,7 +654,9 @@ class Game:
     def from_save_dict(cls, data):
         """Játék visszaállítása mentett állapotból."""
         game = cls(data['id'], challenge_mode=data.get('challenge_mode', False),
-                   turn_time_limit=data.get('turn_time_limit', 0))
+                   turn_time_limit=data.get('turn_time_limit', 0),
+                   hint_limit=data.get('hint_limit', DEFAULT_HINT_LIMIT))
+        game.hints_used = max(0, int(data.get('hints_used', 0) or 0))
         game.started = data.get('started', False)
         game.finished = data.get('finished', False)
         game.current_player_idx = data.get('current_player_idx', 0)
@@ -728,6 +749,8 @@ class Game:
             'winner': self.winner.to_dict() if self.winner else None,
             'challenge_mode': self.challenge_mode,
             'turn_time_limit': self.turn_time_limit,
+            'hint_limit': self.hint_limit,
+            'hints_left': self.hints_left(),
             'pending_challenge': None,
         }
 

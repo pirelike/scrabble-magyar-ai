@@ -307,6 +307,19 @@
                         </div>
                         <p class="form-hint" id="room-ai-hint" data-i18n="create.ai_hint">Egyedül is játszhatsz a robotok ellen. A robotok is foglalnak egy férőhelyet a szobában.</p>
 
+                        <!-- Tippek száma (csak egyedül, robotok ellen játszva érhető el) -->
+                        <div class="form-group">
+                            <label for="room-hint-limit" class="form-label" data-i18n="create.hint_limit">Tippek száma</label>
+                            <select id="room-hint-limit" class="form-select">
+                                <option value="0" data-i18n="create.hint_off">Kikapcsolva</option>
+                                <option value="1" data-i18n="create.hint_1">1 tipp</option>
+                                <option value="3" selected data-i18n="create.hint_3">3 tipp</option>
+                                <option value="5" data-i18n="create.hint_5">5 tipp</option>
+                                <option value="10" data-i18n="create.hint_10">10 tipp</option>
+                            </select>
+                            <p class="form-hint form-hint-tight" data-i18n="create.hint_desc">A tipp a három legjobb lépést mutatja. Csak akkor kérhető, ha egyedül (robotok ellen) játszol.</p>
+                        </div>
+
                         <div class="settings-group">
                             <div class="toggle-row">
                                 <label class="toggle-label" for="room-challenge-mode">
@@ -453,6 +466,7 @@
                     <div id="waiting-challenge-mode" class="room-badge hidden" data-i18n="room.badge_challenge">Kihívás</div>
                     <div id="waiting-private-mode" class="room-badge hidden" data-i18n="room.badge_private">Privát</div>
                     <div id="waiting-turn-limit" class="room-badge hidden"></div>
+                    <div id="waiting-hint-limit" class="room-badge hidden"></div>
                 </div>
                 <div id="room-code-display" class="room-code-section hidden">
                     <p class="code-label" data-i18n="wait.join_code">Csatlakozási kód</p>
