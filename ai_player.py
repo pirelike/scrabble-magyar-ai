@@ -167,7 +167,7 @@ class Move:
 # --- Keresés ---
 
 class _Budget:
-    """Időkeret + együttműködő (eventlet) ütemezés a hosszú keresés alatt."""
+    """Időkeret + együttműködő (gevent) ütemezés a hosszú keresés alatt."""
 
     def __init__(self, seconds, yield_fn):
         self.deadline = time.monotonic() + seconds

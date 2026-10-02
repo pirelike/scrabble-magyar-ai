@@ -1,5 +1,5 @@
-import eventlet
-eventlet.monkey_patch()
+from gevent import monkey
+monkey.patch_all()
 
 import json
 import random
@@ -36,7 +36,7 @@ from socket_auth import verify_socket_token
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(32).hex())
-socketio = SocketIO(app, cors_allowed_origins='*',
+socketio = SocketIO(app, cors_allowed_origins='*', async_mode='gevent',
                     ping_timeout=120, ping_interval=25)
 
 # Adatbázis inicializálása
@@ -494,7 +494,7 @@ def _play_bot_turn(room_id, turn_id=None, turn_number=None):
         print(f"[bot] Hiba a lépés keresésében ({room_id}): {e}")
         action = {'action': 'pass'}
 
-    # A keresés közben (eventlet-váltásnál) megváltozhatott az állapot
+    # A keresés közben (kooperatív váltásnál) megváltozhatott az állapot
     room = state.rooms.get(room_id)
     if (not room or room.game is not game or game.finished or game.pending_challenge
             or game.current_player() is not bot or game.turn_number != started_turn
@@ -1691,7 +1691,7 @@ def handle_request_hint():
         emit('hint_result', {'success': False, 'message': 'Nem sikerült tippet adni.'})
         return
 
-    # A keresés közben (eventlet-váltásnál) elfogyhatott a tipp vagy véget érhetett a kör
+    # A keresés közben (kooperatív váltásnál) elfogyhatott a tipp vagy véget érhetett a kör
     if game.finished or game.current_player() is not player:
         emit('hint_result', {'success': False, 'message': 'Most nem kérhetsz tippet.'})
         return

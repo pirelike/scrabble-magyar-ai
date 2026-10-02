@@ -39,7 +39,7 @@ Böngészőben: http://localhost:5000
 - `static/manifest.webmanifest`, `static/offline.html`, `static/icons/` — PWA
 - `tools/bot_arena.py` — Robot-aréna: a fokozatok erejének mérése bot–bot játékokkal (kalibrációhoz, nem része a szervernek)
 - `tests/` — Tesztek (pytest, 951 teszt)
-- `requirements.txt` — Python függőségek (flask, flask-socketio, eventlet)
+- `requirements.txt` — Python függőségek (flask, flask-socketio, gevent, gevent-websocket)
 - `.venv/` — Virtual environment
 
 ## Funkciók
@@ -83,7 +83,7 @@ Böngészőben: http://localhost:5000
 - Input validáció: játékos nevek, szoba nevek, tile placement, email, jelszó szerver oldali validálás
 - Board bounds check: a `board.py` és `server.py` is ellenőrzi a pozíciók érvényességét
 - Dictionary sanitizálás: szavak regex-szel validálva a szótár-keresés előtt
-- Production szerver: eventlet WSGI (nem Werkzeug dev server), `allow_unsafe_werkzeug` nem használt
+- Production szerver: gevent WSGI + gevent-websocket (nem Werkzeug dev server), `allow_unsafe_werkzeug` nem használt; a `server.py` elején `monkey.patch_all()`, `SocketIO(async_mode='gevent')`
 - XSS védelem: frontend innerHTML helyett DOM API (textContent, createElement, addEventListener)
 - Jelszó: `werkzeug.security` PBKDF2-SHA256, 260k iteráció, random salt
 - Verifikációs kód: 6 számjegy, 10 perc lejárat, max 5 próbálkozás/kód

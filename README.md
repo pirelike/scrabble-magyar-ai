@@ -116,7 +116,7 @@ python3 -m venv .venv
 
 Böngészőben: **http://localhost:5000**
 
-A szerver eventlet WSGI-t használ (production-ready). A `PORT` környezeti változóval a port módosítható (alapértelmezett: 5000).
+A szerver gevent WSGI-t használ websocket támogatással (production-ready). A `PORT` környezeti változóval a port módosítható (alapértelmezett: 5000).
 
 ### Publikus URL (Cloudflare Tunnel)
 
@@ -377,12 +377,12 @@ A szótár a `dict/hu_HU.aff` és `dict/hu_HU.dic` fájlokból töltődik be, k�
 </details>
 
 <details>
-<summary><strong>eventlet telepítési hiba</strong></summary>
+<summary><strong>gevent telepítési hiba</strong></summary>
 
-Egyes rendszereken az `eventlet` fordítási hibát adhat. Próbáld:
+Egyes rendszereken a `gevent` fordítási hibát adhat. Próbáld:
 ```bash
 pip install --upgrade pip setuptools wheel
-pip install eventlet
+pip install gevent gevent-websocket
 ```
 
 </details>
