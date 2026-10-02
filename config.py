@@ -27,4 +27,5 @@ AUTH_RATE_LIMITS = {
     'dictionary': (60, 60),      # 60 kérés / 1 perc
     'replay': (60, 60),          # 60 kérés / 1 perc (megosztott visszajátszás)
     'analysis': (30, 60),        # 30 kérés / 1 perc (játékelemzés lekérdezése)
+    'daily': (60, 60),           # 60 kérés / 1 perc (napi feladvány, ranglista)
 }

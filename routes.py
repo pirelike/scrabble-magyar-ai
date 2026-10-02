@@ -8,6 +8,7 @@ from flask import (
 )
 
 import analysis
+import daily
 import dictionary
 from config import SMTP_CONFIGURED
 from tiles import tokenize_word, word_base_score, TILE_VALUES
@@ -20,6 +21,7 @@ from auth import (
     get_game_moves, get_user_game_history, get_game_by_id,
     get_or_create_share_token, get_game_by_share_token, get_game_results,
     get_user_achievements, get_game_analysis, save_game_analysis,
+    get_daily_puzzle, get_daily_entry, get_daily_leaderboard,
     get_user_active_games, abandon_game_by_id, is_user_in_game,
     get_friends, get_pending_requests, get_sent_requests, search_users,
 )
@@ -483,6 +485,58 @@ def leaderboard():
         'entries': entries,
         'me': me,
     })
+
+
+@public_bp.route('/api/daily', methods=['GET'])
+def daily_info():
+    """A mai napi feladvány adatai: a saját eredményed, a nap ranglistájának eleje és a tegnapi megoldás.
+
+    A feladvány legjobb pontszáma csak azoknak látszik, akik már beküldtek egy lépést."""
+    if not _rate_limiter.check_ip(_get_client_ip(), 'daily'):
+        return jsonify({'success': False, 'message': 'Túl sok kérés. Próbáld újra később.'}), 429
+    user = validate_session(request.cookies.get('session_token'))
+    user_id = user['id'] if user else None
+    today = daily.today_str()
+    entries, me = get_daily_leaderboard(today, 10, user_id)
+    mine = get_daily_entry(today, user_id) if user_id else None
+    played = bool(mine and mine['attempts'] > 0)
+    puzzle = get_daily_puzzle(today)
+
+    yesterday = None
+    yesterday_puzzle = get_daily_puzzle(daily.previous_date(today))
+    if yesterday_puzzle:
+        top, _ = get_daily_leaderboard(yesterday_puzzle['date'], 3)
+        yesterday = {'date': yesterday_puzzle['date'], 'best_score': yesterday_puzzle['best_score'],
+                     'best_words': yesterday_puzzle['best']['words'], 'top': top}
+    for entry in entries:
+        entry['is_me'] = entry['user_id'] == user_id
+    return jsonify({
+        'success': True,
+        'date': today,
+        'ready': puzzle is not None,
+        'my': mine,
+        'best_score': puzzle['best_score'] if puzzle and (played or (mine and mine['revealed'])) else None,
+        'leaderboard': entries,
+        'me': me,
+        'yesterday': yesterday,
+    })
+
+
+@public_bp.route('/api/daily/leaderboard', methods=['GET'])
+def daily_leaderboard():
+    """Egy nap ranglistája (alapértelmezés: ma; csak a mai és a korábbi napok kérhetők)."""
+    if not _rate_limiter.check_ip(_get_client_ip(), 'daily'):
+        return jsonify({'success': False, 'message': 'Túl sok kérés. Próbáld újra később.'}), 429
+    today = daily.today_str()
+    date_str = request.args.get('date', today)
+    if not daily.is_valid_date(date_str) or date_str > today:
+        return jsonify({'success': False, 'message': 'Érvénytelen dátum.'}), 400
+    user = validate_session(request.cookies.get('session_token'))
+    user_id = user['id'] if user else None
+    entries, me = get_daily_leaderboard(date_str, 50, user_id)
+    for entry in entries:
+        entry['is_me'] = entry['user_id'] == user_id
+    return jsonify({'success': True, 'date': date_str, 'entries': entries, 'me': me})
 
 
 _MAX_DICT_WORDS = 8

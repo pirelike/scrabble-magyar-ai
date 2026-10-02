@@ -162,6 +162,7 @@
                     <span data-i18n="lobby.tab_friends">Barátok</span>
                     <span class="friend-badge hidden" id="friend-badge">0</span>
                 </button>
+                <button class="lobby-nav-tab segment" data-lobby-tab="practice" id="nav-tab-practice" type="button" data-i18n="lobby.tab_practice">Gyakorlás</button>
                 <button class="lobby-nav-tab segment" data-lobby-tab="leaderboard" id="nav-tab-leaderboard" type="button" data-i18n="lobby.tab_leaderboard">Ranglista</button>
                 <button class="lobby-nav-tab segment hidden" data-lobby-tab="room" id="nav-tab-room" type="button" disabled data-i18n="lobby.tab_room">Nyitott szoba</button>
             </nav>
@@ -415,6 +416,27 @@
                 </section>
             </div>
 
+            <!-- TAB: Gyakorlás (napi feladvány, szókvíz, rövid szavak) -->
+            <div class="lobby-tab-panel" id="lobby-panel-practice">
+                <section class="lobby-section" id="daily-section">
+                    <div class="section-header">
+                        <h2 class="section-title" data-i18n="daily.title">Napi feladvány</h2>
+                    </div>
+                    <p class="form-hint" data-i18n="daily.intro">Naponta egy közös táblaállás és betűkészlet mindenkinek: keresd meg a legtöbb pontot érő lépést!</p>
+                    <div class="daily-card">
+                        <div id="daily-status" class="daily-status"></div>
+                        <button id="btn-daily-start" type="button" data-i18n="daily.start">Feladvány megnyitása</button>
+                    </div>
+                    <p id="daily-yesterday" class="form-hint hidden"></p>
+                    <h3 class="panel-heading" data-i18n="daily.leaderboard">Mai ranglista</h3>
+                    <div id="daily-leaderboard" class="leaderboard-list">
+                        <div class="empty-state">
+                            <p class="empty-msg" data-i18n="daily.empty">Még senki nem küldött be megoldást ma.</p>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
             <!-- TAB 5: Ranglista -->
             <div class="lobby-tab-panel" id="lobby-panel-leaderboard">
                 <section class="lobby-section">
@@ -563,6 +585,11 @@
                     <svg class="icon"><use href="#i-eye"/></svg>
                     <span id="spectator-banner-text"></span>
                 </div>
+                <!-- Napi feladvány jelzés -->
+                <div id="puzzle-banner" class="puzzle-banner hidden" role="status">
+                    <span id="puzzle-banner-text"></span>
+                    <button id="btn-puzzle-reveal" class="small-btn secondary" type="button" data-i18n="daily.reveal">Megoldás</button>
+                </div>
                 <section class="panel-status">
                     <h2 class="panel-heading" data-i18n="game.scores">Pontok</h2>
                     <div id="scoreboard" class="scoreboard"></div>
@@ -661,6 +688,19 @@
                 <div id="exit-player-buttons" class="dialog-buttons hidden">
                     <button id="btn-exit-cancel" class="secondary" type="button" data-i18n="common.cancel">Mégsem</button>
                     <button id="btn-exit-confirm" class="danger" type="button" data-i18n="exit.title">Kilépés</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Napi feladvány eredménye -->
+        <div id="puzzle-result-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="puzzle-result-title">
+            <div class="dialog-content">
+                <h2 id="puzzle-result-title" data-i18n="daily.result_title">Eredményed</h2>
+                <div id="puzzle-result-body" class="puzzle-result-body"></div>
+                <div class="dialog-buttons dialog-buttons-vertical">
+                    <button id="btn-puzzle-retry" type="button" data-i18n="daily.retry">Újra próbálom</button>
+                    <button id="btn-puzzle-solution" class="secondary" type="button" data-i18n="daily.show_solution">Megoldás megmutatása</button>
+                    <button id="btn-puzzle-exit" class="secondary" type="button" data-i18n="game.back_lobby">Vissza a lobbyba</button>
                 </div>
             </div>
         </div>

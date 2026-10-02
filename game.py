@@ -29,6 +29,8 @@ class Game:
         self.started = False
         self.finished = False
         self.winners = []  # döntetlennél több is lehet
+        # Napi feladvány: {'date', 'score'} — egy játékos, egyetlen lerakás, utána vége a játéknak
+        self.puzzle = None
         self.scoreless_turns = 0  # egymást követő pont nélküli körök száma
         self.turn_number = 0
         self.last_action = None
@@ -288,10 +290,20 @@ class Game:
         self._record_move(player.name, 'place', tiles_placed=tiles_placed,
                           formed_words=formed_words, score=total_score, rack=rack)
 
-        if len(player.hand) == 0 and self.bag.is_empty():
+        if self.puzzle is not None:
+            self._finish_puzzle(player, total_score, word_strs)
+        elif len(player.hand) == 0 and self.bag.is_empty():
             self._end_game(player)
         else:
             self._next_turn()
+
+    def _finish_puzzle(self, player, score, words):
+        """A napi feladvány vége: a beküldött lépés pontszáma az eredmény (nincs végső elszámolás)."""
+        self.finished = True
+        self.winners = [player]
+        self.puzzle['score'] = score
+        self._set_last_action(f"{player.name}: {', '.join(words)} ({score} pont)",
+                              type='puzzle', player=player.name, words=list(words), score=score)
 
     def _challenge_applies(self, placer):
         """Él-e a megtámadási (szavazásos) mód a lerakónál? Csak akkor, ha van legalább egy
@@ -563,6 +575,8 @@ class Game:
         if self.pending_challenge:
             return False, "Várj a megtámadási fázis végéig."
 
+        if self.puzzle is not None:
+            return False, "A napi feladványban nem lehet cserélni."
         player = self.current_player()
         if player.id != player_id:
             return False, "Nem te következel."
@@ -604,6 +618,8 @@ class Game:
         if self.pending_challenge:
             return False, "Várj a megtámadási fázis végéig."
 
+        if self.puzzle is not None:
+            return False, "A napi feladványban nem lehet passzolni."
         player = self.current_player()
         if player.id != player_id:
             return False, "Nem te következel."
@@ -837,6 +853,8 @@ class Game:
             'history': [{k: v for k, v in h.items() if k != 'tiles'} for h in self.get_history()],
             'winner': self.winner.to_dict() if self.winner else None,
             'winners': [p.to_dict() for p in self.winners],
+            'puzzle': ({'date': self.puzzle['date'], 'score': self.puzzle['score']}
+                       if self.puzzle is not None else None),
             'challenge_mode': self.challenge_mode,
             'turn_time_limit': self.turn_time_limit,
             'hint_limit': self.hint_limit,

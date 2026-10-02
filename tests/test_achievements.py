@@ -114,7 +114,7 @@ class TestCumulative:
 
     def test_every_badge_is_reachable(self):
         reachable = achievements.cumulative_badges(25, 10) | {
-            'bingo', 'score_100', 'long_word', 'joker_play', 'game_300', 'bot_slayer'}
+            'bingo', 'score_100', 'long_word', 'joker_play', 'game_300', 'bot_slayer', 'daily_best'}
         assert reachable == set(achievements.BADGES)
 
 

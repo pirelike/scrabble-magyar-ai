@@ -14,6 +14,7 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 
 import achievements
 import ai_player
+import daily
 import dictionary
 from game import Game, CHALLENGE_TIMEOUT, ALLOWED_HINT_LIMITS, DEFAULT_HINT_LIMIT
 from room import Room
@@ -22,6 +23,7 @@ from auth import (
     init_db, save_game, finish_game, add_game_move,
     load_active_games, abandon_game, abandon_game_by_id,
     is_user_in_game, get_game_by_id, get_game_moves, get_game_players,
+    get_daily_puzzle, get_daily_entry, mark_daily_revealed,
     get_user_by_id, grant_achievements, get_game_rating_changes,
     send_friend_request as auth_send_friend_request,
     accept_friend_request as auth_accept_friend_request,
@@ -70,6 +72,9 @@ _SOCKET_RATE_LIMITS = {
     'respond_invite': (10, 10),
     'preview_move': (30, 10),
     'request_hint': (3, 30),
+    'start_daily': (3, 30),
+    'retry_daily': (10, 30),
+    'reveal_daily': (5, 30),
     'spectate_room': (5, 10),
     'leave_spectate': (5, 10),
 }
@@ -535,6 +540,8 @@ def _save_game_to_db(room_id):
     if not room:
         return False, "A szoba nem létezik."
     game = room.game
+    if game.puzzle is not None:
+        return True, "Játék mentve."   # a napi feladvány nem mentődik (az eredmény külön rögzül)
     if not game.started:
         return False, "A játék még nem indult el."
 
@@ -1569,6 +1576,8 @@ def handle_place_tiles(data):
         emit('action_result', {'success': True, 'message': msg, 'score': score, 'own_turn': True})
         if game.pending_challenge:
             _start_challenge_timer(room_id)
+        elif game.finished and game.puzzle is not None:
+            _finish_puzzle(sid, game)
         elif game.finished:
             _save_game_to_db(room_id)
         else:
@@ -1781,6 +1790,107 @@ def handle_request_hint():
             for m in moves
         ],
     })
+
+
+# --- Napi feladvány ---
+
+def _registered_user_id(sid):
+    auth_info = state.player_auth.get(sid) or {}
+    return None if auth_info.get('is_guest') else auth_info.get('user_id')
+
+
+def _daily_started_payload(sid, date_str):
+    user_id = _registered_user_id(sid)
+    return {'date': date_str, 'registered': bool(user_id),
+            'my': get_daily_entry(date_str, user_id) if user_id else None}
+
+
+@socketio.on('start_daily')
+def handle_start_daily():
+    """Napi feladvány indítása: egyjátékos, nem listázott szoba a nap közös állásával."""
+    sid = request.sid
+    if not rate_limiter.check_socket(sid, 'start_daily'):
+        emit('error', {'message': 'Túl sok kérés, várj egy kicsit.'})
+        return
+    if state.player_rooms.get(sid) in state.rooms:
+        emit('error', {'message': 'Már egy szobában vagy. Előbb lépj ki belőle.'})
+        return
+    try:
+        puzzle = daily.ensure_puzzle(yield_fn=lambda: socketio.sleep(0))
+    except Exception as e:
+        print(f"[daily] Nem sikerült a feladvány: {e}")
+        emit('error', {'message': 'A napi feladvány most nem érhető el.'})
+        return
+
+    player_name = state.player_names.get(sid, 'Névtelen')
+    room_id = str(uuid.uuid4())[:8]
+    join_code = state.generate_join_code()
+    game = daily.build_game(room_id, sid, player_name, puzzle)
+    token = state.generate_reconnect_token(sid, room_id, player_name, state.player_auth.get(sid))
+    room = Room(room_id=room_id, game=game, owner_sid=sid, owner_name=player_name,
+                name='Napi feladvány', max_players=1, join_code=join_code,
+                is_private=True, owner_token=token)
+    room.is_puzzle = True
+    state.add_room(room)
+    state.player_rooms[sid] = room_id
+    join_room(room_id)
+
+    emit('room_joined', {
+        'room_id': room_id, 'room_name': room.name, 'is_owner': True, 'challenge_mode': False,
+        'is_private': True, 'turn_time_limit': 0, 'hint_limit': 0,
+        'reconnect_token': token, 'chat_messages': [],
+    })
+    _emit_all_states(game, room_id)
+    emit('game_started', {})
+    emit('daily_started', _daily_started_payload(sid, puzzle['date']))
+
+
+def _finish_puzzle(sid, game):
+    """A beküldött lépés rögzítése (ranglista, kitüntetés) és az eredmény elküldése."""
+    puzzle = get_daily_puzzle(game.puzzle['date'])
+    if not puzzle:
+        return
+    details = json.loads(game.move_log[-1]['details_json'])
+    user_id = _registered_user_id(sid)
+    result = daily.record_result(puzzle, user_id, game.puzzle['score'],
+                                 details.get('tiles', []), details.get('words', []))
+    if user_id and result['recorded'] and result['is_best']:
+        new = grant_achievements(user_id, {'daily_best'})
+        if new:
+            socketio.emit('achievements_earned', {'badges': new}, room=sid)
+    socketio.emit('daily_result', result, room=sid)
+
+
+@socketio.on('retry_daily')
+def handle_retry_daily():
+    """Új próbálkozás ugyanarra a feladványra (a legjobb eredmény számít)."""
+    sid = request.sid
+    room_id, room, game = _get_room_context(sid, 'retry_daily')
+    if not room or game.puzzle is None or not game.finished:
+        return
+    puzzle = get_daily_puzzle(game.puzzle['date'])
+    if not puzzle:
+        return
+    daily.reset_game(game, puzzle)
+    _emit_all_states(game, room_id)
+    emit('daily_started', _daily_started_payload(sid, puzzle['date']))
+
+
+@socketio.on('reveal_daily')
+def handle_reveal_daily():
+    """A megoldás megmutatása: innentől a további próbálkozások nem kerülnek a ranglistára."""
+    sid = request.sid
+    room_id, room, game = _get_room_context(sid, 'reveal_daily')
+    if not room or game.puzzle is None:
+        return
+    puzzle = get_daily_puzzle(game.puzzle['date'])
+    if not puzzle:
+        return
+    user_id = _registered_user_id(sid)
+    if user_id:
+        mark_daily_revealed(puzzle['date'], user_id)
+    emit('daily_solution', {'tiles': puzzle['best']['tiles'], 'words': puzzle['best']['words'],
+                            'score': puzzle['best_score'], 'ranked': False})
 
 
 # --- Megfigyelő mód ---
@@ -2089,6 +2199,10 @@ if __name__ == '__main__':
     _cleanup_finished_saves()
     dictionary.warm_up()  # a szótár betöltése indításkor (az első lerakásnál ne kelljen várni)
     ai_player.get_vocabulary()  # a robot szókincse (a ragozott alakokkal ~2 mp) is előre épüljön fel
+    try:
+        daily.ensure_puzzle()  # a mai feladvány is készen álljon
+    except Exception as e:
+        print(f"[daily] A mai feladvány előállítása nem sikerült: {e}")
 
     if use_tunnel:
         start_tunnel(port)

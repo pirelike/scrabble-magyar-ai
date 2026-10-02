@@ -387,7 +387,8 @@ class TestClientTranslator:
         params = {name: 'X' for name in ('n', 'max', 'owner', 'name', 'names', 'players', 'words', 'score',
                                          'player', 'room', 'word', 'total', 'bag', 'hands',
                                          'vowels', 'consonants', 'blanks', 'played', 'won', 'rate',
-                                         'rating', 'change', 'done', 'lost', 'missed', 'optimal', 'turns')}
+                                         'rating', 'change', 'done', 'lost', 'missed', 'optimal', 'turns',
+                                         'rank', 'best', 'date')}
         for key in keys:
             cases.append({'op': 't', 'key': key, 'params': params})
         for lang in ('hu', 'en'):

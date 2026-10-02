@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import secrets
 import time
@@ -123,6 +124,28 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_game_players_game_id ON game_players(game_id);
         CREATE INDEX IF NOT EXISTS idx_game_players_user_id ON game_players(user_id);
         CREATE INDEX IF NOT EXISTS idx_game_moves_game_id ON game_moves(game_id);
+
+        CREATE TABLE IF NOT EXISTS daily_puzzles (
+            puzzle_date TEXT PRIMARY KEY,
+            board_json TEXT NOT NULL,
+            rack_json TEXT NOT NULL,
+            best_score INTEGER NOT NULL,
+            best_json TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS daily_scores (
+            puzzle_date TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            best_score INTEGER NOT NULL DEFAULT 0,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            first_best_at TEXT NOT NULL DEFAULT (datetime('now')),
+            revealed INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (puzzle_date, user_id),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_daily_scores_ranking
+            ON daily_scores(puzzle_date, best_score DESC);
 
         CREATE TABLE IF NOT EXISTS game_analysis (
             game_id INTEGER PRIMARY KEY,
@@ -741,6 +764,116 @@ def get_game_results(game_id):
         ).fetchall()
     return [{'player_name': r['player_name'], 'final_score': r['final_score'],
              'is_winner': bool(r['is_winner'])} for r in rows]
+
+
+# --- Napi feladvány ---
+
+def get_daily_puzzle(puzzle_date):
+    """A nap feladványa: {'board', 'rack', 'best_score', 'best'} vagy None."""
+    with _db() as conn:
+        row = conn.execute('SELECT * FROM daily_puzzles WHERE puzzle_date = ?', (puzzle_date,)).fetchone()
+    if not row:
+        return None
+    return {
+        'date': row['puzzle_date'],
+        'board': json.loads(row['board_json']),
+        'rack': json.loads(row['rack_json']),
+        'best_score': row['best_score'],
+        'best': json.loads(row['best_json']),
+    }
+
+
+def save_daily_puzzle(puzzle_date, board, rack, best_score, best):
+    """A feladvány mentése (ha az adott napra már van, az marad: mindenkinek ugyanaz)."""
+    with _db() as conn:
+        conn.execute(
+            'INSERT OR IGNORE INTO daily_puzzles (puzzle_date, board_json, rack_json, best_score, best_json) '
+            'VALUES (?, ?, ?, ?, ?)',
+            (puzzle_date, json.dumps(board), json.dumps(rack), best_score, json.dumps(best, ensure_ascii=False))
+        )
+
+
+def raise_daily_best(puzzle_date, score, best):
+    """Ha valaki a feladvány eddig ismert legjobb lépésénél többet ért el, az lesz az új legjobb."""
+    with _db() as conn:
+        conn.execute(
+            'UPDATE daily_puzzles SET best_score = ?, best_json = ? WHERE puzzle_date = ? AND best_score < ?',
+            (score, json.dumps(best, ensure_ascii=False), puzzle_date, score)
+        )
+
+
+def get_daily_entry(puzzle_date, user_id):
+    with _db() as conn:
+        row = conn.execute(
+            'SELECT best_score, attempts, revealed FROM daily_scores WHERE puzzle_date = ? AND user_id = ?',
+            (puzzle_date, user_id)
+        ).fetchone()
+    return {'best_score': row['best_score'], 'attempts': row['attempts'],
+            'revealed': bool(row['revealed'])} if row else None
+
+
+def record_daily_score(puzzle_date, user_id, score):
+    """Egy beküldött lépés rögzítése. A legjobb pontszám számít; ha valaki a megoldást megnézte,
+    további próbálkozása már nem kerül a ranglistára.
+
+    Visszatér: {'recorded', 'best', 'attempts', 'improved'}"""
+    now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+    with _db() as conn:
+        row = conn.execute(
+            'SELECT best_score, attempts, revealed FROM daily_scores WHERE puzzle_date = ? AND user_id = ?',
+            (puzzle_date, user_id)
+        ).fetchone()
+        if row and row['revealed']:
+            return {'recorded': False, 'best': row['best_score'], 'attempts': row['attempts'],
+                    'improved': False}
+        if not row:
+            conn.execute(
+                'INSERT INTO daily_scores (puzzle_date, user_id, best_score, attempts, first_best_at) '
+                'VALUES (?, ?, ?, 1, ?)', (puzzle_date, user_id, score, now))
+            return {'recorded': True, 'best': score, 'attempts': 1, 'improved': True}
+        improved = score > row['best_score']
+        if improved:
+            conn.execute(
+                'UPDATE daily_scores SET best_score = ?, attempts = attempts + 1, first_best_at = ? '
+                'WHERE puzzle_date = ? AND user_id = ?', (score, now, puzzle_date, user_id))
+        else:
+            conn.execute('UPDATE daily_scores SET attempts = attempts + 1 '
+                         'WHERE puzzle_date = ? AND user_id = ?', (puzzle_date, user_id))
+        return {'recorded': True, 'best': max(score, row['best_score']),
+                'attempts': row['attempts'] + 1, 'improved': improved}
+
+
+def mark_daily_revealed(puzzle_date, user_id):
+    """Jelzi, hogy a felhasználó megnézte a megoldást (innentől nem javíthat a ranglistán)."""
+    with _db() as conn:
+        conn.execute(
+            'INSERT INTO daily_scores (puzzle_date, user_id, best_score, attempts, revealed) '
+            'VALUES (?, ?, 0, 0, 1) '
+            'ON CONFLICT(puzzle_date, user_id) DO UPDATE SET revealed = 1', (puzzle_date, user_id))
+
+
+_DAILY_ORDER = 'ds.best_score DESC, ds.attempts ASC, ds.first_best_at ASC, ds.user_id ASC'
+
+
+def get_daily_leaderboard(puzzle_date, limit=20, user_id=None):
+    """A nap ranglistája (csak azok, akik legalább egy lépést beküldtek).
+    Visszatér: (entries, me) — `me` a megadott felhasználó helyezése (a top listán kívül is)."""
+    limit = max(1, min(int(limit), LEADERBOARD_MAX_LIMIT))
+    with _db() as conn:
+        rows = conn.execute(
+            'SELECT ds.user_id AS user_id, u.display_name AS display_name, ds.best_score AS best_score, '
+            'ds.attempts AS attempts FROM daily_scores ds JOIN users u ON u.id = ds.user_id '
+            f'WHERE ds.puzzle_date = ? AND ds.attempts > 0 ORDER BY {_DAILY_ORDER}', (puzzle_date,)
+        ).fetchall()
+    entries, me = [], None
+    for rank, row in enumerate(rows, start=1):
+        entry = {'rank': rank, 'user_id': row['user_id'], 'display_name': row['display_name'],
+                 'best_score': row['best_score'], 'attempts': row['attempts']}
+        if rank <= limit:
+            entries.append(entry)
+        if user_id is not None and row['user_id'] == user_id:
+            me = entry
+    return entries, me
 
 
 def get_game_analysis(game_id):

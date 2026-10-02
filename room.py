@@ -19,6 +19,7 @@ class Room:
         self.join_code = join_code
         self.is_private = is_private
         self.is_restored = False
+        self.is_puzzle = False  # napi feladvány (egyjátékos, nem mentődik)
         self.chat_messages = []
         self._challenge_timer_id = 0
         self._turn_timer_id = 0

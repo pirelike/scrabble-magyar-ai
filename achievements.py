@@ -22,6 +22,7 @@ BADGES = (
     'bot_slayer',   # győzelem erős (8–10. fokozatú) robot ellen
     'wins_10',      # 10 győzelem
     'games_25',     # 25 befejezett játék
+    'daily_best',   # a napi feladvány legjobb lépésének megtalálása
 )
 
 BIG_MOVE_SCORE = 100

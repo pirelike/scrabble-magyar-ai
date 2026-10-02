@@ -3921,3 +3921,62 @@ html.booting .lang-toggle {
     outline-offset: -2px;
     opacity: 0.85;
 }
+
+
+/* ---- Napi feladvány ---- */
+
+.daily-card {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    margin-bottom: var(--space-3);
+    background: var(--bg-card);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-card);
+}
+
+.daily-status {
+    flex: 1 1 220px;
+    font-weight: 600;
+}
+
+.puzzle-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    background: var(--color-fill, rgba(0, 122, 255, 0.12));
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+    font-weight: 600;
+}
+
+.puzzle-result-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin: var(--space-3) 0;
+    text-align: center;
+}
+
+.puzzle-score {
+    font-size: 28px;
+    font-weight: 800;
+}
+
+.puzzle-best { color: var(--success-text); font-weight: 700; }
+
+/* Feladvány-mód: nincs csere, passz, tipp, chat, lépéstörténet, időzítő */
+#game-screen.puzzle-mode #btn-exchange,
+#game-screen.puzzle-mode #btn-pass,
+#game-screen.puzzle-mode #btn-hint,
+#game-screen.puzzle-mode .chat-section,
+#game-screen.puzzle-mode #history-section,
+#game-screen.puzzle-mode #turn-timer-display {
+    display: none;
+}

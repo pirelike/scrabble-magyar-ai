@@ -312,6 +312,7 @@ const AppState = {
         this.spectateCode = null;
         this.gameState = null;
         Badges.newInGame = [];
+        Daily.reset();
         // Clear saved rejoin info
         localStorage.removeItem('scrabble-rejoin');
         // Hide room tab
@@ -729,6 +730,8 @@ const Lobby = {
             Friends.load();
         } else if (tabId === 'leaderboard') {
             Leaderboard.load();
+        } else if (tabId === 'practice') {
+            Daily.load();
         }
     },
 
@@ -1485,6 +1488,7 @@ const GameBoard = {
         AppState.gameState = state;
         AppState.myPlayerId = socket.id;
         AppState.isSpectator = !!state.spectator;
+        Daily.onGameState(state);
 
         // Clear placed tiles when turn changes away from us
         if (state.current_player !== socket.id && BoardState.placedTiles.length > 0) {
@@ -1524,7 +1528,7 @@ const GameBoard = {
             if (state.finished) {
                 ChallengeUI.stopCountdown(); TurnTimerUI._stop();
                 localStorage.removeItem('scrabble-rejoin');
-                GameOver.show();
+                if (!state.puzzle) GameOver.show();   // a napi feladvány saját eredmény-ablakot kap
             }
         } else {
             WaitingRoom.update();
@@ -1920,6 +1924,7 @@ const GameBoard = {
             case 'game_over': return t('last.game_over', { player: info.player, score: info.score });
             case 'game_over_draw': return t('last.game_over_draw', { players: (info.players || []).join(', '), score: info.score });
             case 'withdrawn': return t('last.withdrawn', { player: info.player });
+            case 'puzzle': return t('last.place', { player: info.player, words, score: info.score });
             case 'save_revert': return t('last.save_revert', { player: info.player });
             default: return tServer(gs.last_action) || '';
         }
@@ -3050,6 +3055,8 @@ const ExitGame = {
     showDialog() {
         // Megfigyelőként nincs mit megerősíteni: a kilépés azonnali
         if (AppState.isSpectator) { this._doLeave(); return; }
+        // A napi feladványnál nincs mit menteni vagy megerősíteni
+        if (AppState.gameState && AppState.gameState.puzzle) { this._doLeave(); return; }
         const gs = AppState.gameState;
         const isActiveGame = gs && gs.started && !gs.finished;
         const showOwner = AppState.isOwner && isActiveGame;
@@ -3101,11 +3108,199 @@ const ExitGame = {
     },
 };
 
+// ===== NAPI FELADVÁNY =====
+// Naponta egy közös táblaállás és kéz; a játék a szokásos játékképernyőn zajlik (a szerver egyjátékos,
+// nem listázott "feladvány-szobát" nyit), egyetlen lerakás után eredményt kapsz.
+
+const Daily = {
+    current: null,        // {date, registered, my} a futó feladványról
+    _pendingSolution: null,
+    _lobbyData: null,
+
+    init() {
+        socket.on('daily_started', (data) => this.onStarted(data));
+        socket.on('daily_result', (result) => this.onResult(result));
+        socket.on('daily_solution', (solution) => this.onSolution(solution));
+        document.getElementById('btn-daily-start').addEventListener('click', () => socket.emit('start_daily'));
+        document.getElementById('btn-puzzle-retry').addEventListener('click', () => this.retry());
+        document.getElementById('btn-puzzle-solution').addEventListener('click', () => this.reveal());
+        document.getElementById('btn-puzzle-reveal').addEventListener('click', () => this.confirmReveal());
+        document.getElementById('btn-puzzle-exit').addEventListener('click', () => {
+            document.getElementById('puzzle-result-dialog').classList.add('hidden');
+            ExitGame._doLeave();
+        });
+        window.addEventListener('langchange', () => {
+            if (this._lobbyData) this.render(this._lobbyData);
+            if (this.current && AppState.gameState) this.onGameState(AppState.gameState);
+        });
+    },
+
+    reset() {
+        this.current = null;
+        this._pendingSolution = null;
+        const dialog = document.getElementById('puzzle-result-dialog');
+        if (dialog) dialog.classList.add('hidden');
+        const screen = document.getElementById('game-screen');
+        if (screen) screen.classList.remove('puzzle-mode');
+    },
+
+    // --- Lobby ---
+
+    async load() {
+        try {
+            const res = await fetch('/api/daily');
+            const data = await res.json();
+            if (!data.success) return;
+            this._lobbyData = data;
+            this.render(data);
+        } catch { /* a lobby többi része enélkül is működik */ }
+    },
+
+    render(data) {
+        const status = document.getElementById('daily-status');
+        const my = data.my;
+        if (!my || !my.attempts) {
+            status.textContent = my && my.revealed ? t('daily.revealed') : t('daily.not_played');
+        } else {
+            status.textContent = t('daily.my_best', { score: my.best_score, n: my.attempts })
+                + (data.best_score !== null && data.best_score !== undefined
+                    ? ' · ' + t('daily.best_known', { score: data.best_score }) : '');
+        }
+        document.getElementById('btn-daily-start').textContent = my && my.attempts ? t('daily.again') : t('daily.start');
+
+        const y = data.yesterday;
+        const yEl = document.getElementById('daily-yesterday');
+        yEl.classList.toggle('hidden', !y);
+        if (y) {
+            yEl.textContent = t('daily.yesterday', { words: y.best_words.join(', '), score: y.best_score });
+        }
+
+        const box = document.getElementById('daily-leaderboard');
+        box.replaceChildren();
+        if (!data.leaderboard.length) {
+            box.innerHTML = emptyStateHtml(t('daily.empty'));
+            return;
+        }
+        for (const entry of data.leaderboard) box.appendChild(this._row(entry));
+        if (data.me && !data.leaderboard.some(e => e.user_id === data.me.user_id)) {
+            const gap = document.createElement('div');
+            gap.className = 'lb-gap';
+            gap.textContent = '\u22EF';
+            box.appendChild(gap);
+            box.appendChild(this._row({ ...data.me, is_me: true }));
+        }
+    },
+
+    _row(entry) {
+        const row = document.createElement('div');
+        row.className = 'lb-row' + (entry.is_me ? ' me' : '') + (entry.rank <= 3 ? ` top-${entry.rank}` : '');
+        const rank = document.createElement('span');
+        rank.className = 'lb-rank';
+        rank.textContent = entry.rank;
+        const info = document.createElement('div');
+        info.className = 'lb-info';
+        const name = document.createElement('span');
+        name.className = 'lb-name';
+        name.textContent = entry.display_name + (entry.is_me ? ` (${t('lb.you')})` : '');
+        const sub = document.createElement('span');
+        sub.className = 'lb-sub';
+        sub.textContent = t('daily.attempts', { n: entry.attempts });
+        info.appendChild(name);
+        info.appendChild(sub);
+        const value = document.createElement('span');
+        value.className = 'lb-value';
+        value.textContent = t('common.points', { n: entry.best_score });
+        row.appendChild(rank);
+        row.appendChild(info);
+        row.appendChild(value);
+        return row;
+    },
+
+    // --- Játék közben ---
+
+    // A játékképernyő feladvány-módja: a nem releváns elemek rejtve, a banner látszik
+    onGameState(state) {
+        const puzzle = !!state.puzzle;
+        document.getElementById('game-screen').classList.toggle('puzzle-mode', puzzle);
+        const banner = document.getElementById('puzzle-banner');
+        banner.classList.toggle('hidden', !puzzle);
+        if (puzzle) {
+            document.getElementById('puzzle-banner-text').textContent = t('daily.banner', { date: state.puzzle.date });
+        }
+    },
+
+    onStarted(data) {
+        this.current = data;
+        AppState.roomName = t('daily.title');
+        setGameRoomName(AppState.roomName);
+        document.getElementById('puzzle-result-dialog').classList.add('hidden');
+        if (this._pendingSolution) {
+            const tiles = this._pendingSolution;
+            this._pendingSolution = null;
+            GameBoard.applyHint(tiles);
+        }
+    },
+
+    onResult(r) {
+        const body = document.getElementById('puzzle-result-body');
+        body.replaceChildren();
+        const add = (text, className) => {
+            const line = document.createElement('div');
+            if (className) line.className = className;
+            line.textContent = text;
+            body.appendChild(line);
+        };
+        add(t('daily.result_score', { score: r.score }), 'puzzle-score');
+        if (r.is_best) {
+            add(t('daily.found_best'), 'puzzle-best');
+        } else {
+            add(t('daily.result_best', { score: r.best_score, lost: r.best_score - r.score }));
+        }
+        if (r.recorded) {
+            add(t('daily.result_rank', { rank: r.rank, best: r.my_best, n: r.attempts }));
+        } else if (this.current && this.current.registered) {
+            add(t('daily.not_recorded'));
+        } else {
+            add(t('daily.guest_note'));
+        }
+        // A megoldás gomb nem kell, ha megtaláltad a legjobbat
+        document.getElementById('btn-puzzle-solution').classList.toggle('hidden', !!r.is_best);
+        document.getElementById('puzzle-result-dialog').classList.remove('hidden');
+        SoundManager.play(r.is_best ? 'challenge_accept' : 'tile_place');
+    },
+
+    retry() {
+        document.getElementById('puzzle-result-dialog').classList.add('hidden');
+        socket.emit('retry_daily');
+    },
+
+    confirmReveal() {
+        showConfirm(t('daily.reveal'), t('daily.reveal_confirm'), t('daily.reveal'), () => this.reveal());
+    },
+
+    reveal() {
+        document.getElementById('puzzle-result-dialog').classList.add('hidden');
+        socket.emit('reveal_daily');
+    },
+
+    // A megoldás a táblára kerül (a feladvány ranglistás eredménye ezzel lezárul)
+    onSolution(solution) {
+        showMessage(t('daily.solution', { words: solution.words.join(', '), score: solution.score }), false, 9000);
+        if (AppState.gameState && AppState.gameState.finished) {
+            this._pendingSolution = solution.tiles;   // először új próbálkozást nyitunk, utána kerül a táblára
+            socket.emit('retry_daily');
+        } else {
+            GameBoard.applyHint(solution.tiles);
+        }
+    },
+};
+
 // ===== KITÜNTETÉSEK =====
 
 const BADGE_ICONS = {
     first_game: '🎲', first_win: '🥇', bingo: '🎯', score_100: '💯', long_word: '📏',
     joker_play: '🃏', game_300: '🏔️', bot_slayer: '🤖', wins_10: '🏆', games_25: '🎖️',
+    daily_best: '🧩',
 };
 
 const Badges = {
@@ -4649,6 +4844,7 @@ Chat.init();
 ExitGame.init();
 Profile.init();
 Badges.init();
+Daily.init();
 Replay.init();
 GameOver.init();
 Reconnection.init();
