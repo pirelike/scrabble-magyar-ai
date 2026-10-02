@@ -28,6 +28,9 @@ class ServerState:
         # Disconnected játékosok grace period: {token: {room_id, sid, player_name}}
         self._disconnected_players = {}
         
+        # Megfigyelők: {sid: room_id}
+        self.spectator_rooms = {}
+
         # Online tracking és meghívók
         self._online_users = {}        # {user_id: set(sid, ...)} — online regisztrált felhasználók
         self._sid_to_user_id = {}      # {sid: user_id} — gyors SID→user lookup
@@ -182,9 +185,11 @@ class ServerState:
             self._reconnect_tokens.pop(t, None)
 
     def cleanup_room(self, room_id):
-        """Szoba teljes erőforrásainak felszabadítása: tokenek + szoba törlés."""
+        """Szoba teljes erőforrásainak felszabadítása: tokenek + megfigyelők + szoba törlés."""
         self.remove_invites_for_room(room_id)
         self.cleanup_room_tokens(room_id)
+        for sid in [s for s, rid in self.spectator_rooms.items() if rid == room_id]:
+            del self.spectator_rooms[sid]
         self.remove_room(room_id)
 
     def get_room_for_player(self, sid):
@@ -205,6 +210,32 @@ class ServerState:
             for room in self.rooms.values()
             if room.is_lobby_visible
         ]
+
+    def get_live_games(self):
+        """Nyilvános, folyamatban lévő játékok listája (megfigyeléshez)."""
+        return [
+            room.to_live_dict()
+            for room in self.rooms.values()
+            if room.is_live_visible
+        ]
+
+    # --- Megfigyelők ---
+
+    def add_spectator(self, sid, room_id):
+        """Megfigyelő felvétele a szobába. A szoba spectators dict-jét is frissíti a hívó."""
+        self.spectator_rooms[sid] = room_id
+
+    def remove_spectator(self, sid):
+        """Megfigyelő eltávolítása. Visszatér: a szoba azonosítója, vagy None."""
+        room_id = self.spectator_rooms.pop(sid, None)
+        room = self.rooms.get(room_id) if room_id else None
+        if room:
+            room.spectators.pop(sid, None)
+        return room_id
+
+    def get_spectated_room(self, sid):
+        """Az SID által megfigyelt szoba azonosítója, vagy None."""
+        return self.spectator_rooms.get(sid)
 
     def generate_join_code(self):
         """Egyedi 6-jegyű csatlakozási kód generálása."""

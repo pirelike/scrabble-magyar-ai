@@ -1,9 +1,15 @@
+import os
 import re
 
-from flask import Blueprint, render_template, request, jsonify, make_response, current_app
+from flask import (
+    Blueprint, render_template, request, jsonify, make_response, current_app, send_from_directory,
+)
 
+import dictionary
 from config import SMTP_CONFIGURED
+from tiles import tokenize_word, word_base_score, TILE_VALUES
 from auth import (
+    get_leaderboard, LEADERBOARD_METRICS, LEADERBOARD_MIN_GAMES,
     get_user_by_email, create_user, verify_password,
     create_verification_code, verify_code as auth_verify_code,
     create_session, validate_session, delete_session,
@@ -26,6 +32,27 @@ _VALID_EMAIL_RE = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
 main_bp = Blueprint('main', __name__)
 auth_bp = Blueprint('auth', __name__)
 game_bp = Blueprint('game', __name__)
+public_bp = Blueprint('public', __name__)
+
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+_STATIC_DIR = os.path.join(_BASE_DIR, 'static')
+# Ezek módosítási ideje adja az "asset verziót": gyorsítótár-törés és service worker frissítés
+_VERSIONED_FILES = (
+    os.path.join('static', 'app.js'), os.path.join('static', 'style.css'),
+    os.path.join('static', 'i18n-data.js'), os.path.join('static', 'i18n.js'),
+    os.path.join('templates', 'index.html'),
+)
+
+
+def asset_version():
+    """A kliens fájlok legutóbbi módosítási ideje (másodperc) — a gyorsítótár verziója."""
+    latest = 0
+    for rel in _VERSIONED_FILES:
+        try:
+            latest = max(latest, int(os.path.getmtime(os.path.join(_BASE_DIR, rel))))
+        except OSError:
+            pass
+    return latest
 
 
 def init_routes(rate_limiter, state, socketio):
@@ -91,7 +118,27 @@ def _sanitize_name(name, max_len=20):
 
 @main_bp.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('index.html', asset_v=asset_version())
+
+
+# ===== PWA (telepíthető alkalmazás) =====
+
+@main_bp.route('/manifest.webmanifest')
+def manifest():
+    response = send_from_directory(_STATIC_DIR, 'manifest.webmanifest',
+                                   mimetype='application/manifest+json')
+    response.headers['Cache-Control'] = 'no-cache'
+    return response
+
+
+@main_bp.route('/sw.js')
+def service_worker():
+    """A service worker a gyökérről szolgálódik ki, hogy az egész oldalra érvényes legyen."""
+    response = make_response(render_template('sw.js', version=asset_version()))
+    response.headers['Content-Type'] = 'application/javascript; charset=utf-8'
+    response.headers['Cache-Control'] = 'no-cache'
+    response.headers['Service-Worker-Allowed'] = '/'
+    return response
 
 
 # ===== AUTH ROUTES =====
@@ -395,6 +442,101 @@ def search_users_route():
         'success': True,
         'users': results
     })
+
+
+# ===== PUBLIKUS API: RANGLISTA, SZÓTÁR =====
+
+@public_bp.route('/api/leaderboard', methods=['GET'])
+def leaderboard():
+    ip = _get_client_ip()
+    if not _rate_limiter.check_ip(ip, 'leaderboard'):
+        return jsonify({'success': False, 'message': 'Túl sok kérés. Próbáld újra később.'}), 429
+
+    metric = request.args.get('metric', 'wins')
+    if metric not in LEADERBOARD_METRICS:
+        return jsonify({'success': False, 'message': 'Ismeretlen rangsor.'}), 400
+    try:
+        limit = int(request.args.get('limit', 50))
+    except ValueError:
+        limit = 50
+
+    user = validate_session(request.cookies.get('session_token'))
+    my_id = user['id'] if user else None
+    entries, me = get_leaderboard(metric, limit, my_id)
+    for entry in entries:
+        entry['is_me'] = entry['user_id'] == my_id
+    return jsonify({
+        'success': True,
+        'metric': metric,
+        'min_games': LEADERBOARD_MIN_GAMES[metric],
+        'entries': entries,
+        'me': me,
+    })
+
+
+_MAX_DICT_WORDS = 8
+_MAX_SUGGESTION_WORDS = 3
+
+
+@public_bp.route('/api/dictionary/check', methods=['GET', 'POST'])
+def dictionary_check():
+    """Szavak ellenőrzése a játék szótárával (érvényes-e, hány pontot ér, javaslatok)."""
+    ip = _get_client_ip()
+    if not _rate_limiter.check_ip(ip, 'dictionary'):
+        return jsonify({'success': False, 'message': 'Túl sok kérés. Próbáld újra később.'}), 429
+
+    if request.method == 'POST':
+        data = request.get_json(silent=True)
+        raw = data.get('words', data.get('q', '')) if isinstance(data, dict) else ''
+    else:
+        raw = request.args.get('q', '')
+    if isinstance(raw, list):
+        raw = ' '.join(str(w) for w in raw if isinstance(w, (str, int)))
+    if not isinstance(raw, str):
+        raw = ''
+    raw = raw[:300]  # a szavak száma és hossza úgyis korlátozott: ne dolgozzunk fel óriás bemenetet
+
+    words = []
+    for token in re.split(r'[\s,;]+', raw):
+        token = token.strip()
+        if token and token.upper() not in [w.upper() for w in words]:
+            words.append(token)
+    if not words:
+        return jsonify({'success': False, 'message': 'Adj meg legalább egy szót.'}), 400
+    words = words[:_MAX_DICT_WORDS]
+
+    results = []
+    checkable = []
+    for word in words:
+        upper = word.upper()
+        tokens = tokenize_word(upper) if len(upper) <= 15 else None
+        entry = {'word': upper[:30], 'valid': False, 'tiles': [], 'score': None,
+                 'reason': None, 'suggestions': []}
+        if len(upper) > 15:
+            entry['reason'] = 'too_long'
+        elif tokens is None:
+            entry['reason'] = 'invalid_chars'
+        elif len(tokens) < 2:
+            entry['reason'] = 'too_short'
+            entry['tiles'] = tokens
+            entry['score'] = word_base_score(upper)
+        else:
+            entry['tiles'] = tokens
+            entry['score'] = sum(TILE_VALUES[t] for t in tokens)
+            checkable.append(entry)
+        results.append(entry)
+
+    valid = dictionary.filter_valid([e['word'] for e in checkable])
+    suggested = 0
+    for entry in checkable:
+        entry['valid'] = entry['word'] in valid
+        if not entry['valid']:
+            entry['reason'] = 'not_in_dictionary'
+            if suggested < _MAX_SUGGESTION_WORDS:
+                entry['suggestions'] = dictionary.suggest_words(entry['word'], limit=5)
+                suggested += 1
+
+    return jsonify({'success': True, 'results': results})
 
 
 # ===== GAME ROUTES =====

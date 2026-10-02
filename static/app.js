@@ -23,6 +23,13 @@ applyTheme(document.documentElement.getAttribute('data-theme') || 'light');
 document.addEventListener('click', (e) => {
     if (e.target.closest('.btn-theme-toggle')) { toggleTheme(); return; }
 
+    if (e.target.closest('.btn-lang-toggle')) { I18N.setLang(I18N.next()); return; }
+
+    if (e.target.closest('.btn-dictionary')) {
+        if (typeof DictionaryTool !== 'undefined') DictionaryTool.show();
+        return;
+    }
+
     if (e.target.closest('.btn-profile-nav')) {
         if (typeof Profile !== 'undefined') Profile.show();
         return;
@@ -49,18 +56,32 @@ const TILE_VALUES = {
     'CS': 7, 'Ő': 7, 'Ú': 7, 'Ű': 7, 'LY': 8, 'ZS': 8, 'TY': 10
 };
 
+// A zsák kezdeti tartalma (a szerver tiles.py-jával egyezik): betű → darabszám ('' = üres zseton)
+const TILE_COUNTS = {
+    '': 2, 'A': 6, 'E': 6, 'K': 6, 'T': 5, 'Á': 4, 'L': 4, 'N': 4, 'R': 4,
+    'I': 3, 'M': 3, 'O': 3, 'S': 3, 'B': 3, 'D': 3, 'G': 3, 'Ó': 3,
+    'É': 3, 'H': 2, 'SZ': 2, 'V': 2, 'F': 2, 'GY': 2, 'J': 2, 'Ö': 2,
+    'P': 2, 'U': 2, 'Ü': 2, 'Z': 2, 'C': 1, 'Í': 1, 'NY': 1,
+    'CS': 1, 'Ő': 1, 'Ú': 1, 'Ű': 1, 'LY': 1, 'ZS': 1, 'TY': 1
+};
+
 const ALL_LETTERS = [
     'A', 'Á', 'B', 'C', 'CS', 'D', 'E', 'É', 'F', 'G', 'GY', 'H', 'I', 'Í',
     'J', 'K', 'L', 'LY', 'M', 'N', 'NY', 'O', 'Ó', 'Ö', 'Ő', 'P', 'R', 'S',
     'SZ', 'T', 'TY', 'U', 'Ú', 'Ü', 'Ű', 'V', 'Z', 'ZS'
 ];
 
+// A prémium mezők feliratai (rövid: kis tábla; hosszú: nagy tábla) — nyelvfüggők
+function premiumHtml(key) {
+    return `<span class="d-desktop">${escapeHtml(t(key + '_long'))}</span><span class="d-mobile">${escapeHtml(t(key + '_short'))}</span>`;
+}
+
 const PREMIUM_LABELS = {
-    'DL': '<span class="d-desktop">DUPLA\nBETŰ</span><span class="d-mobile">2×\nBETŰ</span>',
-    'TL': '<span class="d-desktop">TRIPLA\nBETŰ</span><span class="d-mobile">3×\nBETŰ</span>',
-    'DW': '<span class="d-desktop">DUPLA\nSZÓ</span><span class="d-mobile">2×\nSZÓ</span>',
-    'TW': '<span class="d-desktop">TRIPLA\nSZÓ</span><span class="d-mobile">3×\nSZÓ</span>',
-    'ST': '<span class="d-desktop">★</span><span class="d-mobile">★</span>',
+    get DL() { return premiumHtml('board.dl'); },
+    get TL() { return premiumHtml('board.tl'); },
+    get DW() { return premiumHtml('board.dw'); },
+    get TW() { return premiumHtml('board.tw'); },
+    get ST() { return '<span class="d-desktop">★</span><span class="d-mobile">★</span>'; },
 };
 
 // Premium mező elrendezés (szimmetrikus)
@@ -84,13 +105,38 @@ for (const [r, c, type] of PREMIUM_QUARTER) {
 
 // ===== SOCKET =====
 
-const socket = io({
-    reconnection: true,
-    reconnectionAttempts: Infinity,
-    reconnectionDelay: 1000,
-    reconnectionDelayMax: 5000,
-    timeout: 120000,
-});
+// Ha a Socket.IO kliens nem töltődött be (pl. kapcsolat nélküli első indítás), egy üres helyettes
+// gondoskodik róla, hogy a felület hibátlanul betöltsön, és a kapcsolati sáv jelezze a problémát.
+function createOfflineSocket() {
+    return {
+        id: null,
+        connected: false,
+        on() { return this; },
+        off() { return this; },
+        emit() { return this; },
+        connect() { location.reload(); return this; },
+    };
+}
+
+const socket = (typeof io !== 'undefined')
+    ? io({
+        reconnection: true,
+        reconnectionAttempts: Infinity,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        timeout: 120000,
+    })
+    : createOfflineSocket();
+
+if (typeof io === 'undefined') {
+    document.addEventListener('DOMContentLoaded', () => {
+        const banner = document.getElementById('connection-banner');
+        if (banner) {
+            banner.textContent = t('conn.offline_lib');
+            banner.classList.remove('hidden');
+        }
+    });
+}
 
 // ===== UTILITIES =====
 
@@ -104,8 +150,10 @@ function showScreen(screenId) {
     document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
     document.getElementById(screenId).classList.remove('hidden');
     // A globális téma gomb csak a bejelentkező képernyőn kell: a többin a felső sávban van
-    const globalToggle = document.getElementById('theme-toggle');
-    if (globalToggle) globalToggle.classList.toggle('hidden', screenId !== 'auth-screen');
+    for (const id of ['theme-toggle', 'lang-toggle']) {
+        const globalToggle = document.getElementById(id);
+        if (globalToggle) globalToggle.classList.toggle('hidden', screenId !== 'auth-screen');
+    }
     window.scrollTo(0, 0);
 }
 
@@ -114,7 +162,7 @@ function setGameRoomName(name) {
     document.querySelectorAll('.game-room-name').forEach(el => { el.textContent = name; });
 }
 
-function showMessage(msg, isError = false) {
+function showMessage(msg, isError = false, duration = 3000) {
     const container = document.getElementById('toast-container');
     const toast = document.createElement('div');
     toast.className = 'toast' + (isError ? ' toast-error' : '');
@@ -125,7 +173,7 @@ function showMessage(msg, isError = false) {
         toast.classList.add('toast-out');
         toast.addEventListener('animationend', () => toast.remove());
     };
-    setTimeout(dismiss, 3000);
+    setTimeout(dismiss, duration);
     toast.addEventListener('click', dismiss);
 }
 
@@ -146,6 +194,11 @@ function showConfirm(title, text, confirmLabel, onConfirm) {
     yesBtn.addEventListener('click', () => { cleanup(); onConfirm(); }, { once: true });
     noBtn.addEventListener('click', () => { cleanup(); }, { once: true });
     dialog.classList.remove('hidden');
+}
+
+// Üres lista jelzése (a szöveg escape-elve kerül a HTML-be)
+function emptyStateHtml(text) {
+    return `<div class="empty-state"><p class="empty-msg">${escapeHtml(text)}</p></div>`;
 }
 
 function showAuthError(el, msg) {
@@ -180,7 +233,7 @@ function parseServerDate(value) {
 
 function formatServerDate(value, options) {
     const d = parseServerDate(value);
-    return d ? d.toLocaleString('hu-HU', options) : '';
+    return d ? d.toLocaleString(I18N.locale(), options) : '';
 }
 
 // ===== APP STATE =====
@@ -203,8 +256,29 @@ const AppState = {
     isRestoreLobby: false,
     expectedPlayers: [],
     gameOverShown: false,
+    isSpectator: false,
+    spectateRoomId: null,
+    spectateCode: null,
+    roomIsPrivate: false,
+    turnTimeLimit: 0,
+
+    // Megfigyelőként nincs mentett újracsatlakozás: a játékos saját (esetleg függő) mentését nem érintjük
+    resetSpectator() {
+        this.isSpectator = false;
+        this.spectateRoomId = null;
+        this.spectateCode = null;
+        this.currentRoomId = null;
+        this.roomName = null;
+        this.gameStarted = false;
+        this.gameOverShown = false;
+        this.gameState = null;
+        Chat.clear();
+        const gameScreen = document.getElementById('game-screen');
+        if (gameScreen) gameScreen.classList.remove('spectating');
+    },
 
     reset() {
+        if (this.isSpectator) { this.resetSpectator(); return; }
         this.currentRoomCode = null;
         this.currentRoomId = null;
         this.reconnectToken = null;
@@ -214,6 +288,10 @@ const AppState = {
         this.isRestoreLobby = false;
         this.expectedPlayers = [];
         this.gameOverShown = false;
+        this.isSpectator = false;
+        this.spectateRoomId = null;
+        this.spectateCode = null;
+        this.gameState = null;
         // Clear saved rejoin info
         localStorage.removeItem('scrabble-rejoin');
         // Hide room tab
@@ -235,6 +313,9 @@ const BoardState = {
     placedTiles: [],      // [{row, col, letter, is_blank, handIdx}]
     boardDragInitialized: false,
     lastDropTarget: null,  // Aktuálisan kijelölt cella drag közben
+    handOrder: [],         // a kéz megjelenítési sorrendje (szerver-indexek): keverés / rendezés
+    handLetters: null,     // a legutóbb látott kéz (szerver sorrendben)
+    newHandIdx: new Set(), // az utolsó állapotban újonnan húzott zsetonok (animációhoz)
 
     clearPlacement() {
         this.placedTiles = [];
@@ -278,7 +359,7 @@ const TouchDrag = {
         }
         this.tileIdx = null;
         if (BoardState.lastDropTarget) {
-            BoardState.lastDropTarget.classList.remove('drop-target');
+            BoardState.lastDropTarget.classList.remove('drop-target', 'drop-invalid');
             BoardState.lastDropTarget = null;
         }
     },
@@ -336,7 +417,7 @@ const Auth = {
         errorEl.classList.add('hidden');
 
         if (!email || !password) {
-            showAuthError(errorEl, 'Minden mező kitöltése kötelező.');
+            showAuthError(errorEl, t('auth.err_required'));
             return;
         }
 
@@ -349,10 +430,10 @@ const Auth = {
                 AppState.isGuest = false;
                 Lobby.enter(data.user.display_name);
             } else {
-                showAuthError(errorEl, data.message);
+                showAuthError(errorEl, tServer(data.message));
             }
         } catch {
-            showAuthError(errorEl, 'Hálózati hiba. Próbáld újra.');
+            showAuthError(errorEl, t('auth.err_network'));
         } finally {
             btn.disabled = false;
         }
@@ -365,7 +446,7 @@ const Auth = {
         errorEl.classList.add('hidden');
 
         if (!email) {
-            showAuthError(errorEl, 'Email cím megadása kötelező.');
+            showAuthError(errorEl, t('auth.err_email_required'));
             return;
         }
 
@@ -380,14 +461,15 @@ const Auth = {
                 document.getElementById('reg-code').focus();
                 if (data.dev_code) {
                     document.getElementById('reg-code').value = data.dev_code;
-                    document.querySelector('#reg-step-2 .step-info').textContent =
-                        'Fejlesztői mód: a kód automatikusan kitöltve.';
+                    const info = document.querySelector('#reg-step-2 .step-info');
+                    info.textContent = t('auth.dev_code_filled');
+                    info.removeAttribute('data-i18n');
                 }
             } else {
-                showAuthError(errorEl, data.message);
+                showAuthError(errorEl, tServer(data.message));
             }
         } catch {
-            showAuthError(errorEl, 'Hálózati hiba. Próbáld újra.');
+            showAuthError(errorEl, t('auth.err_network'));
         } finally {
             if (btn) btn.disabled = false;
         }
@@ -400,7 +482,7 @@ const Auth = {
         try {
             const data = await postJson('/api/auth/request-code', { email: this.regEmail });
             if (data.success) {
-                showAuthError(errorEl, 'Új kód elküldve!');
+                showAuthError(errorEl, t('auth.new_code_sent'));
                 errorEl.classList.remove('hidden');
                 errorEl.classList.add('text-success');
                 setTimeout(() => { errorEl.classList.remove('text-success'); }, 3000);
@@ -408,10 +490,10 @@ const Auth = {
                     document.getElementById('reg-code').value = data.dev_code;
                 }
             } else {
-                showAuthError(errorEl, data.message);
+                showAuthError(errorEl, tServer(data.message));
             }
         } catch {
-            showAuthError(errorEl, 'Hálózati hiba.');
+            showAuthError(errorEl, t('auth.err_network_short'));
         }
     },
 
@@ -421,7 +503,7 @@ const Auth = {
         errorEl.classList.add('hidden');
 
         if (!code || code.length !== 6) {
-            showAuthError(errorEl, 'A kód 6 számjegyből áll.');
+            showAuthError(errorEl, t('auth.err_code_len'));
             return;
         }
 
@@ -433,10 +515,10 @@ const Auth = {
                 document.getElementById('reg-step-3').classList.remove('hidden');
                 document.getElementById('reg-display-name').focus();
             } else {
-                showAuthError(errorEl, data.message);
+                showAuthError(errorEl, tServer(data.message));
             }
         } catch {
-            showAuthError(errorEl, 'Hálózati hiba. Próbáld újra.');
+            showAuthError(errorEl, t('auth.err_network'));
         }
     },
 
@@ -449,15 +531,15 @@ const Auth = {
         errorEl.classList.add('hidden');
 
         if (!displayName || !password || !password2) {
-            showAuthError(errorEl, 'Minden mező kitöltése kötelező.');
+            showAuthError(errorEl, t('auth.err_required'));
             return;
         }
         if (password.length < 6) {
-            showAuthError(errorEl, 'A jelszó legalább 6 karakter legyen.');
+            showAuthError(errorEl, t('auth.err_password_short'));
             return;
         }
         if (password !== password2) {
-            showAuthError(errorEl, 'A két jelszó nem egyezik.');
+            showAuthError(errorEl, t('auth.err_password_mismatch'));
             return;
         }
 
@@ -472,10 +554,10 @@ const Auth = {
                 AppState.isGuest = false;
                 Lobby.enter(data.user.display_name);
             } else {
-                showAuthError(errorEl, data.message);
+                showAuthError(errorEl, tServer(data.message));
             }
         } catch {
-            showAuthError(errorEl, 'Hálózati hiba. Próbáld újra.');
+            showAuthError(errorEl, t('auth.err_network'));
         } finally {
             if (btn) btn.disabled = false;
         }
@@ -486,12 +568,12 @@ const Auth = {
         const errorEl = document.getElementById('guest-error');
         if (errorEl) errorEl.classList.add('hidden');
         if (!name) {
-            if (errorEl) showAuthError(errorEl, 'Add meg a neved a belépéshez.');
+            if (errorEl) showAuthError(errorEl, t('auth.err_name_required'));
             return;
         }
         // Ugyanaz a szabály, mint a szerveren: különben a szerver csendben "Névtelen"-re cserélné
         if (!/^[\p{L}\p{N}_\s.-]{1,20}$/u.test(name)) {
-            if (errorEl) showAuthError(errorEl, 'A név 1–20 karakter lehet: betű, szám, szóköz, pont, kötőjel vagy alsóvonal.');
+            if (errorEl) showAuthError(errorEl, t('auth.err_name_invalid'));
             return;
         }
         AppState.currentUser = null;
@@ -500,10 +582,9 @@ const Auth = {
     },
 
     async logout() {
-        if (AppState.currentRoomId) {
-            showConfirm('Kijelentkezés',
-                'A kijelentkezéssel kilépsz a szobából / játékból is. Biztosan kijelentkezel?',
-                'Kijelentkezés', () => this._doLogout());
+        if (AppState.currentRoomId || AppState.isSpectator) {
+            showConfirm(t('common.logout'), t('auth.logout_confirm'),
+                t('common.logout'), () => this._doLogout());
             return;
         }
         await this._doLogout();
@@ -550,16 +631,47 @@ const Lobby = {
     init() {
         document.getElementById('btn-create-room').addEventListener('click', () => this.createRoom());
         document.getElementById('btn-join-by-code').addEventListener('click', () => this.joinByCode());
+        document.getElementById('btn-spectate-by-code').addEventListener('click', () => this.spectateByCode());
         document.getElementById('join-code-input').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') this.joinByCode();
         });
+        document.getElementById('room-ai-count').addEventListener('change', () => this.updateAiControls());
+        this.updateAiControls();
 
         // Lobby nav tab switching
         document.querySelectorAll('.lobby-nav-tab').forEach(tab => {
             tab.addEventListener('click', () => this.switchTab(tab.dataset.lobbyTab));
         });
 
-        socket.on('rooms_list', (rooms) => this.renderRoomsList(rooms));
+        socket.on('rooms_list', (rooms) => { this._rooms = rooms; this.renderRoomsList(rooms); });
+        socket.on('live_games', (games) => { this._liveGames = games; this.renderLiveGames(games); });
+        window.addEventListener('langchange', () => this.onLangChange());
+    },
+
+    _rooms: [],
+    _liveGames: [],
+    _history: null,
+    _savedGames: null,
+
+    // Nyelvváltáskor a gyorsítótárazott listák újrarajzolása
+    onLangChange() {
+        this.renderRoomsList(this._rooms);
+        this.renderLiveGames(this._liveGames);
+        if (this._history) this.renderHistory(this._history);
+        if (this._savedGames) this.renderSavedGames(this._savedGames);
+        if (AppState.displayName) {
+            document.getElementById('lobby-user-name').textContent =
+                AppState.displayName + (AppState.isGuest ? t('lobby.guest_suffix') : '');
+        }
+    },
+
+    // A robotok is foglalnak helyet: a tulajdonosnak is maradnia kell
+    updateAiControls() {
+        const count = parseInt(document.getElementById('room-ai-count').value) || 0;
+        document.getElementById('room-ai-difficulty').disabled = count === 0;
+        const maxSel = document.getElementById('room-max-players');
+        if (count > 0 && parseInt(maxSel.value) < count + 1) maxSel.value = String(Math.min(count + 1, 4));
+        for (const opt of maxSel.options) opt.disabled = count > 0 && parseInt(opt.value) < count + 1;
     },
 
     switchTab(tabId) {
@@ -591,6 +703,8 @@ const Lobby = {
             this.loadSavedGames();
         } else if (tabId === 'friends') {
             Friends.load();
+        } else if (tabId === 'leaderboard') {
+            Leaderboard.load();
         }
     },
 
@@ -620,11 +734,13 @@ const Lobby = {
 
     enter(displayName) {
         AppState.displayName = displayName;
-        this.sendIdentity();
+        // A meghívó linkes csatlakozás csak a bemutatkozás (set_name) után mehet el: a szerver
+        // addig nem ismeri a nevünket és az azonosságunkat
+        const identityReady = this.sendIdentity();
         AppState.myPlayerId = socket.id;
 
         document.getElementById('lobby-user-name').textContent =
-            displayName + (AppState.isGuest ? ' (vendég)' : '');
+            displayName + (AppState.isGuest ? t('lobby.guest_suffix') : '');
 
         // Hide tabs/buttons for guests
         document.getElementById('btn-profile').classList.toggle('hidden', AppState.isGuest);
@@ -648,7 +764,32 @@ const Lobby = {
         // Reset to home tab
         this.switchTab('home');
         showScreen('lobby-screen');
+        identityReady.then(() => this.handleUrlActions());
+    },
 
+    // Meghívó linkek és PWA-parancsikonok: /?join=123456, /?spectate=123456, /?action=create
+    _urlActionsDone: false,
+    handleUrlActions() {
+        if (this._urlActionsDone) return;
+        this._urlActionsDone = true;
+        let params;
+        try { params = new URLSearchParams(location.search); } catch { return; }
+        const join = params.get('join');
+        const spectate = params.get('spectate');
+        const action = params.get('action');
+        if (!join && !spectate && !action) return;
+        // A cím megtisztítása, hogy frissítésre ne ismétlődjön a művelet
+        try { history.replaceState(null, '', location.pathname); } catch { /* ignore */ }
+
+        if (join && /^\d{6}$/.test(join)) {
+            document.getElementById('join-code-input').value = join;
+            socket.emit('join_room', { code: join });
+        } else if (spectate && /^\d{6}$/.test(spectate)) {
+            AppState.spectateCode = spectate;
+            socket.emit('spectate_room', { code: spectate });
+        } else if (action === 'create' && !AppState.isGuest) {
+            this.switchTab('create');
+        }
     },
 
     _tryRejoin() {
@@ -670,25 +811,38 @@ const Lobby = {
     },
 
     createRoom() {
-        const name = document.getElementById('room-name').value.trim() || 'Szoba';
+        const name = document.getElementById('room-name').value.trim() || t('create.room_placeholder');
         const maxPlayers = document.getElementById('room-max-players').value;
         const challengeMode = document.getElementById('room-challenge-mode').checked;
         const isPrivate = document.getElementById('room-private').checked;
         const turnTimeLimit = parseInt(document.getElementById('room-turn-limit').value) || 0;
+        const aiCount = parseInt(document.getElementById('room-ai-count').value) || 0;
+        const aiDifficulty = document.getElementById('room-ai-difficulty').value;
         socket.emit('create_room', {
             name, max_players: maxPlayers,
             challenge_mode: challengeMode, is_private: isPrivate,
             turn_time_limit: turnTimeLimit,
+            ai_players: Array(aiCount).fill(aiDifficulty),
         });
     },
 
     joinByCode() {
         const code = document.getElementById('join-code-input').value.trim();
         if (!code || code.length !== 6) {
-            showMessage('6 számjegyű kódot adj meg.', true);
+            showMessage(t('lobby.err_code'), true);
             return;
         }
         socket.emit('join_room', { code });
+    },
+
+    spectateByCode() {
+        const code = document.getElementById('join-code-input').value.trim();
+        if (!/^\d{6}$/.test(code)) {
+            showMessage(t('lobby.err_code'), true);
+            return;
+        }
+        AppState.spectateCode = code;
+        socket.emit('spectate_room', { code });
     },
 
     async loadHistory() {
@@ -696,6 +850,7 @@ const Lobby = {
             const resp = await fetch('/api/auth/profile');
             const data = await resp.json();
             if (!data.success) return;
+            this._history = data.history;
             this.renderHistory(data.history);
         } catch { /* ignore */ }
     },
@@ -703,7 +858,7 @@ const Lobby = {
     renderHistory(history) {
         const container = document.getElementById('home-history-container');
         if (!history || !history.length) {
-            container.innerHTML = '<div class="empty-state"><p class="empty-msg">Nincs még befejezett játék.</p></div>';
+            container.innerHTML = emptyStateHtml(t('common.no_finished_games'));
             return;
         }
         container.innerHTML = '';
@@ -726,18 +881,18 @@ const Lobby = {
 
             const score = document.createElement('span');
             score.className = 'history-score';
-            score.textContent = h.final_score + ' pont';
+            score.textContent = t('common.points', { n: h.final_score });
             info.appendChild(score);
 
             const result = document.createElement('span');
             result.className = 'history-result';
-            result.textContent = h.is_winner ? 'Győzelem' : 'Vereség';
+            result.textContent = h.is_winner ? t('common.win') : t('common.loss');
             info.appendChild(result);
 
             if (h.opponents && h.opponents.length) {
                 const opp = document.createElement('span');
                 opp.className = 'history-opponents';
-                opp.textContent = 'vs ' + h.opponents.map(o => o.player_name).join(', ');
+                opp.textContent = t('history.vs', { names: h.opponents.map(o => o.player_name).join(', ') });
                 info.appendChild(opp);
             }
 
@@ -745,7 +900,7 @@ const Lobby = {
 
             const btn = document.createElement('button');
             btn.className = 'small-btn';
-            btn.textContent = 'Visszajátszás';
+            btn.textContent = t('replay.title');
             btn.addEventListener('click', () => Replay.load(h.game_id));
             row.appendChild(btn);
 
@@ -756,26 +911,27 @@ const Lobby = {
     async loadSavedGames() {
         const container = document.getElementById('saved-games-container');
         if (AppState.isGuest) {
-            container.innerHTML = '<div class="empty-state"><p class="empty-msg">Vendégeknek nincs mentett játék.</p></div>';
+            container.innerHTML = emptyStateHtml(t('saved.guest'));
             return;
         }
         try {
             const resp = await fetch('/api/auth/saved-games');
             const data = await resp.json();
             if (!data.success) {
-                container.innerHTML = '<div class="empty-state"><p class="empty-msg">Nem sikerült betölteni.</p></div>';
+                container.innerHTML = emptyStateHtml(t('common.load_failed'));
                 return;
             }
+            this._savedGames = data.games;
             this.renderSavedGames(data.games);
         } catch {
-            container.innerHTML = '<div class="empty-state"><p class="empty-msg">Nem sikerült betölteni.</p></div>';
+            container.innerHTML = emptyStateHtml(t('common.load_failed'));
         }
     },
 
     renderSavedGames(games) {
         const container = document.getElementById('saved-games-container');
         if (!games || !games.length) {
-            container.innerHTML = '<div class="empty-state"><p class="empty-msg">Nincs mentett játék.</p></div>';
+            container.innerHTML = emptyStateHtml(t('saved.none'));
             return;
         }
         container.innerHTML = '';
@@ -801,7 +957,7 @@ const Lobby = {
             if (g.score !== undefined) {
                 const scoreDiv = document.createElement('div');
                 scoreDiv.className = 'saved-game-score';
-                scoreDiv.textContent = `${g.player_name || 'Te'}: ${g.score} pont`;
+                scoreDiv.textContent = `${g.player_name || t('saved.you')}: ${t('common.points', { n: g.score })}`;
                 info.appendChild(scoreDiv);
             }
 
@@ -811,7 +967,7 @@ const Lobby = {
                 const oppTexts = g.opponents.map(o =>
                     typeof o === 'object' ? `${o.name} (${o.score})` : o
                 );
-                opp.textContent = 'Ellenfelek: ' + oppTexts.join(', ');
+                opp.textContent = t('saved.opponents', { names: oppTexts.join(', ') });
                 info.appendChild(opp);
             }
 
@@ -821,34 +977,34 @@ const Lobby = {
             actions.className = 'saved-game-actions';
 
             const resumeBtn = document.createElement('button');
-            resumeBtn.textContent = g.is_owner ? 'Visszaállítás' : 'Folytatás';
+            resumeBtn.textContent = g.is_owner ? t('saved.restore') : t('saved.continue');
             resumeBtn.className = 'restored-btn';
             resumeBtn.addEventListener('click', () => {
                 if (g.is_owner) {
                     socket.emit('restore_game', { game_id: g.game_id });
                 } else {
-                    showMessage('Várd meg, amíg a szoba tulajdonosa visszaállítja a játékot.', true);
+                    showMessage(t('saved.wait_owner'), true);
                 }
             });
             actions.appendChild(resumeBtn);
 
             const abandonBtn = document.createElement('button');
-            abandonBtn.textContent = 'Törlés';
+            abandonBtn.textContent = t('common.delete');
             abandonBtn.className = 'btn-abandon';
             abandonBtn.addEventListener('click', () => {
-                showConfirm('Törlés', 'Biztosan törölni akarod ezt a mentett játékot?', 'Törlés', async () => {
+                showConfirm(t('common.delete'), t('saved.delete_confirm'), t('common.delete'), async () => {
                     try {
                         const resp = await fetch(`/api/game/${g.game_id}/abandon`, { method: 'POST' });
                         const result = await resp.json();
                         if (result.success) {
-                            showMessage('Játék törölve.');
+                            showMessage(t('saved.deleted'));
                             this.loadSavedGames();
                             socket.emit('get_rooms');
                         } else {
-                            showMessage(result.message || 'Hiba történt.', true);
+                            showMessage(tServer(result.message) || t('common.error'), true);
                         }
                     } catch {
-                        showMessage('Hiba történt.', true);
+                        showMessage(t('common.error'), true);
                     }
                 });
             });
@@ -885,23 +1041,23 @@ const Lobby = {
             info.className = 'room-info';
             const nameDiv = document.createElement('div');
             nameDiv.className = 'room-name';
-            nameDiv.textContent = rejoinInfo.roomName || 'Aktív játék';
+            nameDiv.textContent = rejoinInfo.roomName || t('lobby.active_game');
             info.appendChild(nameDiv);
             const details = document.createElement('div');
             details.className = 'room-details';
-            details.textContent = 'Folyamatban lévő játékod van';
+            details.textContent = t('lobby.your_game_running');
             info.appendChild(details);
             card.appendChild(info);
 
             const btns = document.createElement('div');
             btns.className = 'room-card-actions';
             const rejoinBtn = document.createElement('button');
-            rejoinBtn.textContent = 'Visszacsatlakozás';
+            rejoinBtn.textContent = t('lobby.rejoin');
             rejoinBtn.className = 'btn-join btn-rejoin';
             rejoinBtn.addEventListener('click', () => this._tryRejoin());
             btns.appendChild(rejoinBtn);
             const dismissBtn = document.createElement('button');
-            dismissBtn.textContent = 'Elvetés';
+            dismissBtn.textContent = t('lobby.dismiss');
             dismissBtn.className = 'btn-rejoin-dismiss';
             dismissBtn.addEventListener('click', () => this._dismissRejoin());
             btns.appendChild(dismissBtn);
@@ -910,7 +1066,7 @@ const Lobby = {
         }
 
         if (!rooms.length && !container.children.length) {
-            container.innerHTML = '<div class="empty-state"><p class="empty-msg">Nincs elérhető szoba.</p></div>';
+            container.innerHTML = emptyStateHtml(t('lobby.no_rooms'));
             return;
         }
 
@@ -928,7 +1084,7 @@ const Lobby = {
 
             const details = document.createElement('div');
             details.className = 'room-details';
-            details.textContent = `${room.players}/${room.max_players} játékos \u00b7 ${room.owner}`;
+            details.textContent = t('room.players_owner', { n: room.players, max: room.max_players, owner: room.owner });
 
             info.appendChild(nameDiv);
             info.appendChild(details);
@@ -939,19 +1095,25 @@ const Lobby = {
             if (room.started && !room.finished) {
                 const b = document.createElement('span');
                 b.className = 'room-badge room-badge-playing';
-                b.textContent = 'Folyamatban';
+                b.textContent = t('room.badge_playing');
                 badges.appendChild(b);
             }
             if (room.challenge_mode) {
                 const b = document.createElement('span');
                 b.className = 'room-badge room-badge-challenge';
-                b.textContent = 'Kihívás';
+                b.textContent = t('room.badge_challenge');
+                badges.appendChild(b);
+            }
+            if (room.bots) {
+                const b = document.createElement('span');
+                b.className = 'room-badge room-badge-bots';
+                b.textContent = t('room.badge_bots', { n: room.bots });
                 badges.appendChild(b);
             }
             if (room.turn_time_limit) {
                 const b = document.createElement('span');
                 b.className = 'room-badge room-badge-timer';
-                b.textContent = `\u23F1 ${room.turn_time_limit}mp`;
+                b.textContent = t('room.limit_badge', { n: room.turn_time_limit });
                 badges.appendChild(b);
             }
             if (badges.children.length > 0) {
@@ -965,23 +1127,73 @@ const Lobby = {
                 const btns = document.createElement('div');
                 btns.className = 'room-card-actions';
                 const rejoinBtn = document.createElement('button');
-                rejoinBtn.textContent = 'Visszacsatlakozás';
+                rejoinBtn.textContent = t('lobby.rejoin');
                 rejoinBtn.className = 'btn-join btn-rejoin';
                 rejoinBtn.addEventListener('click', () => this._tryRejoin());
                 btns.appendChild(rejoinBtn);
                 const dismissBtn = document.createElement('button');
-                dismissBtn.textContent = 'Elvetés';
+                dismissBtn.textContent = t('lobby.dismiss');
                 dismissBtn.className = 'btn-rejoin-dismiss';
                 dismissBtn.addEventListener('click', () => this._dismissRejoin());
                 btns.appendChild(dismissBtn);
                 card.appendChild(btns);
             } else if (!room.started && !room.finished && room.players < room.max_players) {
                 const btn = document.createElement('button');
-                btn.textContent = 'Csatlakozás';
+                btn.textContent = t('lobby.join');
                 btn.className = 'btn-join';
                 btn.addEventListener('click', () => socket.emit('join_room', { room_id: room.id }));
                 card.appendChild(btn);
             }
+
+            container.appendChild(card);
+        });
+    },
+
+    // Élő (nyilvános, folyamatban lévő) játékok: megfigyelhetők
+    renderLiveGames(games) {
+        const container = document.getElementById('live-games-container');
+        if (!container) return;
+        if (!games || !games.length) {
+            container.innerHTML = emptyStateHtml(t('lobby.no_live_games'));
+            return;
+        }
+        container.innerHTML = '';
+        games.forEach(game => {
+            const card = document.createElement('div');
+            card.className = 'room-card';
+
+            const info = document.createElement('div');
+            info.className = 'room-info';
+            const nameDiv = document.createElement('div');
+            nameDiv.className = 'room-name';
+            nameDiv.textContent = game.name;
+            const details = document.createElement('div');
+            details.className = 'room-details';
+            details.textContent = game.players.map(p => `${p.name} ${p.score}`).join(' \u00b7 ');
+            info.appendChild(nameDiv);
+            info.appendChild(details);
+
+            const badges = document.createElement('div');
+            badges.className = 'room-badges';
+            const addBadge = (cls, text) => {
+                const b = document.createElement('span');
+                b.className = 'room-badge ' + cls;
+                b.textContent = text;
+                badges.appendChild(b);
+            };
+            if (game.challenge_mode) addBadge('room-badge-challenge', t('room.badge_challenge'));
+            const bots = game.players.filter(p => p.is_bot).length;
+            if (bots) addBadge('room-badge-bots', t('room.badge_bots', { n: bots }));
+            if (game.turn_time_limit) addBadge('room-badge-timer', t('room.limit_badge', { n: game.turn_time_limit }));
+            if (game.spectators) addBadge('room-badge-viewers', t('room.badge_viewers', { n: game.spectators }));
+            info.appendChild(badges);
+            card.appendChild(info);
+
+            const btn = document.createElement('button');
+            btn.className = 'btn-join';
+            btn.textContent = t('lobby.spectate');
+            btn.addEventListener('click', () => socket.emit('spectate_room', { room_id: game.id }));
+            card.appendChild(btn);
 
             container.appendChild(card);
         });
@@ -995,6 +1207,11 @@ const WaitingRoom = {
         document.getElementById('btn-leave-room').addEventListener('click', () => socket.emit('leave_room'));
         document.getElementById('btn-start-game').addEventListener('click', () => socket.emit('start_game'));
         document.getElementById('btn-copy-code').addEventListener('click', () => this.copyCode());
+        document.getElementById('btn-copy-link').addEventListener('click', () => this.shareLink());
+        window.addEventListener('langchange', () => {
+            if (AppState.currentRoomId && !AppState.gameStarted) this.refreshBadges();
+            this.update();
+        });
 
         socket.on('room_joined', (data) => this.onJoined(data));
         socket.on('room_code', (data) => this.onCode(data));
@@ -1027,15 +1244,9 @@ const WaitingRoom = {
         AppState.expectedPlayers = data.expected_players || [];
         document.getElementById('waiting-room-name').textContent = data.room_name;
 
-        document.getElementById('waiting-challenge-mode').classList.toggle('hidden', !AppState.challengeModeEnabled);
-        document.getElementById('waiting-private-mode').classList.toggle('hidden', !data.is_private);
-        const turnLimitBadge = document.getElementById('waiting-turn-limit');
-        if (data.turn_time_limit) {
-            turnLimitBadge.textContent = `\u23F1 ${data.turn_time_limit} mp / kör`;
-            turnLimitBadge.classList.remove('hidden');
-        } else {
-            turnLimitBadge.classList.add('hidden');
-        }
+        AppState.roomIsPrivate = !!data.is_private;
+        AppState.turnTimeLimit = data.turn_time_limit || 0;
+        this.refreshBadges();
 
         const codeSection = document.getElementById('room-code-display');
         codeSection.classList.toggle('hidden', !AppState.isOwner);
@@ -1050,6 +1261,18 @@ const WaitingRoom = {
 
         showScreen('waiting-screen');
         this.update();
+    },
+
+    refreshBadges() {
+        document.getElementById('waiting-challenge-mode').classList.toggle('hidden', !AppState.challengeModeEnabled);
+        document.getElementById('waiting-private-mode').classList.toggle('hidden', !AppState.roomIsPrivate);
+        const turnLimitBadge = document.getElementById('waiting-turn-limit');
+        if (AppState.turnTimeLimit) {
+            turnLimitBadge.textContent = t('room.limit_per_turn', { n: AppState.turnTimeLimit });
+            turnLimitBadge.classList.remove('hidden');
+        } else {
+            turnLimitBadge.classList.add('hidden');
+        }
     },
 
     onCode(data) {
@@ -1071,9 +1294,37 @@ const WaitingRoom = {
         if (!AppState.currentRoomCode) return;
         navigator.clipboard.writeText(AppState.currentRoomCode).then(() => {
             const btn = document.getElementById('btn-copy-code');
-            btn.textContent = 'Másolva!';
-            setTimeout(() => { btn.textContent = 'Másolás'; }, 2000);
-        }).catch(() => showMessage('Másolás sikertelen.', true));
+            btn.textContent = t('common.copied');
+            setTimeout(() => { btn.textContent = t('common.copy'); }, 2000);
+        }).catch(() => showMessage(t('common.copy_failed'), true));
+    },
+
+    // Meghívó link: /?join=KÓD — telefonon a rendszer megosztó lapja, egyébként vágólap
+    inviteUrl() {
+        return `${location.origin}/?join=${AppState.currentRoomCode}`;
+    },
+
+    async shareLink() {
+        if (!AppState.currentRoomCode) return;
+        const url = this.inviteUrl();
+        if (isTouchDevice && navigator.share) {
+            try {
+                await navigator.share({
+                    title: t('app.title'),
+                    text: t('wait.share_text', { room: AppState.roomName || '' }),
+                    url,
+                });
+                return;
+            } catch (e) {
+                if (e && e.name === 'AbortError') return;  // a felhasználó bezárta a megosztó lapot
+            }
+        }
+        try {
+            await navigator.clipboard.writeText(url);
+            showMessage(t('wait.link_copied'));
+        } catch {
+            showMessage(t('common.copy_failed'), true);
+        }
     },
 
     update() {
@@ -1089,15 +1340,18 @@ const WaitingRoom = {
                 return `<div class="player-item ${joined ? 'joined' : 'missing'}">
                     <span class="player-avatar">${escapeHtml(Array.from(name)[0] || '?')}</span>
                     <span class="player-name">${escapeHtml(name)}</span>
-                    <span class="player-tag">${joined ? 'csatlakozott' : 'v\u00e1rakoz\u00e1s...'}</span>
+                    <span class="player-tag">${joined ? t('wait.joined') : t('wait.waiting')}</span>
                 </div>`;
             }).join('');
         } else {
             container.innerHTML = gs.players.map((p, i) => `
-                <div class="player-item ${i === 0 ? 'owner' : ''}">
-                    <span class="player-avatar">${escapeHtml(Array.from(p.name)[0] || '?')}</span>
+                <div class="player-item ${i === 0 ? 'owner' : ''} ${p.is_bot ? 'bot' : ''}">
+                    <span class="player-avatar">${p.is_bot
+                        ? '<svg class="icon"><use href="#i-robot"/></svg>'
+                        : escapeHtml(Array.from(p.name)[0] || '?')}</span>
                     <span class="player-name">${escapeHtml(p.name)}</span>
-                    ${i === 0 ? '<span class="player-tag">tulajdonos</span>' : ''}
+                    ${i === 0 ? `<span class="player-tag">${escapeHtml(t('wait.owner'))}</span>` : ''}
+                    ${p.is_bot ? `<span class="player-tag">${escapeHtml(t('ai.' + (p.difficulty || 'medium')))}</span>` : ''}
                 </div>
             `).join('');
         }
@@ -1116,6 +1370,11 @@ const WaitingRoom = {
 
 const GameBoard = {
     _prevCurrentPlayer: null,
+    _gameId: null,
+    _prevBoardKeys: null,     // az előző rajzoláskor a táblán álló betűk (új betűk animálásához)
+    _prevPlacedKeys: new Set(),
+    _prevScores: null,        // {játékos-id: pontszám} az előző állapotból (pontszám-felugróhoz)
+    _historySig: '',
 
     init() {
         socket.on('game_started', () => {
@@ -1129,52 +1388,86 @@ const GameBoard = {
                     roomId: AppState.currentRoomId,
                 }));
             }
-            setGameRoomName(AppState.roomName || 'Szoba');
+            setGameRoomName(AppState.roomName || t('create.room_placeholder'));
             // Update lobby room tab
             const roomTab = document.getElementById('nav-tab-room');
-            if (roomTab) roomTab.textContent = 'Aktív játék';
+            if (roomTab) roomTab.textContent = t('lobby.active_game');
             showScreen('game-screen');
             this.build();
             BoardZoom.init();
             // Re-render if game_state arrived before game_started (restore case)
-            if (AppState.gameState && AppState.gameState.started) {
-                this.renderBoard();
-                this.renderHand();
-                this.renderScoreboard();
-                this.renderGameInfo();
-                ChallengeUI.render();
-                TurnTimerUI.update(AppState.gameState);
-                this.updateButtons();
-            }
+            if (AppState.gameState && AppState.gameState.started) this.renderAll();
         });
 
         socket.on('game_state', (state) => this.onGameState(state));
         socket.on('action_result', (data) => this.onActionResult(data));
-        socket.on('error', (data) => showMessage(data.message, true));
+        socket.on('error', (data) => {
+            showMessage(tServer(data.message), true);
+            Spectate.onError();
+        });
+        socket.on('move_preview', (data) => Preview.onResult(data));
+        socket.on('hint_result', (data) => Hint.onResult(data));
 
         // Action buttons
         document.getElementById('btn-place').addEventListener('click', () => this.placeTiles());
         document.getElementById('btn-exchange').addEventListener('click', () => this.toggleExchange());
         document.getElementById('btn-pass').addEventListener('click', () => socket.emit('pass_turn'));
         document.getElementById('btn-recall').addEventListener('click', () => this.recall());
+        document.getElementById('btn-shuffle').addEventListener('click', () => this.shuffleHand());
+        document.getElementById('btn-sort').addEventListener('click', () => this.sortHand());
+        document.getElementById('btn-tracker').addEventListener('click', () => Tracker.show());
+        document.getElementById('btn-hint').addEventListener('click', () => Hint.request());
 
+        window.addEventListener('langchange', () => {
+            if (AppState.gameState && AppState.gameState.started) this.renderAll();
+            if (!document.getElementById('tracker-dialog').classList.contains('hidden')) Tracker.render();
+        });
+    },
+
+    _resetAnimState() {
+        this._prevBoardKeys = null;
+        this._prevPlacedKeys = new Set();
+        this._prevScores = null;
+        this._historySig = '';
+        this._prevCurrentPlayer = null;
+    },
+
+    // A teljes játékfelület újrarajzolása a mostani állapotból
+    renderAll() {
+        this.renderBoard();
+        this.renderHand();
+        this.renderScoreboard();
+        this.renderGameInfo();
+        this.renderHistory();
+        ChallengeUI.render();
+        TurnTimerUI.update(AppState.gameState);
+        this.updateButtons();
+        this.updateSpectatorUi();
     },
 
     onGameState(state) {
         const prevPlayer = this._prevCurrentPlayer;
+        if (state.game_id !== this._gameId) {
+            this._gameId = state.game_id;
+            this._resetAnimState();
+            BoardState.handOrder = [];
+            BoardState.handLetters = null;
+        }
         AppState.gameState = state;
         AppState.myPlayerId = socket.id;
+        AppState.isSpectator = !!state.spectator;
 
         // Clear placed tiles when turn changes away from us
         if (state.current_player !== socket.id && BoardState.placedTiles.length > 0) {
             BoardState.clearPlacement();
+            Preview.clear();
         }
 
         if (state.started) {
             // Újracsatlakozásnál nincs `game_started` esemény, de a játék már fut
             AppState.gameStarted = true;
             const roomTab = document.getElementById('nav-tab-room');
-            if (roomTab && !roomTab.classList.contains('hidden')) roomTab.textContent = 'Aktív játék';
+            if (roomTab && !roomTab.classList.contains('hidden')) roomTab.textContent = t('lobby.active_game');
             if (document.getElementById('game-screen').classList.contains('hidden')) {
                 showScreen('game-screen');
                 this.build();
@@ -1184,14 +1477,17 @@ const GameBoard = {
             this.renderHand();
             this.renderScoreboard();
             this.renderGameInfo();
+            this.renderHistory();
             ChallengeUI.render();
             TurnTimerUI.update(state);
             this.updateButtons();
+            this.updateSpectatorUi();
 
             // Your turn notification
             if (!state.finished && state.current_player === socket.id && prevPlayer !== socket.id) {
                 SoundManager.play('your_turn');
             }
+            if (prevPlayer !== state.current_player) this._animateTurnChange(state);
             this._prevCurrentPlayer = state.current_player;
 
             if (AppState.roomName) setGameRoomName(AppState.roomName);
@@ -1208,12 +1504,13 @@ const GameBoard = {
 
     onActionResult(data) {
         if (!data.success) {
-            showMessage(data.message, true);
+            showMessage(tServer(data.message), true);
             // Elutasított szavazat esetén a letiltott szavazógombok újra használhatók legyenek
             ChallengeUI.resetButtons();
         } else if (data.own_turn) {
             // Csak a saját lépésünk eredménye ürítse a lerakást (mentés / időtúllépés üzenete nem)
             BoardState.clearPlacement();
+            Preview.clear();
             this.renderBoard();
             this.renderHand();
             this.updateButtons();
@@ -1223,6 +1520,8 @@ const GameBoard = {
     build() {
         const board = document.getElementById('board');
         board.innerHTML = '';
+        this._prevBoardKeys = null;
+        this._prevPlacedKeys = new Set();
         for (let r = 0; r < 15; r++) {
             for (let c = 0; c < 15; c++) {
                 const cell = document.createElement('div');
@@ -1250,33 +1549,52 @@ const GameBoard = {
         }
     },
 
+    // Húzás közbeni visszajelzés: a szabad mező zöld, a foglalt piros (oda nem lehet lerakni)
+    setDropTarget(cell) {
+        if (cell === BoardState.lastDropTarget) return;
+        this.clearDropTarget();
+        if (cell) cell.classList.add(this.isCellOccupied(cell) ? 'drop-invalid' : 'drop-target');
+        BoardState.lastDropTarget = cell;
+    },
+
+    clearDropTarget() {
+        if (BoardState.lastDropTarget) {
+            BoardState.lastDropTarget.classList.remove('drop-target', 'drop-invalid');
+            BoardState.lastDropTarget = null;
+        }
+    },
+
+    isCellOccupied(cell) {
+        return cell.classList.contains('has-tile');
+    },
+
+    // A tábla "húzás közben" állapota: a foglalt mezők jelölve
+    setDragging(active) {
+        document.getElementById('board').classList.toggle('is-dragging', active);
+    },
+
     _initBoardDrag(board) {
-        board.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
+        // A dragenter-t is el kell fogadni (preventDefault), különben a böngésző a törzset teszi meg
+        // aktuális céllá, és a mezők nem kapnak dragover eseményt. Foglalt mezőn a dropEffect 'none':
+        // a kurzor "tiltott", és a böngésző nem is engedi a lerakást.
+        const onDragOver = (e) => {
             const cell = e.target.closest('.cell');
-            if (cell !== BoardState.lastDropTarget) {
-                if (BoardState.lastDropTarget) BoardState.lastDropTarget.classList.remove('drop-target');
-                if (cell) cell.classList.add('drop-target');
-                BoardState.lastDropTarget = cell;
-            }
-        });
+            const occupied = !cell || this.isCellOccupied(cell);
+            e.preventDefault();
+            e.dataTransfer.dropEffect = occupied ? 'none' : 'move';
+            this.setDropTarget(cell);
+        };
+        board.addEventListener('dragenter', onDragOver);
+        board.addEventListener('dragover', onDragOver);
 
         board.addEventListener('dragleave', (e) => {
-            if (!board.contains(e.relatedTarget)) {
-                if (BoardState.lastDropTarget) {
-                    BoardState.lastDropTarget.classList.remove('drop-target');
-                    BoardState.lastDropTarget = null;
-                }
-            }
+            if (!board.contains(e.relatedTarget)) this.clearDropTarget();
         });
 
         board.addEventListener('drop', (e) => {
             e.preventDefault();
-            if (BoardState.lastDropTarget) {
-                BoardState.lastDropTarget.classList.remove('drop-target');
-                BoardState.lastDropTarget = null;
-            }
+            this.clearDropTarget();
+            this.setDragging(false);
             const cell = e.target.closest('.cell');
             if (cell) {
                 const r = parseInt(cell.dataset.row);
@@ -1292,14 +1610,20 @@ const GameBoard = {
     renderBoard() {
         const gs = AppState.gameState;
         if (!gs) return;
-        const cells = document.querySelectorAll('.cell');
-        const hasSelected = BoardState.selectedTileIdx !== null;
+        const cells = document.querySelectorAll('#board .cell');
+        const hasSelected = BoardState.selectedTileIdx !== null && !AppState.isSpectator;
         const pendingTiles = gs.pending_challenge ? gs.pending_challenge.tiles : [];
+        const lastMove = new Set((gs.last_move_tiles || []).map(tile => `${tile.row},${tile.col}`));
 
         const placedMap = new Map();
-        for (const t of BoardState.placedTiles) placedMap.set(`${t.row},${t.col}`, t);
+        for (const tile of BoardState.placedTiles) placedMap.set(`${tile.row},${tile.col}`, tile);
         const pendingMap = new Map();
-        for (const t of pendingTiles) pendingMap.set(`${t.row},${t.col}`, t);
+        for (const tile of pendingTiles) pendingMap.set(`${tile.row},${tile.col}`, tile);
+
+        const prevKeys = this._prevBoardKeys;
+        const prevPlaced = this._prevPlacedKeys;
+        const boardKeys = new Set();
+        const placedKeys = new Set();
 
         cells.forEach(cell => {
             const r = parseInt(cell.dataset.row);
@@ -1309,7 +1633,8 @@ const GameBoard = {
             const placed = placedMap.get(key);
             const pending = pendingMap.get(key);
 
-            cell.classList.remove('has-tile', 'placed-this-turn', 'can-place', 'pending-challenge-tile', 'long-letter');
+            cell.classList.remove('has-tile', 'placed-this-turn', 'can-place', 'pending-challenge-tile',
+                                  'long-letter', 'last-move');
 
             if (pending) {
                 cell.classList.add('has-tile', 'pending-challenge-tile');
@@ -1317,9 +1642,15 @@ const GameBoard = {
             } else if (placed) {
                 cell.classList.add('has-tile', 'placed-this-turn');
                 cell.innerHTML = `${escapeHtml(placed.letter)}<span class="tile-value">${placed.is_blank ? 0 : (TILE_VALUES[placed.letter] || 0)}</span>`;
+                placedKeys.add(key);
+                if (!prevPlaced.has(key)) this._animate(cell, 'tile-pop');
             } else if (boardCell) {
                 cell.classList.add('has-tile');
                 cell.innerHTML = `${escapeHtml(boardCell.letter)}<span class="tile-value">${boardCell.is_blank ? 0 : (TILE_VALUES[boardCell.letter] || 0)}</span>`;
+                boardKeys.add(key);
+                if (lastMove.has(key)) cell.classList.add('last-move');
+                // Más játékos (vagy robot) most lerakott betűje: becsúszik a helyére
+                if (prevKeys && !prevKeys.has(key)) this._animate(cell, 'tile-drop');
             } else {
                 if (hasSelected) cell.classList.add('can-place');
                 const premium = PREMIUM_MAP[key];
@@ -1330,20 +1661,82 @@ const GameBoard = {
             const tile = pending || placed || boardCell;
             if (tile && tile.letter.length > 1) cell.classList.add('long-letter');
         });
+
+        this._prevBoardKeys = boardKeys;
+        this._prevPlacedKeys = placedKeys;
+    },
+
+    // Egyszeri animáció-osztály: az animáció végén lekerül
+    _animate(el, className) {
+        el.classList.remove(className);
+        void el.offsetWidth;   // az animáció újraindításához
+        el.classList.add(className);
+        el.addEventListener('animationend', () => el.classList.remove(className), { once: true });
+    },
+
+    // --- Betűtartó ---
+
+    // A kéz megjelenítési sorrendje (keverés / rendezés után is megmarad). A szerver indexei a kulcsok:
+    // új kéznél a megmaradt zsetonok megtartják a sorrendjüket, az újak a végére kerülnek.
+    _syncHandOrder(hand) {
+        const prevLetters = BoardState.handLetters;
+        const oldOrder = BoardState.handOrder;
+        BoardState.newHandIdx = new Set();
+
+        if (!prevLetters || oldOrder.length === 0) {
+            BoardState.handOrder = hand.map((_, i) => i);
+        } else if (prevLetters.length !== hand.length || prevLetters.some((l, i) => l !== hand[i])) {
+            const pool = new Map();
+            hand.forEach((letter, i) => {
+                if (!pool.has(letter)) pool.set(letter, []);
+                pool.get(letter).push(i);
+            });
+            const order = [];
+            for (const oldIdx of oldOrder) {
+                const list = pool.get(prevLetters[oldIdx]);
+                if (list && list.length) order.push(list.shift());
+            }
+            for (const list of pool.values()) {
+                for (const i of list) { order.push(i); BoardState.newHandIdx.add(i); }
+            }
+            BoardState.handOrder = order;
+        }
+        BoardState.handLetters = hand.slice();
+    },
+
+    shuffleHand() {
+        const order = BoardState.handOrder;
+        for (let i = order.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [order[i], order[j]] = [order[j], order[i]];
+        }
+        BoardState.newHandIdx = new Set();
+        this.renderHand();
+    },
+
+    sortHand() {
+        const hand = BoardState.handLetters || [];
+        const rank = (letter) => (letter === '' ? 1000 : ALL_LETTERS.indexOf(letter));
+        BoardState.handOrder.sort((a, b) => rank(hand[a]) - rank(hand[b]) || a - b);
+        BoardState.newHandIdx = new Set();
+        this.renderHand();
     },
 
     renderHand() {
         const gs = AppState.gameState;
         if (!gs) return;
         const handContainer = document.getElementById('hand');
+        if (AppState.isSpectator) { handContainer.innerHTML = ''; return; }
         const myPlayer = gs.players.find(p => p.id === AppState.myPlayerId);
         if (!myPlayer || !myPlayer.hand) return;
 
-        const placedHandIndices = new Set(BoardState.placedTiles.map(t => t.handIdx));
+        this._syncHandOrder(myPlayer.hand);
+        const placedHandIndices = new Set(BoardState.placedTiles.map(tile => tile.handIdx));
 
         handContainer.innerHTML = '';
-        myPlayer.hand.forEach((tile, idx) => {
+        BoardState.handOrder.forEach((idx) => {
             if (placedHandIndices.has(idx)) return;
+            const tile = myPlayer.hand[idx];
 
             const el = document.createElement('div');
             el.className = 'hand-tile' + (tile.length > 1 ? ' long-letter' : '');
@@ -1356,11 +1749,20 @@ const GameBoard = {
 
             if (BoardState.selectedTileIdx === idx) el.classList.add('selected');
             if (BoardState.exchangeMode && BoardState.exchangeIndices.has(idx)) el.classList.add('exchange-selected');
+            if (BoardState.newHandIdx && BoardState.newHandIdx.has(idx)) el.classList.add('tile-in');
 
             el.draggable = !isTouchDevice;
             el.addEventListener('dragstart', (e) => {
                 e.dataTransfer.setData('text/plain', idx.toString());
                 BoardState.selectedTileIdx = idx;
+                // Késleltetve, hogy a böngésző a húzás-képet még az eredeti (nem áttetsző) zsetonról készítse
+                setTimeout(() => el.classList.add('dragging'), 0);
+                this.setDragging(true);
+            });
+            el.addEventListener('dragend', () => {
+                el.classList.remove('dragging');
+                this.setDragging(false);
+                this.clearDropTarget();
             });
 
             if (isTouchDevice) this._addTouchHandlers(el, idx);
@@ -1376,11 +1778,13 @@ const GameBoard = {
                 } else {
                     BoardState.selectedTileIdx = (BoardState.selectedTileIdx === idx) ? null : idx;
                     this.renderHand();
+                    this.renderBoard();   // a "szabad mező" jelölések a kijelölés szerint
                 }
             });
 
             handContainer.appendChild(el);
         });
+        BoardState.newHandIdx = new Set();
     },
 
     _addTouchHandlers(el, idx) {
@@ -1397,7 +1801,8 @@ const GameBoard = {
                 BoardState.selectedTileIdx = idx;
                 const touch = e.touches[0];
                 TouchDrag.createGhost(el, touch.clientX, touch.clientY);
-                el.classList.add('selected');
+                el.classList.add('selected', 'dragging');
+                this.setDragging(true);
             }, 200);
         }, { passive: true });
 
@@ -1408,12 +1813,7 @@ const GameBoard = {
                 const touch = e.touches[0];
                 TouchDrag.moveGhost(touch.clientX, touch.clientY);
                 const rawEl = document.elementFromPoint(touch.clientX, touch.clientY);
-                const targetCell = rawEl && rawEl.closest('.cell');
-                if (targetCell !== BoardState.lastDropTarget) {
-                    if (BoardState.lastDropTarget) BoardState.lastDropTarget.classList.remove('drop-target');
-                    if (targetCell) targetCell.classList.add('drop-target');
-                    BoardState.lastDropTarget = targetCell;
-                }
+                this.setDropTarget(rawEl && rawEl.closest('#board .cell'));
             }
         }, { passive: false });
 
@@ -1422,55 +1822,154 @@ const GameBoard = {
             if (TouchDrag.tileIdx !== null && touchMoved) {
                 const touch = e.changedTouches[0];
                 const rawEl = document.elementFromPoint(touch.clientX, touch.clientY);
-                const targetCell = rawEl && rawEl.closest('.cell');
-                if (targetCell) {
+                const targetCell = rawEl && rawEl.closest('#board .cell');
+                if (targetCell && !this.isCellOccupied(targetCell)) {
                     const r = parseInt(targetCell.dataset.row);
                     const c = parseInt(targetCell.dataset.col);
                     this.placeTileOnBoard(TouchDrag.tileIdx, r, c);
                 }
                 TouchDrag.cleanup();
+                this.setDragging(false);
                 return;
             }
             TouchDrag.cleanup();
+            this.setDragging(false);
         });
 
         el.addEventListener('touchcancel', () => {
             clearTimeout(touchStartTimer);
             TouchDrag.cleanup();
+            this.setDragging(false);
         });
     },
+
+    // --- Pontszámok, információk ---
 
     renderScoreboard() {
         const gs = AppState.gameState;
         if (!gs) return;
-        document.getElementById('scoreboard').innerHTML = gs.players.map(p => `
-            <div class="score-item ${p.id === gs.current_player ? 'active' : ''}">
-                <span>${escapeHtml(p.name)}</span>
+        const board = document.getElementById('scoreboard');
+        board.innerHTML = gs.players.map(p => `
+            <div class="score-item ${p.id === gs.current_player ? 'active' : ''} ${p.is_bot ? 'bot' : ''}" data-player-id="${escapeHtml(p.id)}">
+                <span>${p.is_bot ? '<svg class="icon icon-inline"><use href="#i-robot"/></svg>' : ''}${escapeHtml(p.name)}${p.disconnected ? ` <small class="text-muted">${escapeHtml(t('game.offline'))}</small>` : ''}</span>
                 <span>${p.score}</span>
             </div>
         `).join('');
+
+        // Pontszám-felugró: a változás a játékos sorában "+N"-ként felúszik
+        const prev = this._prevScores;
+        if (prev) {
+            for (const p of gs.players) {
+                const before = prev[p.id];
+                if (before === undefined || before === p.score) continue;
+                const row = board.querySelector(`.score-item[data-player-id="${CSS.escape(p.id)}"]`);
+                if (!row) continue;
+                const diff = p.score - before;
+                const pop = document.createElement('span');
+                pop.className = 'score-pop ' + (diff >= 0 ? 'score-pop-up' : 'score-pop-down');
+                pop.textContent = (diff > 0 ? '+' : '') + diff;
+                row.appendChild(pop);
+                pop.addEventListener('animationend', () => pop.remove(), { once: true });
+            }
+        }
+        this._prevScores = Object.fromEntries(gs.players.map(p => [p.id, p.score]));
+    },
+
+    // Az utolsó akció szövege a felhasználó nyelvén (a szerver szerkezetes adata alapján)
+    formatLastAction(gs) {
+        const info = gs.last_action_info;
+        if (!info) return tServer(gs.last_action) || '';
+        const words = (info.words || []).join(', ');
+        switch (info.type) {
+            case 'place': return t('last.place', { player: info.player, words, score: info.score });
+            case 'pending': return t('last.pending', { player: info.player, words, score: info.score });
+            case 'exchange': return t('last.exchange', { player: info.player, n: info.count });
+            case 'pass': return t('last.pass', { player: info.player });
+            case 'rejected': return t('last.rejected', { player: info.player, words });
+            case 'skip': return t('last.skip', { player: info.player });
+            case 'vote': return t(info.vote === 'accept' ? 'last.vote_accept' : 'last.vote_reject', { player: info.player });
+            case 'game_over': return t('last.game_over', { player: info.player, score: info.score });
+            case 'save_revert': return t('last.save_revert', { player: info.player });
+            default: return tServer(gs.last_action) || '';
+        }
     },
 
     renderGameInfo() {
         const gs = AppState.gameState;
         if (!gs) return;
-        document.getElementById('tiles-remaining').textContent = `Zsák: ${gs.tiles_remaining} zseton`;
+        document.getElementById('tiles-remaining').textContent = t('game.bag', { n: gs.tiles_remaining });
 
-        const isMyTurn = gs.current_player === AppState.myPlayerId;
+        const isMyTurn = gs.current_player === AppState.myPlayerId && !AppState.isSpectator;
         const turnEl = document.getElementById('current-turn');
-        turnEl.textContent = isMyTurn ? 'Te következel!' : `${gs.current_player_name || '?'} következik`;
+        turnEl.textContent = isMyTurn ? t('game.your_turn') : t('game.turn_of', { name: gs.current_player_name || '?' });
         turnEl.classList.toggle('turn-active', isMyTurn);
         turnEl.classList.toggle('turn-inactive', !isMyTurn);
+        document.getElementById('board-zoom-container').classList.toggle('my-turn', isMyTurn && !gs.finished);
 
-        if (gs.last_action) {
-            document.getElementById('last-action').textContent = gs.last_action;
+        const lastAction = this.formatLastAction(gs);
+        if (lastAction) document.getElementById('last-action').textContent = lastAction;
+    },
+
+    // Kör váltáskor a kiírás felvillan (és a tábla keretének fénye jelzi, hogy te jössz)
+    _animateTurnChange(state) {
+        const turnEl = document.getElementById('current-turn');
+        if (turnEl) this._animate(turnEl, 'turn-pulse');
+    },
+
+    // --- Lépéstörténet ---
+
+    renderHistory() {
+        const gs = AppState.gameState;
+        const list = document.getElementById('move-history');
+        if (!gs || !list) return;
+        const history = gs.history || [];
+        const sig = `${I18N.lang}:${history.length}:${history.length ? history[history.length - 1].n : 0}`;
+        if (sig === this._historySig) return;
+        this._historySig = sig;
+
+        list.innerHTML = '';
+        if (!history.length) {
+            const empty = document.createElement('li');
+            empty.className = 'move-history-empty';
+            empty.textContent = t('game.history_empty');
+            list.appendChild(empty);
+            return;
+        }
+        // A legutóbbi lépés van felül
+        for (let i = history.length - 1; i >= 0; i--) {
+            const h = history[i];
+            const li = document.createElement('li');
+            li.className = 'move-history-item move-' + h.type;
+
+            const who = document.createElement('span');
+            who.className = 'move-who';
+            who.textContent = h.player;
+            li.appendChild(who);
+
+            const what = document.createElement('span');
+            what.className = 'move-what';
+            if (h.type === 'place' || h.type === 'challenge_accept') {
+                what.textContent = (h.words || []).join(', ');
+                const score = document.createElement('span');
+                score.className = 'move-score';
+                score.textContent = `+${h.score}`;
+                li.appendChild(what);
+                li.appendChild(score);
+            } else {
+                what.textContent = t('history.' + (['exchange', 'pass', 'challenge_reject'].includes(h.type) ? h.type : 'other'));
+                li.appendChild(what);
+            }
+            list.appendChild(li);
         }
     },
+
+    // --- Gombok ---
 
     updateButtons() {
         const gs = AppState.gameState;
         if (!gs) return;
-        const isMyTurn = gs.current_player === AppState.myPlayerId && !gs.finished;
+        const spectator = AppState.isSpectator;
+        const isMyTurn = gs.current_player === AppState.myPlayerId && !gs.finished && !spectator;
         const hasPending = !!gs.pending_challenge;
 
         document.getElementById('btn-place').disabled = !isMyTurn || BoardState.placedTiles.length === 0 || hasPending;
@@ -1478,20 +1977,39 @@ const GameBoard = {
         document.getElementById('btn-pass').disabled = !isMyTurn || hasPending;
 
         document.getElementById('btn-exchange').textContent =
-            BoardState.exchangeMode ? `Csere (${BoardState.exchangeIndices.size})` : 'Csere';
+            BoardState.exchangeMode ? t('game.exchange_n', { n: BoardState.exchangeIndices.size }) : t('game.exchange');
+
+        // Tipp: csak egyedül (nincs másik emberi játékos) elérhető
+        const humans = gs.players.filter(p => !p.is_bot).length;
+        const hintBtn = document.getElementById('btn-hint');
+        hintBtn.classList.toggle('hidden', spectator || humans !== 1);
+        hintBtn.disabled = !isMyTurn || hasPending;
+        document.getElementById('btn-shuffle').disabled = spectator;
+        document.getElementById('btn-sort').disabled = spectator;
+    },
+
+    // Megfigyelő mód: a lépés- és chatgombok el vannak rejtve, sáv jelzi a módot
+    updateSpectatorUi() {
+        const gs = AppState.gameState;
+        const spectating = !!AppState.isSpectator;
+        document.getElementById('game-screen').classList.toggle('spectating', spectating);
+        const banner = document.getElementById('spectator-banner');
+        banner.classList.toggle('hidden', !spectating);
+        if (spectating && gs) {
+            document.getElementById('spectator-banner-text').textContent =
+                t('spec.banner', { n: gs.spectator_count || 1 });
+        }
     },
 
     onCellClick(row, col) {
         const gs = AppState.gameState;
-        if (!gs || gs.finished) return;
+        if (!gs || gs.finished || AppState.isSpectator) return;
 
         // Clicking a placed tile always removes it (even if another tile is selected)
-        const placedIdx = BoardState.placedTiles.findIndex(t => t.row === row && t.col === col);
+        const placedIdx = BoardState.placedTiles.findIndex(tile => tile.row === row && tile.col === col);
         if (placedIdx !== -1) {
             BoardState.placedTiles.splice(placedIdx, 1);
-            this.renderBoard();
-            this.renderHand();
-            this.updateButtons();
+            this.afterPlacementChange();
             return;
         }
 
@@ -1501,15 +2019,23 @@ const GameBoard = {
         }
     },
 
+    // A lerakás módosulása után: újrarajzolás + élő előnézet
+    afterPlacementChange() {
+        this.renderBoard();
+        this.renderHand();
+        this.updateButtons();
+        Preview.schedule();
+    },
+
     placeTileOnBoard(handIdx, row, col) {
         const gs = AppState.gameState;
-        if (!gs) return;
+        if (!gs || AppState.isSpectator) return;
         const myPlayer = gs.players.find(p => p.id === AppState.myPlayerId);
         if (!myPlayer || !myPlayer.hand) return;
 
         if (gs.board[row][col] !== null) return;
-        if (BoardState.placedTiles.find(t => t.row === row && t.col === col)) return;
-        if (BoardState.placedTiles.find(t => t.handIdx === handIdx)) return;
+        if (BoardState.placedTiles.find(pt => pt.row === row && pt.col === col)) return;
+        if (BoardState.placedTiles.find(pt => pt.handIdx === handIdx)) return;
 
         const tile = myPlayer.hand[handIdx];
 
@@ -1519,16 +2045,14 @@ const GameBoard = {
             BoardState.placedTiles.push({ row, col, letter: tile, is_blank: false, handIdx });
             BoardState.selectedTileIdx = null;
             SoundManager.play('tile_place');
-            this.renderBoard();
-            this.renderHand();
-            this.updateButtons();
+            this.afterPlacementChange();
         }
     },
 
     placeTiles() {
         if (!BoardState.placedTiles.length) return;
-        const tiles = BoardState.placedTiles.map(t => ({
-            row: t.row, col: t.col, letter: t.letter, is_blank: t.is_blank,
+        const tiles = BoardState.placedTiles.map(tile => ({
+            row: tile.row, col: tile.col, letter: tile.letter, is_blank: tile.is_blank,
         }));
         socket.emit('place_tiles', { tiles });
     },
@@ -1545,21 +2069,264 @@ const GameBoard = {
             this.updateButtons();
         } else {
             BoardState.placedTiles = [];
+            Preview.clear();
             BoardState.selectedTileIdx = null;
             BoardState.exchangeMode = true;
             BoardState.exchangeIndices.clear();
             this.renderBoard();
             this.renderHand();
             this.updateButtons();
-            showMessage('Jelöld ki a cserélendő zsetonokat, majd nyomd meg újra a Csere gombot.');
+            showMessage(t('game.exchange_hint'));
         }
     },
 
     recall() {
         BoardState.clearPlacement();
+        Preview.clear();
         this.renderBoard();
         this.renderHand();
         this.updateButtons();
+    },
+
+    // Tipp elhelyezése: a javasolt lerakás a táblára kerül (a játékos még módosíthatja, majd lerakja)
+    applyHint(tiles) {
+        const gs = AppState.gameState;
+        const me = gs && gs.players.find(p => p.id === AppState.myPlayerId);
+        if (!me || !me.hand) return;
+        BoardState.clearPlacement();
+        const used = new Set();
+        const placed = [];
+        for (const tile of tiles) {
+            const wanted = tile.is_blank ? '' : tile.letter;
+            const idx = me.hand.findIndex((letter, i) => letter === wanted && !used.has(i));
+            if (idx === -1) { BoardState.placedTiles = []; return; }
+            used.add(idx);
+            placed.push({ row: tile.row, col: tile.col, letter: tile.letter, is_blank: tile.is_blank, handIdx: idx });
+        }
+        BoardState.placedTiles = placed;
+        SoundManager.play('tile_place');
+        this.afterPlacementChange();
+    },
+};
+
+// ===== ÉLŐ ELŐNÉZET =====
+// A félkész lerakás szavait és pontszámát a szerver véglegesítés nélkül kiszámolja.
+
+const Preview = {
+    _timer: null,
+    DELAY_MS: 250,
+
+    schedule() {
+        clearTimeout(this._timer);
+        const el = document.getElementById('move-preview');
+        if (!el) return;
+        const gs = AppState.gameState;
+        const myTurn = gs && gs.current_player === AppState.myPlayerId && !gs.finished && !AppState.isSpectator;
+        if (!BoardState.placedTiles.length || !myTurn) { this.clear(); return; }
+        el.classList.add('stale');
+        this._timer = setTimeout(() => {
+            socket.emit('preview_move', {
+                tiles: BoardState.placedTiles.map(tile => ({ row: tile.row, col: tile.col, letter: tile.letter, is_blank: tile.is_blank })),
+            });
+        }, this.DELAY_MS);
+    },
+
+    clear() {
+        clearTimeout(this._timer);
+        const el = document.getElementById('move-preview');
+        if (!el) return;
+        el.classList.add('hidden');
+        el.classList.remove('stale', 'move-preview-ok', 'move-preview-bad');
+        el.replaceChildren();
+    },
+
+    onResult(data) {
+        const el = document.getElementById('move-preview');
+        if (!el || !BoardState.placedTiles.length) return;
+        el.classList.remove('stale', 'move-preview-ok', 'move-preview-bad');
+        el.replaceChildren();
+        if (!data.valid) {
+            if (!data.message) { el.classList.add('hidden'); return; }
+            el.classList.add('move-preview-bad');
+            el.textContent = tServer(data.message);
+        } else {
+            el.classList.add('move-preview-ok');
+            const words = document.createElement('span');
+            words.className = 'preview-words';
+            words.textContent = data.words.map(w => `${w.word} (${w.score})`).join(', ');
+            const total = document.createElement('span');
+            total.className = 'preview-total';
+            total.textContent = `+${data.score}`;
+            el.appendChild(words);
+            el.appendChild(total);
+        }
+        el.classList.remove('hidden');
+    },
+};
+
+// ===== ZSETONSZÁMLÁLÓ =====
+// Mely betűk lehetnek még a zsákban vagy az ellenfelek kezében (a táblán és a saját kezedben
+// lévők kivételével).
+
+const Tracker = {
+    unseen() {
+        const gs = AppState.gameState;
+        const counts = { ...TILE_COUNTS };
+        if (!gs) return { counts, total: 0, bag: 0, hands: 0 };
+        const take = (letter, isBlank) => {
+            const key = isBlank ? '' : letter;
+            if (counts[key] > 0) counts[key]--;
+        };
+        for (const row of gs.board) for (const cell of row) if (cell) take(cell.letter, cell.is_blank);
+        if (gs.pending_challenge) for (const tile of gs.pending_challenge.tiles) take(tile.letter, tile.is_blank);
+        const me = gs.players.find(p => p.id === AppState.myPlayerId);
+        if (me && me.hand) for (const letter of me.hand) take(letter, letter === '');
+        const hands = gs.players.filter(p => p.id !== AppState.myPlayerId).reduce((n, p) => n + p.hand_count, 0);
+        const total = Object.values(counts).reduce((a, b) => a + b, 0);
+        return { counts, total, bag: gs.tiles_remaining, hands };
+    },
+
+    show() {
+        this.render();
+        document.getElementById('tracker-dialog').classList.remove('hidden');
+    },
+
+    render() {
+        const { counts, total, bag, hands } = this.unseen();
+        const vowels = Object.entries(counts).filter(([l, n]) => l && 'AÁEÉIÍOÓÖŐUÚÜŰ'.includes(l[0])).reduce((a, [, n]) => a + n, 0);
+        const blanks = counts[''] || 0;
+        const consonants = total - vowels - blanks;
+        document.getElementById('tracker-summary').textContent =
+            t('tracker.summary', { total, bag, hands, vowels, consonants, blanks });
+
+        const grid = document.getElementById('tracker-grid');
+        grid.innerHTML = '';
+        const letters = [...ALL_LETTERS, ''];
+        for (const letter of letters) {
+            const n = counts[letter] || 0;
+            const cell = document.createElement('div');
+            cell.className = 'tracker-tile' + (n === 0 ? ' gone' : '') + (n === 1 ? ' last' : '');
+            const face = document.createElement('span');
+            face.className = 'tracker-letter' + (letter.length > 1 ? ' long-letter' : '');
+            face.textContent = letter === '' ? '?' : letter;
+            const badge = document.createElement('span');
+            badge.className = 'tracker-count';
+            badge.textContent = n;
+            cell.appendChild(face);
+            cell.appendChild(badge);
+            cell.title = `${letter === '' ? t('tracker.blank') : letter}: ${n} / ${TILE_COUNTS[letter]}`;
+            grid.appendChild(cell);
+        }
+    },
+
+    init() {
+        document.getElementById('btn-close-tracker').addEventListener('click', () => {
+            document.getElementById('tracker-dialog').classList.add('hidden');
+        });
+    },
+};
+
+// ===== TIPP =====
+// Egyedül (robotok ellen) játszva a legjobb lépések kérhetők.
+
+const Hint = {
+    request() {
+        const btn = document.getElementById('btn-hint');
+        btn.disabled = true;
+        socket.emit('request_hint');
+        setTimeout(() => GameBoard.updateButtons(), 4000);
+    },
+
+    onResult(data) {
+        GameBoard.updateButtons();
+        const dialog = document.getElementById('hint-dialog');
+        const list = document.getElementById('hint-list');
+        const text = document.getElementById('hint-text');
+        list.innerHTML = '';
+        if (!data.success) {
+            showMessage(tServer(data.message), true);
+            return;
+        }
+        text.textContent = data.moves.length ? t('hint.intro') : t('hint.none');
+        data.moves.forEach((move, i) => {
+            const row = document.createElement('div');
+            row.className = 'hint-item';
+            const info = document.createElement('div');
+            info.className = 'hint-info';
+            const words = document.createElement('div');
+            words.className = 'hint-words';
+            words.textContent = move.words.join(', ');
+            const score = document.createElement('div');
+            score.className = 'hint-score';
+            score.textContent = t('common.points', { n: move.score });
+            info.appendChild(words);
+            info.appendChild(score);
+            const btn = document.createElement('button');
+            btn.className = 'small-btn';
+            btn.textContent = t('hint.place');
+            btn.addEventListener('click', () => {
+                dialog.classList.add('hidden');
+                GameBoard.applyHint(move.tiles);
+            });
+            row.appendChild(info);
+            row.appendChild(btn);
+            list.appendChild(row);
+        });
+        dialog.classList.remove('hidden');
+    },
+
+    init() {
+        document.getElementById('btn-close-hint').addEventListener('click', () => {
+            document.getElementById('hint-dialog').classList.add('hidden');
+        });
+    },
+};
+
+// ===== GYORSBILLENTYŰK =====
+// Enter: lerak · Esc: visszavon · S: keverés · R: rendezés · Backspace: az utolsó lerakott betű visszavétele
+
+const Shortcuts = {
+    init() {
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+            if (document.getElementById('game-screen').classList.contains('hidden')) return;
+            const target = e.target;
+            if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) return;
+            // Fókuszált gombon az Enter/Space magától kattint: ne duplázzuk a műveletet
+            if (target && target.tagName === 'BUTTON' && (e.key === 'Enter' || e.key === ' ')) return;
+            // Nyitott párbeszédablak mellett nem kezeljük
+            if (document.querySelector('.dialog:not(.hidden)')) return;
+            const gs = AppState.gameState;
+            if (!gs || AppState.isSpectator) return;
+
+            switch (e.key) {
+                case 'Enter':
+                    if (!document.getElementById('btn-place').disabled) { e.preventDefault(); GameBoard.placeTiles(); }
+                    break;
+                case 'Escape':
+                    if (BoardState.placedTiles.length || BoardState.selectedTileIdx !== null || BoardState.exchangeMode) {
+                        e.preventDefault();
+                        GameBoard.recall();
+                    }
+                    break;
+                case 'Backspace':
+                    if (BoardState.placedTiles.length) {
+                        e.preventDefault();
+                        BoardState.placedTiles.pop();
+                        GameBoard.afterPlacementChange();
+                    }
+                    break;
+                case 's': case 'S':
+                    e.preventDefault();
+                    GameBoard.shuffleHand();
+                    break;
+                case 'r': case 'R':
+                    e.preventDefault();
+                    GameBoard.sortHand();
+                    break;
+                default:
+            }
+        });
     },
 };
 
@@ -1579,16 +2346,14 @@ const BlankDialog = {
                 BoardState.selectedTileIdx = null;
                 dialog.classList.add('hidden');
                 SoundManager.play('tile_place');
-                GameBoard.renderBoard();
-                GameBoard.renderHand();
-                GameBoard.updateButtons();
+                GameBoard.afterPlacementChange();
             });
             container.appendChild(btn);
         });
 
         const cancelBtn = document.createElement('button');
         cancelBtn.className = 'secondary blank-cancel-btn';
-        cancelBtn.textContent = 'Mégsem';
+        cancelBtn.textContent = t('common.cancel');
         cancelBtn.addEventListener('click', () => {
             dialog.classList.add('hidden');
         });
@@ -1656,7 +2421,7 @@ const ChallengeUI = {
 
     init() {
         socket.on('challenge_result', (data) => {
-            showMessage(data.message, false);
+            showMessage(tServer(data.message), false);
             this.stopCountdown();
             SoundManager.play(data.challenge_won ? 'challenge_reject' : 'challenge_accept');
         });
@@ -1712,7 +2477,7 @@ const ChallengeUI = {
         // Timer management + sound on new challenge appearing
         if (!this.timer) {
             this.startCountdown(pc.expires_at);
-            if (!isMyPlacement) SoundManager.play('vote');
+            if (!isMyPlacement && !AppState.isSpectator) SoundManager.play('vote');
             // Telefonon a panel görgethető: új szavazásnál a tetejére ugrik, hogy a gombok látsszanak
             const panel = document.querySelector('.side-panel');
             if (panel) panel.scrollTop = 0;
@@ -1725,18 +2490,21 @@ const ChallengeUI = {
         this._renderInfo(infoEl, pc, gs);
 
         // Timer display
-        timerEl.textContent = this.timeLeft > 0 ? `${this.timeLeft} mp` : '';
+        timerEl.textContent = this.timeLeft > 0 ? t('challenge.seconds', { n: this.timeLeft }) : '';
 
         // Buttons — csak állapotváltozáskor építjük újra: a másodpercenkénti újrarajzolás
         // elnyelhette a kattintást és visszakapcsolta a már letiltott gombokat
-        const sig = isMyPlacement ? 'placer' : (myVote ? `voted:${myVote}` : 'vote');
+        const sig = (AppState.isSpectator ? 'spectator:' : '') + I18N.lang + ':' +
+            (isMyPlacement ? 'placer' : (myVote ? `voted:${myVote}` : 'vote'));
         if (this._buttonsSig !== sig) {
             this._buttonsSig = sig;
             buttonsEl.innerHTML = '';
-            if (isMyPlacement) {
-                this._addWaitText(buttonsEl, 'Szavazás folyamatban...');
+            if (AppState.isSpectator) {
+                this._addWaitText(buttonsEl, t('challenge.spectator'));
+            } else if (isMyPlacement) {
+                this._addWaitText(buttonsEl, t('challenge.voting'));
             } else if (myVote) {
-                this._addWaitText(buttonsEl, myVote === 'accept' ? 'Elfogadtad — várakozás...' : 'Elutasítottad — várakozás...');
+                this._addWaitText(buttonsEl, myVote === 'accept' ? t('challenge.you_accepted') : t('challenge.you_rejected'));
             } else {
                 this._renderVoteButtons(buttonsEl);
             }
@@ -1750,13 +2518,13 @@ const ChallengeUI = {
         
         pc.words.forEach((word, index) => {
             const link = document.createElement('a');
-            const query = `${word} - Kézikönyvtár A magyar nyelv értelmező szótára`;
+            const query = `${word} - Kézikönyvtár A magyar nyelv értelmező szótára`;  // a szótár magyar marad
             link.href = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
             link.target = '_blank';
             link.rel = 'noopener noreferrer';
             link.className = 'dict-link';
             link.textContent = word;
-            link.title = `Keresés: ${word}`;
+            link.title = t('challenge.search_word', { word });
             
             infoText.appendChild(link);
             
@@ -1765,24 +2533,24 @@ const ChallengeUI = {
             }
         });
         
-        infoText.appendChild(document.createTextNode(` (${pc.score} pont)`));
+        infoText.appendChild(document.createTextNode(` (${t('common.points', { n: pc.score })})`));
         infoEl.appendChild(infoText);
 
-        // Show vote status for all players (3+ players)
-        if ((pc.player_count || 0) > 2) {
+        // A szavazók állása, ha több szavazó van (a robotok nem szavaznak)
+        const voters = gs.players.filter(p => !p.is_bot && p.id !== pc.player_id);
+        if (voters.length > 1) {
             const voteList = document.createElement('div');
             voteList.className = 'vote-list';
             const votes = pc.votes || {};
-            for (const player of gs.players) {
-                if (player.id === pc.player_id) continue;
+            for (const player of voters) {
                 const vote = votes[player.id];
                 const item = document.createElement('span');
                 item.className = 'vote-item';
                 if (vote === 'accept') {
-                    item.textContent = `${player.name}: Elfogad`;
+                    item.textContent = `${player.name}: ${t('challenge.accept_short')}`;
                     item.classList.add('vote-accept');
                 } else if (vote === 'reject') {
-                    item.textContent = `${player.name}: Elutasít`;
+                    item.textContent = `${player.name}: ${t('challenge.reject_short')}`;
                     item.classList.add('vote-reject');
                 } else {
                     item.textContent = `${player.name}: ...`;
@@ -1804,10 +2572,10 @@ const ChallengeUI = {
     _renderVoteButtons(buttonsEl) {
         const acceptBtn = document.createElement('button');
         acceptBtn.className = 'btn-accept';
-        acceptBtn.textContent = 'Elfogadom';
+        acceptBtn.textContent = t('challenge.accept');
         const rejectBtn = document.createElement('button');
         rejectBtn.className = 'btn-challenge';
-        rejectBtn.textContent = 'Elutasítom';
+        rejectBtn.textContent = t('challenge.reject');
 
         acceptBtn.addEventListener('click', () => {
             acceptBtn.disabled = true;
@@ -2030,32 +2798,61 @@ const BoardZoom = {
 const GameOver = {
     init() {
         document.getElementById('btn-back-lobby').addEventListener('click', () => this.backToLobby());
+        window.addEventListener('langchange', () => {
+            if (!document.getElementById('game-over-dialog').classList.contains('hidden')) this.render();
+        });
     },
 
     show() {
         if (AppState.gameOverShown) return;
         AppState.gameOverShown = true;
-        const gs = AppState.gameState;
-        const dialog = document.getElementById('game-over-dialog');
-        const scoresContainer = document.getElementById('final-scores');
         SoundManager.play('game_over');
+        this.render();
+        document.getElementById('game-over-dialog').classList.remove('hidden');
+    },
 
+    // Végeredmény + játékonkénti érdekességek (legjobb szó, legtöbb pont egy lépésben)
+    render() {
+        const gs = AppState.gameState;
+        if (!gs) return;
+        const scoresContainer = document.getElementById('final-scores');
         const sorted = [...gs.players].sort((a, b) => b.score - a.score);
         scoresContainer.innerHTML = sorted.map((p, i) => `
             <div class="score-final ${i === 0 ? 'winner' : ''}">
                 <span>${i === 0 ? '&#x1F3C6; ' : ''}${escapeHtml(p.name)}</span>
-                <span>${p.score} pont</span>
+                <span>${escapeHtml(t('common.points', { n: p.score }))}</span>
             </div>
         `).join('');
 
-        dialog.classList.remove('hidden');
+        const stats = document.getElementById('final-stats');
+        stats.replaceChildren();
+        const best = this.bestMove(gs.history || []);
+        const addLine = (text) => {
+            const line = document.createElement('div');
+            line.className = 'final-stat';
+            line.textContent = text;
+            stats.appendChild(line);
+        };
+        if (best) addLine(t('game.best_move', { player: best.player, words: best.words.join(', '), score: best.score }));
+        const moves = (gs.history || []).filter(h => h.type === 'place' || h.type === 'challenge_accept').length;
+        if (moves) addLine(t('game.total_moves', { n: (gs.history || []).length, words: moves }));
+    },
+
+    // A legtöbb pontot érő lerakás
+    bestMove(history) {
+        let best = null;
+        for (const h of history) {
+            if ((h.type === 'place' || h.type === 'challenge_accept') && (!best || h.score > best.score)) best = h;
+        }
+        return best;
     },
 
     backToLobby() {
         document.getElementById('game-over-dialog').classList.add('hidden');
+        const spectating = AppState.isSpectator;
         AppState.reset();
         ChallengeUI.stopCountdown(); TurnTimerUI._stop();
-        socket.emit('leave_room');
+        socket.emit(spectating ? 'leave_spectate' : 'leave_room');
         showScreen('lobby-screen');
         socket.emit('get_rooms');
     },
@@ -2086,13 +2883,15 @@ const Reconnection = {
 
             if (AppState.reconnectToken) {
                 socket.emit('rejoin_room', { token: AppState.reconnectToken });
+            } else if (AppState.isSpectator) {
+                Spectate.resume();
             }
         });
 
         socket.on('disconnect', () => {
             const banner = document.getElementById('connection-banner');
             if (banner) {
-                banner.textContent = 'Kapcsolat megszakadt — újracsatlakozás...';
+                banner.textContent = t('conn.lost');
                 banner.classList.remove('hidden');
             }
         });
@@ -2100,7 +2899,7 @@ const Reconnection = {
         socket.on('connect_error', () => {
             const banner = document.getElementById('connection-banner');
             if (banner) {
-                banner.textContent = 'Nem sikerül csatlakozni a szerverhez...';
+                banner.textContent = t('conn.cannot_connect');
                 banner.classList.remove('hidden');
             }
         });
@@ -2110,15 +2909,15 @@ const Reconnection = {
             ChallengeUI.stopCountdown(); TurnTimerUI._stop();
             showScreen('lobby-screen');
             socket.emit('get_rooms');
-            if (data && data.message) showMessage(data.message, true);
+            if (data && data.message) showMessage(tServer(data.message), true);
         });
 
         socket.on('player_disconnected', (data) => {
-            showMessage(`${data.name} lecsatlakozott, várakozás újracsatlakozásra...`, false);
+            showMessage(t('conn.player_disconnected', { name: data.name }), false);
         });
 
         socket.on('player_reconnected', (data) => {
-            showMessage(`${data.name} újracsatlakozott!`, false);
+            showMessage(t('conn.player_reconnected', { name: data.name }), false);
         });
 
         socket.on('room_disbanded', (data) => {
@@ -2127,7 +2926,7 @@ const Reconnection = {
             localStorage.removeItem('scrabble-rejoin');
             showScreen('lobby-screen');
             socket.emit('get_rooms');
-            showMessage(data.message || 'A szoba megszűnt.', true);
+            showMessage(tServer(data.message) || t('conn.room_gone'), true);
         });
 
         document.addEventListener('visibilitychange', () => {
@@ -2153,12 +2952,14 @@ const ExitGame = {
     },
 
     showDialog() {
+        // Megfigyelőként nincs mit megerősíteni: a kilépés azonnali
+        if (AppState.isSpectator) { this._doLeave(); return; }
         const gs = AppState.gameState;
         const isActiveGame = gs && gs.started && !gs.finished;
         const showOwner = AppState.isOwner && isActiveGame;
 
         document.getElementById('exit-dialog-text').textContent =
-            showOwner ? 'Mit szeretnél tenni?' : 'Biztosan ki akarsz lépni?';
+            showOwner ? t('exit.what_to_do') : t('exit.sure');
         document.getElementById('exit-owner-buttons').classList.toggle('hidden', !showOwner);
         document.getElementById('exit-player-buttons').classList.toggle('hidden', showOwner);
         document.getElementById('exit-dialog').classList.remove('hidden');
@@ -2181,8 +2982,8 @@ const ExitGame = {
             this._doLeave();
         };
         const onResult = (data) => {
-            if (data.success) showMessage('Játék mentve.');
-            else showMessage(data.message || 'Mentési hiba.', true);
+            if (data.success) showMessage(t('exit.saved'));
+            else showMessage(tServer(data.message) || t('exit.save_error'), true);
             finish();
         };
         socket.on('action_result', onResult);
@@ -2196,7 +2997,7 @@ const ExitGame = {
     },
 
     _doLeave() {
-        socket.emit('leave_room');
+        socket.emit(AppState.isSpectator ? 'leave_spectate' : 'leave_room');
         AppState.reset();
         ChallengeUI.stopCountdown(); TurnTimerUI._stop();
         showScreen('lobby-screen');
@@ -2210,6 +3011,12 @@ const Profile = {
     init() {
         document.getElementById('btn-profile').addEventListener('click', () => this.show());
         document.getElementById('btn-profile-back').addEventListener('click', () => this.back());
+        window.addEventListener('langchange', () => {
+            if (this._data && !document.getElementById('profile-screen').classList.contains('hidden')) {
+                this.renderStats(this._data.stats);
+                this.renderHistory(this._data.history);
+            }
+        });
     },
 
     // Vissza arra a képernyőre, ahonnan a profilt megnyitottuk (lobby, várakozó szoba vagy játék)
@@ -2231,28 +3038,31 @@ const Profile = {
             const resp = await fetch('/api/auth/profile');
             const data = await resp.json();
             if (!data.success) {
-                showMessage(data.message || 'Hiba a profil betöltésekor.', true);
+                showMessage(tServer(data.message) || t('profile.load_error'), true);
                 return;
             }
 
+            this._data = data;
             this.renderStats(data.stats);
             this.renderHistory(data.history);
             const nameEl = document.getElementById('profile-user-name');
             if (nameEl) nameEl.textContent = AppState.currentUser?.display_name || '';
             showScreen('profile-screen');
         } catch {
-            showMessage('Hiba a profil betöltésekor.', true);
+            showMessage(t('profile.load_error'), true);
         }
     },
+
+    _data: null,
 
     renderStats(stats) {
         const container = document.getElementById('profile-stats');
         container.innerHTML = '';
         const cards = [
-            { label: 'Játszott', value: stats.games_played },
-            { label: 'Győzelem', value: stats.games_won },
-            { label: 'Nyerési arány', value: stats.win_rate + '%' },
-            { label: 'Átl. pontszám', value: stats.avg_score },
+            { label: t('profile.played'), value: stats.games_played },
+            { label: t('common.win'), value: stats.games_won },
+            { label: t('profile.win_rate'), value: stats.win_rate + '%' },
+            { label: t('profile.avg_score'), value: stats.avg_score },
         ];
         for (const card of cards) {
             const el = document.createElement('div');
@@ -2275,7 +3085,7 @@ const Profile = {
     renderHistory(history) {
         const container = document.getElementById('profile-history');
         if (!history.length) {
-            container.innerHTML = '<div class="empty-state"><p class="empty-msg">Nincs még befejezett játék.</p></div>';
+            container.innerHTML = emptyStateHtml(t('common.no_finished_games'));
             return;
         }
         container.innerHTML = '';
@@ -2294,15 +3104,15 @@ const Profile = {
 
             const name = document.createElement('span');
             name.className = 'history-room';
-            name.textContent = h.room_name || 'Szoba';
+            name.textContent = h.room_name || t('create.room_placeholder');
 
             const score = document.createElement('span');
             score.className = 'history-score';
-            score.textContent = h.final_score + ' pont';
+            score.textContent = t('common.points', { n: h.final_score });
 
             const result = document.createElement('span');
             result.className = 'history-result';
-            result.textContent = h.is_winner ? 'Győzelem' : 'Vereség';
+            result.textContent = h.is_winner ? t('common.win') : t('common.loss');
 
             const opponents = document.createElement('span');
             opponents.className = 'history-opponents';
@@ -2317,7 +3127,7 @@ const Profile = {
 
             const btn = document.createElement('button');
             btn.className = 'small-btn';
-            btn.textContent = 'Visszajátszás';
+            btn.textContent = t('replay.title');
             btn.addEventListener('click', () => Replay.load(h.game_id));
             row.appendChild(btn);
 
@@ -2340,6 +3150,9 @@ const Replay = {
         });
         document.getElementById('btn-replay-prev').addEventListener('click', () => this.prev());
         document.getElementById('btn-replay-next').addEventListener('click', () => this.next());
+        window.addEventListener('langchange', () => {
+            if (!document.getElementById('replay-screen').classList.contains('hidden')) this.renderMove();
+        });
     },
 
     async load(gameId) {
@@ -2347,7 +3160,7 @@ const Replay = {
             const resp = await fetch(`/api/game/${gameId}/moves`);
             const data = await resp.json();
             if (!data.success) {
-                showMessage(data.message || 'Hiba a lépések betöltésekor.', true);
+                showMessage(tServer(data.message) || t('replay.load_error'), true);
                 return;
             }
 
@@ -2359,7 +3172,7 @@ const Replay = {
             this.renderMove();
             showScreen('replay-screen');
         } catch {
-            showMessage('Hiba a lépések betöltésekor.', true);
+            showMessage(t('replay.load_error'), true);
         }
     },
 
@@ -2396,7 +3209,7 @@ const Replay = {
         document.getElementById('btn-replay-next').disabled = this.currentIdx >= this.moves.length - 1;
 
         if (this.currentIdx < 0) {
-            info.textContent = 'Kezdő állapot (üres tábla)';
+            info.textContent = t('replay.start');
             this._renderSnapshot(null);
             return;
         }
@@ -2409,16 +3222,16 @@ const Replay = {
             case 'place':
             case 'challenge_accept':
                 text += (details.words || []).join(', ');
-                if (details.score) text += ` (${details.score} pont)`;
+                if (details.score) text += ` (${t('common.points', { n: details.score })})`;
                 break;
             case 'exchange':
-                text += 'Csere';
+                text += t('history.exchange');
                 break;
             case 'pass':
-                text += 'Passz';
+                text += t('history.pass');
                 break;
             case 'challenge_reject':
-                text += 'Szavak elutasítva';
+                text += t('history.challenge_reject');
                 break;
             default:
                 text += move.action_type;
@@ -2426,10 +3239,12 @@ const Replay = {
 
         info.textContent = text;
         const snapshot = move.board_snapshot_json ? JSON.parse(move.board_snapshot_json) : null;
-        this._renderSnapshot(snapshot);
+        // Az éppen lerakott betűk kiemelve
+        const highlight = new Set((details.tiles || []).map(tile => `${tile.row},${tile.col}`));
+        this._renderSnapshot(snapshot, highlight);
     },
 
-    _renderSnapshot(boardData) {
+    _renderSnapshot(boardData, highlight = new Set()) {
         const board = document.getElementById('replay-board');
         const cells = board.querySelectorAll('.cell');
 
@@ -2438,11 +3253,12 @@ const Replay = {
             const c = parseInt(cell.dataset.col);
             const key = `${r},${c}`;
 
-            cell.classList.remove('has-tile', 'long-letter');
+            cell.classList.remove('has-tile', 'long-letter', 'last-move');
 
             if (boardData && boardData[r] && boardData[r][c]) {
                 const tile = boardData[r][c];
                 cell.classList.add('has-tile');
+                if (highlight.has(key)) cell.classList.add('last-move');
                 if (tile.letter.length > 1) cell.classList.add('long-letter');
                 const value = tile.is_blank ? 0 : (TILE_VALUES[tile.letter] || 0);
                 cell.innerHTML = `${escapeHtml(tile.letter)}<span class="tile-value">${value}</span>`;
@@ -2610,14 +3426,14 @@ const SoundManager = {
 
 const SoundSettings = {
     CATEGORIES: [
-        { key: 'tile_place',      label: 'Betű lerakás',       desc: 'Kattanó hang zsetonok lerakásakor' },
-        { key: 'vote',            label: 'Szavazás',            desc: 'Hangjelzés szavazógomb megnyomásakor' },
-        { key: 'challenge_result',label: 'Szavazás eredménye',  desc: 'Elfogadva / elutasítva hangjelzés' },
-        { key: 'your_turn',       label: 'Te következel',       desc: 'Értesítő hang kör váltáskor' },
-        { key: 'chat',            label: 'Chat üzenet',         desc: 'Hangjelzés bejövő üzenetnél' },
-        { key: 'game_events',     label: 'Játék események',     desc: 'Játék kezdés és vége hangok' },
+        { key: 'tile_place' },
+        { key: 'vote' },
+        { key: 'challenge_result' },
+        { key: 'your_turn' },
+        { key: 'chat' },
+        { key: 'game_events' },
     ],
-    
+
     _previousVolume: 0.7,
 
     init() {
@@ -2735,10 +3551,10 @@ const SoundSettings = {
             info.className = 'toggle-info';
             const name = document.createElement('span');
             name.className = 'toggle-name';
-            name.textContent = cat.label;
+            name.textContent = t('sound.cat_' + cat.key);
             const desc = document.createElement('span');
             desc.className = 'toggle-desc';
-            desc.textContent = cat.desc;
+            desc.textContent = t('sound.cat_' + cat.key + '_desc');
             info.appendChild(name);
             info.appendChild(desc);
 
@@ -2775,17 +3591,17 @@ const Friends = {
 
         // Socket események
         socket.on('friend_request_result', (data) => {
-            showMessage(data.message, !data.success);
+            showMessage(tServer(data.message), !data.success);
             if (data.success) this.load();
         });
 
         socket.on('friend_request_received', (data) => {
-            showMessage(`${data.from_name} barátkérést küldött!`);
+            showMessage(t('friends.request_received', { name: data.from_name }));
             this.load();
         });
 
         socket.on('friend_request_accepted', (data) => {
-            showMessage(`${data.display_name} elfogadta a barátkérésedet!`);
+            showMessage(t('friends.request_accepted', { name: data.display_name }));
             this.load();
         });
 
@@ -2798,7 +3614,7 @@ const Friends = {
         });
 
         socket.on('invite_sent', (data) => {
-            showMessage(data.message, !data.success);
+            showMessage(tServer(data.message), !data.success);
         });
 
         socket.on('game_invite', (data) => this.showInvitePopup(data));
@@ -2809,6 +3625,8 @@ const Friends = {
 
         // Várakozó szobában barátok meghívása
         document.getElementById('btn-invite-friends')?.addEventListener('click', () => this.toggleInviteList());
+
+        window.addEventListener('langchange', () => { if (!AppState.isGuest) this.render(); });
     },
 
     async load() {
@@ -2860,7 +3678,7 @@ const Friends = {
     renderList() {
         const container = document.getElementById('friends-list-container');
         if (!this.friendsList.length) {
-            container.innerHTML = '<div class="empty-state"><p class="empty-msg">Még nincsenek barátaid.</p></div>';
+            container.innerHTML = emptyStateHtml(t('friends.none'));
             return;
         }
 
@@ -2871,7 +3689,7 @@ const Friends = {
                     ${escapeHtml(f.display_name)}
                 </div>
                 <div class="friend-item-actions">
-                    <button class="small-btn danger" onclick="Friends.removeFriend(${f.id})">Törlés</button>
+                    <button class="small-btn danger" onclick="Friends.removeFriend(${f.id})">${escapeHtml(t('common.delete'))}</button>
                 </div>
             </div>
         `).join('');
@@ -2888,8 +3706,8 @@ const Friends = {
             <div class="friend-item">
                 <div class="friend-item-name">${escapeHtml(r.display_name)}</div>
                 <div class="friend-item-actions">
-                    <button class="small-btn" onclick="Friends.acceptRequest(${r.id})">Elfogad</button>
-                    <button class="small-btn danger" onclick="Friends.declineRequest(${r.id})">Elutasít</button>
+                    <button class="small-btn" onclick="Friends.acceptRequest(${r.id})">${escapeHtml(t('friends.accept'))}</button>
+                    <button class="small-btn danger" onclick="Friends.declineRequest(${r.id})">${escapeHtml(t('friends.decline'))}</button>
                 </div>
             </div>
         `).join('');
@@ -2905,7 +3723,7 @@ const Friends = {
         container.innerHTML = this.sentRequests.map(r => `
             <div class="friend-item">
                 <div class="friend-item-name">${escapeHtml(r.display_name)}</div>
-                <div class="text-muted text-sm">Folyamatban</div>
+                <div class="text-muted text-sm">${escapeHtml(t('friends.pending'))}</div>
             </div>
         `).join('');
     },
@@ -2929,10 +3747,10 @@ const Friends = {
                     const isSent = this.sentRequests.some(r => r.id === u.id);
                     
                     let actionHtml = '';
-                    if (isFriend) actionHtml = '<span class="text-muted text-sm">Barát</span>';
-                    else if (isPending) actionHtml = '<span class="text-muted text-sm">Kérés érkezett</span>';
-                    else if (isSent) actionHtml = '<span class="text-muted text-sm">Kérés elküldve</span>';
-                    else actionHtml = `<button class="small-btn" onclick="Friends.sendRequest(${u.id})">Kérés küldése</button>`;
+                    if (isFriend) actionHtml = `<span class="text-muted text-sm">${escapeHtml(t('friends.is_friend'))}</span>`;
+                    else if (isPending) actionHtml = `<span class="text-muted text-sm">${escapeHtml(t('friends.request_in'))}</span>`;
+                    else if (isSent) actionHtml = `<span class="text-muted text-sm">${escapeHtml(t('friends.request_out'))}</span>`;
+                    else actionHtml = `<button class="small-btn" onclick="Friends.sendRequest(${u.id})">${escapeHtml(t('friends.send_request'))}</button>`;
 
                     return `
                         <div class="friend-item">
@@ -2943,11 +3761,11 @@ const Friends = {
                 }).join('');
                 resultsEl.classList.remove('hidden');
             } else {
-                resultsEl.innerHTML = '<div class="empty-state"><p class="empty-msg">Nincs találat.</p></div>';
+                resultsEl.innerHTML = emptyStateHtml(t('friends.no_results'));
                 resultsEl.classList.remove('hidden');
             }
         } catch {
-            showMessage('Hiba a keresés során.', true);
+            showMessage(t('friends.search_error'), true);
         }
     },
 
@@ -2966,7 +3784,7 @@ const Friends = {
     },
 
     removeFriend(friendId) {
-        showConfirm('Barát törlése', 'Biztosan törölni szeretnéd a barátaid közül?', 'Törlés', () => {
+        showConfirm(t('friends.remove_title'), t('friends.remove_confirm'), t('common.delete'), () => {
             socket.emit('remove_friend', { friend_id: friendId });
         });
     },
@@ -2982,7 +3800,7 @@ const Friends = {
         this.load().then(() => {
             const onlineFriends = this.friendsList.filter(f => f.online);
             if (onlineFriends.length === 0) {
-                container.innerHTML = '<div class="empty-state"><p class="empty-msg">Nincs elérhető barátod jelenleg.</p></div>';
+                container.innerHTML = emptyStateHtml(t('friends.none_online'));
             } else {
                 container.innerHTML = onlineFriends.map(f => `
                     <div class="friend-item">
@@ -2990,7 +3808,7 @@ const Friends = {
                             <span class="status-dot online"></span>
                             ${escapeHtml(f.display_name)}
                         </div>
-                        <button class="small-btn tinted" onclick="Friends.inviteToRoom(${f.id})">Meghívás</button>
+                        <button class="small-btn tinted" onclick="Friends.inviteToRoom(${f.id})">${escapeHtml(t('friends.invite'))}</button>
                     </div>
                 `).join('');
             }
@@ -3011,18 +3829,18 @@ const Friends = {
         toast.className = 'toast toast-invite';
 
         const text = document.createElement('div');
-        text.textContent = `${data.from_name} meghívott ide: "${data.room_name}"`;
+        text.textContent = t('friends.invited', { name: data.from_name, room: data.room_name });
 
         const btnContainer = document.createElement('div');
         btnContainer.className = 'toast-invite-actions';
 
         const declineBtn = document.createElement('button');
         declineBtn.className = 'secondary small-btn';
-        declineBtn.textContent = 'Elutasítás';
+        declineBtn.textContent = t('friends.invite_decline');
 
         const acceptBtn = document.createElement('button');
         acceptBtn.className = 'small-btn';
-        acceptBtn.textContent = 'Csatlakozás';
+        acceptBtn.textContent = t('lobby.join');
 
         btnContainer.appendChild(declineBtn);
         btnContainer.appendChild(acceptBtn);
@@ -3065,9 +3883,11 @@ const Friends = {
 // ===== DIALOGS (Esc billentyű, háttérre koppintás) =====
 
 const Dialogs = {
+    // A háttérre koppintással / Esc-szel bezárható lapok
+    SHEETS: ['blank-dialog', 'exit-dialog', 'dictionary-dialog', 'tracker-dialog', 'hint-dialog'],
+
     init() {
-        // Lapok (joker választó, kilépés): a háttérre koppintás elveti őket
-        for (const id of ['blank-dialog', 'exit-dialog']) {
+        for (const id of this.SHEETS) {
             document.getElementById(id).addEventListener('click', (e) => {
                 if (e.target === e.currentTarget) e.currentTarget.classList.add('hidden');
             });
@@ -3075,7 +3895,7 @@ const Dialogs = {
 
         document.addEventListener('keydown', (e) => {
             if (e.key !== 'Escape') return;
-            const open = ['confirm-dialog', 'sound-settings-overlay', 'blank-dialog', 'exit-dialog']
+            const open = ['confirm-dialog', 'sound-settings-overlay', ...this.SHEETS]
                 .map(id => document.getElementById(id))
                 .find(el => el && !el.classList.contains('hidden'));
             if (!open) return;
@@ -3085,11 +3905,342 @@ const Dialogs = {
     },
 };
 
+// ===== RANGLISTA =====
+
+const Leaderboard = {
+    metric: 'wins',
+    _data: null,
+
+    init() {
+        document.querySelectorAll('.lb-metric').forEach(btn => {
+            btn.addEventListener('click', () => this.setMetric(btn.dataset.metric));
+        });
+        window.addEventListener('langchange', () => { if (this._data) this.render(this._data); });
+    },
+
+    setMetric(metric) {
+        this.metric = metric;
+        document.querySelectorAll('.lb-metric').forEach(b => b.classList.toggle('active', b.dataset.metric === metric));
+        this.load();
+    },
+
+    async load() {
+        const container = document.getElementById('leaderboard-container');
+        try {
+            const res = await fetch(`/api/leaderboard?metric=${encodeURIComponent(this.metric)}&limit=50`);
+            const data = await res.json();
+            if (!data.success) {
+                container.innerHTML = emptyStateHtml(tServer(data.message) || t('common.load_failed'));
+                return;
+            }
+            this._data = data;
+            this.render(data);
+        } catch {
+            container.innerHTML = emptyStateHtml(t('common.load_failed'));
+        }
+    },
+
+    _value(entry, metric) {
+        switch (metric) {
+            case 'win_rate': return `${entry.win_rate}%`;
+            case 'avg_score': return `${entry.avg_score}`;
+            case 'best_game': return `${entry.best_score}`;
+            default: return t('lb.wins_count', { n: entry.games_won });
+        }
+    },
+
+    _row(entry, metric) {
+        const row = document.createElement('div');
+        row.className = 'lb-row' + (entry.is_me ? ' me' : '') + (entry.rank <= 3 ? ` top-${entry.rank}` : '');
+
+        const rank = document.createElement('span');
+        rank.className = 'lb-rank';
+        rank.textContent = entry.rank;
+
+        const info = document.createElement('div');
+        info.className = 'lb-info';
+        const name = document.createElement('span');
+        name.className = 'lb-name';
+        name.textContent = entry.display_name + (entry.is_me ? ` (${t('lb.you')})` : '');
+        const sub = document.createElement('span');
+        sub.className = 'lb-sub';
+        sub.textContent = t('lb.sub', { played: entry.games_played, won: entry.games_won, rate: entry.win_rate });
+        info.appendChild(name);
+        info.appendChild(sub);
+
+        const value = document.createElement('span');
+        value.className = 'lb-value';
+        value.textContent = this._value(entry, metric);
+
+        row.appendChild(rank);
+        row.appendChild(info);
+        row.appendChild(value);
+        return row;
+    },
+
+    render(data) {
+        const container = document.getElementById('leaderboard-container');
+        const note = document.getElementById('lb-note');
+        note.textContent = data.min_games > 1 ? t('lb.min_games', { n: data.min_games }) : '';
+        container.innerHTML = '';
+        if (!data.entries.length) {
+            container.innerHTML = emptyStateHtml(t('lb.empty'));
+            return;
+        }
+        for (const entry of data.entries) container.appendChild(this._row(entry, data.metric));
+        // Ha a saját helyezésed nincs a listában, külön sorban jelenik meg
+        if (data.me && !data.entries.some(e => e.user_id === data.me.user_id)) {
+            const gap = document.createElement('div');
+            gap.className = 'lb-gap';
+            gap.textContent = '\u22EF';
+            container.appendChild(gap);
+            container.appendChild(this._row({ ...data.me, is_me: true }, data.metric));
+        }
+    },
+};
+
+// ===== SZÓTÁR-BÖNGÉSZŐ (kereső / ellenőrző) =====
+
+const DictionaryTool = {
+    _data: null,
+
+    init() {
+        document.getElementById('dictionary-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.check();
+        });
+        document.getElementById('btn-close-dictionary').addEventListener('click', () => this.hide());
+        window.addEventListener('langchange', () => { if (this._data) this.render(this._data); });
+    },
+
+    show() {
+        document.getElementById('dictionary-dialog').classList.remove('hidden');
+        // Érintőkijelzőn nem ugratjuk fel a billentyűzetet magától
+        if (!isTouchDevice) document.getElementById('dictionary-input').focus();
+    },
+
+    hide() {
+        document.getElementById('dictionary-dialog').classList.add('hidden');
+    },
+
+    async check(query) {
+        const input = document.getElementById('dictionary-input');
+        if (query !== undefined) input.value = query;
+        const q = input.value.trim();
+        if (!q) return;
+        const button = document.getElementById('btn-dictionary-check');
+        button.disabled = true;
+        try {
+            const res = await fetch(`/api/dictionary/check?q=${encodeURIComponent(q)}`);
+            const data = await res.json();
+            if (!data.success) {
+                showMessage(tServer(data.message) || t('common.error'), true);
+                return;
+            }
+            this._data = data;
+            this.render(data);
+        } catch {
+            showMessage(t('common.error'), true);
+        } finally {
+            button.disabled = false;
+        }
+    },
+
+    render(data) {
+        const container = document.getElementById('dictionary-results');
+        container.replaceChildren();
+        for (const result of data.results) {
+            const card = document.createElement('div');
+            card.className = 'dict-result ' + (result.valid ? 'dict-valid' : 'dict-invalid');
+
+            const head = document.createElement('div');
+            head.className = 'dict-result-head';
+            const word = document.createElement('span');
+            word.className = 'dict-word';
+            word.textContent = result.word;
+            const badge = document.createElement('span');
+            badge.className = 'dict-badge';
+            badge.textContent = result.valid ? t('dict.valid') : t('dict.invalid');
+            head.appendChild(word);
+            head.appendChild(badge);
+            card.appendChild(head);
+
+            if (result.tiles && result.tiles.length) {
+                const tiles = document.createElement('div');
+                tiles.className = 'dict-tiles';
+                for (const letter of result.tiles) {
+                    const chip = document.createElement('span');
+                    chip.className = 'dict-tile' + (letter.length > 1 ? ' long-letter' : '');
+                    chip.textContent = letter;
+                    const val = document.createElement('small');
+                    val.textContent = TILE_VALUES[letter] || 0;
+                    chip.appendChild(val);
+                    tiles.appendChild(chip);
+                }
+                card.appendChild(tiles);
+            }
+
+            const meta = document.createElement('div');
+            meta.className = 'dict-meta';
+            const parts = [];
+            if (result.score !== null && result.score !== undefined) parts.push(t('dict.base_score', { n: result.score }));
+            if (!result.valid && result.reason) parts.push(t('dict.reason_' + result.reason));
+            meta.textContent = parts.join(' \u00b7 ');
+            if (parts.length) card.appendChild(meta);
+
+            if (result.suggestions && result.suggestions.length) {
+                const sug = document.createElement('div');
+                sug.className = 'dict-suggestions';
+                const label = document.createElement('span');
+                label.className = 'text-muted text-sm';
+                label.textContent = t('dict.suggestions');
+                sug.appendChild(label);
+                for (const s of result.suggestions) {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'small-btn tinted dict-suggestion';
+                    btn.textContent = s;
+                    btn.addEventListener('click', () => this.check(s));
+                    sug.appendChild(btn);
+                }
+                card.appendChild(sug);
+            }
+
+            if (result.valid) {
+                const link = document.createElement('a');
+                link.className = 'dict-link dict-lookup';
+                link.href = `https://www.google.com/search?q=${encodeURIComponent(result.word.toLowerCase() + ' - Kézikönyvtár A magyar nyelv értelmező szótára')}`;
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+                link.textContent = t('dict.lookup');
+                card.appendChild(link);
+            }
+            container.appendChild(card);
+        }
+    },
+};
+
+// ===== MEGFIGYELŐ MÓD =====
+
+const Spectate = {
+    _resuming: false,
+
+    init() {
+        socket.on('spectate_joined', (data) => this.onJoined(data));
+        socket.on('spectate_left', () => this.onLeft());
+    },
+
+    onJoined(data) {
+        AppState.isSpectator = true;
+        AppState.spectateRoomId = data.room_id;
+        AppState.currentRoomId = data.room_id;
+        AppState.roomName = data.room_name;
+        AppState.gameStarted = true;
+        AppState.gameOverShown = false;
+        AppState.challengeModeEnabled = !!data.challenge_mode;
+        this._resuming = false;
+
+        Chat.clear();
+        (data.chat_messages || []).forEach(msg => Chat.onMessage(msg, true));
+
+        // A játékállapot közvetlenül ezután érkezik (game_state), az tölti fel a képernyőt
+        setGameRoomName(data.room_name);
+        showScreen('game-screen');
+        GameBoard.build();
+        BoardZoom.init();
+        GameBoard.updateSpectatorUi();
+    },
+
+    onLeft() {
+        document.getElementById('game-over-dialog').classList.add('hidden');
+        AppState.reset();
+        ChallengeUI.stopCountdown(); TurnTimerUI._stop();
+        showScreen('lobby-screen');
+        socket.emit('get_rooms');
+    },
+
+    // Újracsatlakozás után a megfigyelés újraindul (a szerver a lecsatlakozáskor törölte)
+    resume() {
+        this._resuming = true;
+        socket.emit('spectate_room', AppState.spectateCode
+            ? { code: AppState.spectateCode }
+            : { room_id: AppState.spectateRoomId });
+        setTimeout(() => { this._resuming = false; }, 4000);
+    },
+
+    // Ha az újraindítás sikertelen (a játék közben véget ért, a szoba megszűnt): vissza a lobbyba
+    onError() {
+        if (this._resuming && AppState.isSpectator) {
+            this._resuming = false;
+            this.onLeft();
+        }
+    },
+};
+
+// ===== PWA: service worker, telepítés =====
+
+const PWA = {
+    deferredPrompt: null,
+
+    isStandalone() {
+        return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    },
+
+    isIosSafari() {
+        const ua = navigator.userAgent;
+        return /iphone|ipad|ipod/i.test(ua) && /safari/i.test(ua) && !/crios|fxios|edgios/i.test(ua);
+    },
+
+    init() {
+        const secure = location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname);
+        if ('serviceWorker' in navigator && secure) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').catch(() => { /* nem kritikus */ });
+            });
+        }
+
+        const btn = document.getElementById('btn-install-app');
+        if (!btn) return;
+        if (this.isStandalone()) return;
+
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            this.deferredPrompt = e;
+            btn.classList.remove('hidden');
+        });
+        // iOS Safari nem küld telepítési eseményt: a gomb a kézi lépéseket mutatja
+        if (this.isIosSafari()) btn.classList.remove('hidden');
+
+        btn.addEventListener('click', async () => {
+            if (this.deferredPrompt) {
+                this.deferredPrompt.prompt();
+                try { await this.deferredPrompt.userChoice; } catch { /* ignore */ }
+                this.deferredPrompt = null;
+                btn.classList.add('hidden');
+            } else {
+                showMessage(t('pwa.ios_hint'), false, 9000);
+            }
+        });
+        window.addEventListener('appinstalled', () => {
+            this.deferredPrompt = null;
+            btn.classList.add('hidden');
+            showMessage(t('pwa.installed'));
+        });
+    },
+};
+
 // ===== INITIALIZATION =====
 
 SoundManager.init();
 SoundSettings.init();
 Dialogs.init();
+Tracker.init();
+Hint.init();
+Shortcuts.init();
+DictionaryTool.init();
+Leaderboard.init();
+Spectate.init();
+PWA.init();
 Auth.init();
 Lobby.init();
 WaitingRoom.init();

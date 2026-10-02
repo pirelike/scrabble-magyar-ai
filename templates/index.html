@@ -6,6 +6,14 @@
     <meta name="color-scheme" content="light dark">
     <meta name="theme-color" content="#f5f5f7">
     <title>Magyar Scrabble</title>
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Scrabble">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="description" content="Online többjátékos magyar Scrabble — Online multiplayer Hungarian Scrabble">
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23f5e6c8'/%3E%3Ctext x='30' y='42' font-family='-apple-system,Helvetica,Arial,sans-serif' font-size='30' font-weight='800' text-anchor='middle' fill='%231e293b'%3ESZ%3C/text%3E%3Ctext x='52' y='54' font-family='-apple-system,Helvetica,Arial,sans-serif' font-size='13' font-weight='700' text-anchor='middle' fill='%235b6577'%3E3%3C/text%3E%3C/svg%3E">
     <!-- A téma még a megjelenítés előtt beáll, így nincs világos→sötét villanás -->
     <script>
@@ -21,12 +29,21 @@
                     : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
             } catch (e) { /* localStorage tiltva */ }
             document.documentElement.setAttribute('data-theme', theme);
+            // Nyelv: mentett választás, különben a böngésző nyelve (magyar vagy angol)
+            var lang = 'hu';
+            try {
+                var savedLang = localStorage.getItem('scrabble-lang');
+                lang = (savedLang === 'hu' || savedLang === 'en')
+                    ? savedLang
+                    : (((navigator.language || 'hu').toLowerCase().indexOf('hu') === 0) ? 'hu' : 'en');
+            } catch (e) { /* localStorage tiltva */ }
+            document.documentElement.setAttribute('lang', lang);
         })();
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
 </head>
 <body>
     <!-- Ikonkészlet (egységes vonalas ikonok, színük a szövegszínt követi) -->
@@ -40,35 +57,51 @@
         <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></symbol>
         <symbol id="i-back" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></symbol>
         <symbol id="i-close" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></symbol>
+        <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></symbol>
+        <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></symbol>
+        <symbol id="i-shuffle" viewBox="0 0 24 24"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></symbol>
+        <symbol id="i-sort" viewBox="0 0 24 24"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="14" y2="12"/><line x1="4" y1="18" x2="8" y2="18"/></symbol>
+        <symbol id="i-eye" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></symbol>
+        <symbol id="i-share" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></symbol>
+        <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1V17h6v-.2c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2z"/></symbol>
+        <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></symbol>
+        <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></symbol>
+        <symbol id="i-robot" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="3"/><path d="M12 8V4"/><circle cx="12" cy="3" r="1"/><circle cx="8.5" cy="14" r="1.2"/><circle cx="15.5" cy="14" r="1.2"/></symbol>
+        <symbol id="i-undo" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></symbol>
     </svg>
 
     <div id="connection-banner" class="connection-banner hidden" role="status" aria-live="polite"></div>
 
     <!-- Téma váltó gomb (csak a bejelentkező képernyőn; a többin a felső sávban van) -->
-    <button class="theme-toggle btn-theme-toggle" id="theme-toggle" type="button" aria-label="Téma váltás">
+    <button class="theme-toggle btn-theme-toggle" id="theme-toggle" type="button" aria-label="Téma váltás" data-i18n-title="common.theme">
         <svg class="icon icon-sun"><use href="#i-sun"/></svg>
         <svg class="icon icon-moon"><use href="#i-moon"/></svg>
+    </button>
+
+    <!-- Nyelvváltó gomb (csak a bejelentkező képernyőn; a többin a felső sávban van) -->
+    <button class="theme-toggle lang-toggle btn-lang-toggle" id="lang-toggle" type="button" aria-label="Nyelv" data-i18n-title="common.language">
+        <span class="lang-code">HU</span>
     </button>
 
     <!-- Auth képernyő -->
     <div id="auth-screen" class="screen screen-center">
         <div class="center-box auth-box">
             <div class="brand-mark" aria-hidden="true">SZ<sub>3</sub></div>
-            <h1>Magyar Scrabble</h1>
+            <h1 data-i18n="app.title">Magyar Scrabble</h1>
 
             <!-- Tab gombok -->
             <div class="auth-tabs segmented">
-                <button class="auth-tab segment active" data-tab="login" type="button">Bejelentkezés</button>
-                <button class="auth-tab segment" data-tab="register" type="button">Regisztráció</button>
-                <button class="auth-tab segment" data-tab="guest" type="button">Vendég</button>
+                <button class="auth-tab segment active" data-tab="login" type="button" data-i18n="auth.tab_login">Bejelentkezés</button>
+                <button class="auth-tab segment" data-tab="register" type="button" data-i18n="auth.tab_register">Regisztráció</button>
+                <button class="auth-tab segment" data-tab="guest" type="button" data-i18n="auth.tab_guest">Vendég</button>
             </div>
 
             <!-- Bejelentkezés tab -->
             <div id="tab-login" class="auth-tab-content active">
                 <form id="login-form" autocomplete="on">
-                    <input type="email" id="login-email" placeholder="Email cím" autocomplete="email" required>
-                    <input type="password" id="login-password" placeholder="Jelszó" autocomplete="current-password" required>
-                    <button type="submit" id="btn-login">Bejelentkezés</button>
+                    <input type="email" id="login-email" placeholder="Email cím" data-i18n-placeholder="auth.email" autocomplete="email" required>
+                    <input type="password" id="login-password" placeholder="Jelszó" data-i18n-placeholder="auth.password" autocomplete="current-password" required>
+                    <button type="submit" id="btn-login" data-i18n="auth.tab_login">Bejelentkezés</button>
                 </form>
                 <div id="login-error" class="auth-error hidden"></div>
             </div>
@@ -77,27 +110,27 @@
             <div id="tab-register" class="auth-tab-content">
                 <!-- 1. lépés: Email -->
                 <div id="reg-step-1" class="reg-step">
-                    <p class="step-label">1/3 · Email cím megadása</p>
-                    <input type="email" id="reg-email" placeholder="Email cím" autocomplete="email">
-                    <button id="btn-reg-send-code" type="button">Kód küldése</button>
+                    <p class="step-label" data-i18n="auth.reg_step1">1/3 · Email cím megadása</p>
+                    <input type="email" id="reg-email" placeholder="Email cím" data-i18n-placeholder="auth.email" autocomplete="email">
+                    <button id="btn-reg-send-code" type="button" data-i18n="auth.send_code">Kód küldése</button>
                 </div>
 
                 <!-- 2. lépés: Kód beírása -->
                 <div id="reg-step-2" class="reg-step hidden">
-                    <p class="step-label">2/3 · Verifikációs kód beírása</p>
-                    <p class="step-info">A kódot elküldtük a megadott email címre.</p>
-                    <input type="text" id="reg-code" class="code-field" placeholder="6 számjegyű kód" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code">
-                    <button id="btn-reg-verify-code" type="button">Kód ellenőrzése</button>
-                    <button class="link-btn" id="btn-reg-resend" type="button">Új kód küldése</button>
+                    <p class="step-label" data-i18n="auth.reg_step2">2/3 · Verifikációs kód beírása</p>
+                    <p class="step-info" data-i18n="auth.code_sent">A kódot elküldtük a megadott email címre.</p>
+                    <input type="text" id="reg-code" class="code-field" placeholder="6 számjegyű kód" data-i18n-placeholder="auth.code_placeholder" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code">
+                    <button id="btn-reg-verify-code" type="button" data-i18n="auth.verify_code">Kód ellenőrzése</button>
+                    <button class="link-btn" id="btn-reg-resend" type="button" data-i18n="auth.resend_code">Új kód küldése</button>
                 </div>
 
                 <!-- 3. lépés: Jelszó + név -->
                 <div id="reg-step-3" class="reg-step hidden">
-                    <p class="step-label">3/3 · Fiók beállítása</p>
-                    <input type="text" id="reg-display-name" placeholder="Megjelenítési név" maxlength="20" autocomplete="username">
-                    <input type="password" id="reg-password" placeholder="Jelszó (min. 6 karakter)" autocomplete="new-password">
-                    <input type="password" id="reg-password2" placeholder="Jelszó újra" autocomplete="new-password">
-                    <button id="btn-reg-finish" type="button">Fiók létrehozása</button>
+                    <p class="step-label" data-i18n="auth.reg_step3">3/3 · Fiók beállítása</p>
+                    <input type="text" id="reg-display-name" placeholder="Megjelenítési név" data-i18n-placeholder="auth.display_name" maxlength="20" autocomplete="username">
+                    <input type="password" id="reg-password" placeholder="Jelszó (min. 6 karakter)" data-i18n-placeholder="auth.password_min" autocomplete="new-password">
+                    <input type="password" id="reg-password2" placeholder="Jelszó újra" data-i18n-placeholder="auth.password_again" autocomplete="new-password">
+                    <button id="btn-reg-finish" type="button" data-i18n="auth.create_account">Fiók létrehozása</button>
                 </div>
 
                 <div id="reg-error" class="auth-error hidden"></div>
@@ -105,9 +138,9 @@
 
             <!-- Vendég tab -->
             <div id="tab-guest" class="auth-tab-content">
-                <p class="step-info">Játssz vendégként – szobát nem hozhatsz létre, de csatlakozhatsz kóddal.</p>
-                <input type="text" id="guest-name" placeholder="A neved" maxlength="20" autocomplete="nickname">
-                <button id="btn-guest-enter" type="button">Belépés vendégként</button>
+                <p class="step-info" data-i18n="auth.guest_info">Játssz vendégként – szobát nem hozhatsz létre, de csatlakozhatsz kóddal.</p>
+                <input type="text" id="guest-name" placeholder="A neved" data-i18n-placeholder="auth.guest_name" maxlength="20" autocomplete="nickname">
+                <button id="btn-guest-enter" type="button" data-i18n="auth.guest_enter">Belépés vendégként</button>
                 <div id="guest-error" class="auth-error hidden"></div>
             </div>
         </div>
@@ -118,34 +151,44 @@
         <!-- Felső sáv -->
         <header class="app-topbar app-topbar-lobby">
             <div class="topbar-left">
-                <h1 class="topbar-title">Magyar Scrabble</h1>
+                <h1 class="topbar-title" data-i18n="app.title">Magyar Scrabble</h1>
             </div>
             <!-- Központi navigáció -->
-            <nav class="lobby-nav segmented" id="lobby-nav" aria-label="Lobby">
-                <button class="lobby-nav-tab segment active" data-lobby-tab="home" type="button">Kezdőlap</button>
-                <button class="lobby-nav-tab segment" data-lobby-tab="create" id="nav-tab-create" type="button">Új szoba</button>
-                <button class="lobby-nav-tab segment" data-lobby-tab="saved" id="nav-tab-saved" type="button">Mentett játékok</button>
+            <nav class="lobby-nav segmented" id="lobby-nav" aria-label="Lobby" data-i18n-aria="lobby.nav_label">
+                <button class="lobby-nav-tab segment active" data-lobby-tab="home" type="button" data-i18n="lobby.tab_home">Kezdőlap</button>
+                <button class="lobby-nav-tab segment" data-lobby-tab="create" id="nav-tab-create" type="button" data-i18n="lobby.tab_create">Új szoba</button>
+                <button class="lobby-nav-tab segment" data-lobby-tab="saved" id="nav-tab-saved" type="button" data-i18n="lobby.tab_saved">Mentett játékok</button>
                 <button class="lobby-nav-tab segment" data-lobby-tab="friends" id="nav-tab-friends" type="button">
-                    Barátok
+                    <span data-i18n="lobby.tab_friends">Barátok</span>
                     <span class="friend-badge hidden" id="friend-badge">0</span>
                 </button>
-                <button class="lobby-nav-tab segment hidden" data-lobby-tab="room" id="nav-tab-room" type="button" disabled>Nyitott szoba</button>
+                <button class="lobby-nav-tab segment" data-lobby-tab="leaderboard" id="nav-tab-leaderboard" type="button" data-i18n="lobby.tab_leaderboard">Ranglista</button>
+                <button class="lobby-nav-tab segment hidden" data-lobby-tab="room" id="nav-tab-room" type="button" disabled data-i18n="lobby.tab_room">Nyitott szoba</button>
             </nav>
             <div class="topbar-right" id="topbar-right">
                 <div class="topbar-user">
                     <span class="topbar-user-name" id="lobby-user-name"></span>
                 </div>
-                <button id="btn-profile" class="topbar-btn" type="button" aria-label="Profil" title="Profilom">
+                <button id="btn-install-app" class="topbar-btn hidden" type="button" aria-label="Alkalmazás telepítése" title="Alkalmazás telepítése" data-i18n-title="pwa.install">
+                    <svg class="icon"><use href="#i-download"/></svg>
+                </button>
+                <button id="btn-profile" class="topbar-btn" type="button" aria-label="Profil" title="Profilom" data-i18n-title="common.profile">
                     <svg class="icon"><use href="#i-user"/></svg>
                 </button>
-                <button class="topbar-btn btn-sound-settings" type="button" aria-label="Hangbeállítások" title="Hangbeállítások">
+                <button class="topbar-btn btn-dictionary" type="button" aria-label="Szótár" title="Szótár" data-i18n-title="dict.title">
+                    <svg class="icon"><use href="#i-book"/></svg>
+                </button>
+                <button class="topbar-btn btn-sound-settings" type="button" aria-label="Hangbeállítások" title="Hangbeállítások" data-i18n-title="common.sound">
                     <svg class="icon"><use href="#i-volume"/></svg>
                 </button>
-                <button id="theme-toggle-lobby" class="topbar-btn btn-theme-toggle" type="button" aria-label="Téma váltás" title="Téma váltás">
+                <button class="topbar-btn btn-lang-toggle" type="button" aria-label="Nyelv" title="Nyelv" data-i18n-title="common.language">
+                    <span class="lang-code">HU</span>
+                </button>
+                <button id="theme-toggle-lobby" class="topbar-btn btn-theme-toggle" type="button" aria-label="Téma váltás" title="Téma váltás" data-i18n-title="common.theme">
                     <svg class="icon icon-sun"><use href="#i-sun"/></svg>
                     <svg class="icon icon-moon"><use href="#i-moon"/></svg>
                 </button>
-                <button id="btn-logout" class="topbar-btn topbar-btn-danger" type="button" aria-label="Kijelentkezés" title="Kijelentkezés">
+                <button id="btn-logout" class="topbar-btn topbar-btn-danger" type="button" aria-label="Kijelentkezés" title="Kijelentkezés" data-i18n-title="common.logout">
                     <svg class="icon"><use href="#i-logout"/></svg>
                 </button>
             </div>
@@ -157,22 +200,38 @@
                 <!-- Csatlakozás kóddal -->
                 <section class="lobby-section">
                     <div class="section-header">
-                        <h2 class="section-title">Csatlakozás kóddal</h2>
+                        <h2 class="section-title" data-i18n="lobby.join_with_code">Csatlakozás kóddal</h2>
                     </div>
                     <div class="code-input-row">
-                        <input type="text" id="join-code-input" placeholder="6 számjegyű kód" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" autocomplete="off">
-                        <button id="btn-join-by-code" class="btn-join" type="button">Csatlakozás</button>
+                        <input type="text" id="join-code-input" placeholder="6 számjegyű kód" data-i18n-placeholder="auth.code_placeholder" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" autocomplete="off">
+                        <button id="btn-join-by-code" class="btn-join" type="button" data-i18n="lobby.join">Csatlakozás</button>
+                        <button id="btn-spectate-by-code" class="secondary" type="button" data-i18n-title="lobby.spectate_hint" title="Folyamatban lévő játék megfigyelése kóddal">
+                            <svg class="icon"><use href="#i-eye"/></svg>
+                            <span data-i18n="lobby.spectate">Megfigyelés</span>
+                        </button>
                     </div>
                 </section>
 
                 <!-- Nyitott szobák -->
                 <section class="lobby-section">
                     <div class="section-header">
-                        <h2 class="section-title">Nyitott szobák</h2>
+                        <h2 class="section-title" data-i18n="lobby.open_rooms">Nyitott szobák</h2>
                     </div>
                     <div id="rooms-container" class="rooms-list">
                         <div class="empty-state">
-                            <p class="empty-msg">Nincs elérhető szoba.</p>
+                            <p class="empty-msg" data-i18n="lobby.no_rooms">Nincs elérhető szoba.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Élő játékok (megfigyelhető, nyilvános, folyamatban lévő játékok) -->
+                <section class="lobby-section" id="live-games-section">
+                    <div class="section-header">
+                        <h2 class="section-title" data-i18n="lobby.live_games">Élő játékok</h2>
+                    </div>
+                    <div id="live-games-container" class="rooms-list">
+                        <div class="empty-state">
+                            <p class="empty-msg" data-i18n="lobby.no_live_games">Nincs folyamatban lévő nyilvános játék.</p>
                         </div>
                     </div>
                 </section>
@@ -180,11 +239,11 @@
                 <!-- Korábbi meccsek (regisztrált felhasználóknak) -->
                 <section class="lobby-section" id="home-history-section">
                     <div class="section-header">
-                        <h2 class="section-title">Korábbi meccsek</h2>
+                        <h2 class="section-title" data-i18n="lobby.history">Korábbi meccsek</h2>
                     </div>
                     <div id="home-history-container" class="history-list">
                         <div class="empty-state">
-                            <p class="empty-msg">Nincs még befejezett játék.</p>
+                            <p class="empty-msg" data-i18n="common.no_finished_games">Nincs még befejezett játék.</p>
                         </div>
                     </div>
                 </section>
@@ -194,43 +253,66 @@
             <div class="lobby-tab-panel" id="lobby-panel-create">
                 <section class="lobby-section lobby-create-section">
                     <div class="section-header">
-                        <h2 class="section-title">Új szoba létrehozása</h2>
+                        <h2 class="section-title" data-i18n="create.title">Új szoba létrehozása</h2>
                     </div>
                     <div class="create-room-form">
                         <div class="form-group">
-                            <label for="room-name" class="form-label">Szoba neve</label>
-                            <input type="text" id="room-name" class="form-input" placeholder="Szoba" maxlength="30">
+                            <label for="room-name" class="form-label" data-i18n="create.room_name">Szoba neve</label>
+                            <input type="text" id="room-name" class="form-input" placeholder="Szoba" data-i18n-placeholder="create.room_placeholder" maxlength="30">
                         </div>
 
                         <div class="form-row">
                             <div class="form-group">
-                                <label for="room-max-players" class="form-label">Játékosok száma</label>
+                                <label for="room-max-players" class="form-label" data-i18n="create.players">Játékosok száma</label>
                                 <select id="room-max-players" class="form-select">
-                                    <option value="2">2 játékos</option>
-                                    <option value="3">3 játékos</option>
-                                    <option value="4" selected>4 játékos</option>
+                                    <option value="2" data-i18n="create.n_players_2">2 játékos</option>
+                                    <option value="3" data-i18n="create.n_players_3">3 játékos</option>
+                                    <option value="4" selected data-i18n="create.n_players_4">4 játékos</option>
                                 </select>
                             </div>
 
                             <div class="form-group">
-                                <label for="room-turn-limit" class="form-label">Körönkénti időlimit</label>
+                                <label for="room-turn-limit" class="form-label" data-i18n="create.turn_limit">Körönkénti időlimit</label>
                                 <select id="room-turn-limit" class="form-select">
-                                    <option value="0">Nincs időlimit</option>
-                                    <option value="60">1 perc</option>
-                                    <option value="90">1,5 perc</option>
-                                    <option value="120" selected>2 perc</option>
-                                    <option value="180">3 perc</option>
-                                    <option value="300">5 perc</option>
+                                    <option value="0" data-i18n="create.limit_none">Nincs időlimit</option>
+                                    <option value="60" data-i18n="create.limit_60">1 perc</option>
+                                    <option value="90" data-i18n="create.limit_90">1,5 perc</option>
+                                    <option value="120" selected data-i18n="create.limit_120">2 perc</option>
+                                    <option value="180" data-i18n="create.limit_180">3 perc</option>
+                                    <option value="300" data-i18n="create.limit_300">5 perc</option>
                                 </select>
                             </div>
                         </div>
+
+                        <!-- Számítógépes ellenfelek -->
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="room-ai-count" class="form-label" data-i18n="create.ai_count">Robot ellenfelek</label>
+                                <select id="room-ai-count" class="form-select">
+                                    <option value="0" selected data-i18n="create.ai_none">Nincs</option>
+                                    <option value="1" data-i18n="create.ai_1">1 robot</option>
+                                    <option value="2" data-i18n="create.ai_2">2 robot</option>
+                                    <option value="3" data-i18n="create.ai_3">3 robot</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="room-ai-difficulty" class="form-label" data-i18n="create.ai_difficulty">Robot nehézsége</label>
+                                <select id="room-ai-difficulty" class="form-select">
+                                    <option value="easy" data-i18n="ai.easy">Könnyű</option>
+                                    <option value="medium" selected data-i18n="ai.medium">Közepes</option>
+                                    <option value="hard" data-i18n="ai.hard">Nehéz</option>
+                                </select>
+                            </div>
+                        </div>
+                        <p class="form-hint" id="room-ai-hint" data-i18n="create.ai_hint">Egyedül is játszhatsz a robotok ellen. A robotok is foglalnak egy férőhelyet a szobában.</p>
 
                         <div class="settings-group">
                             <div class="toggle-row">
                                 <label class="toggle-label" for="room-challenge-mode">
                                     <div class="toggle-info">
-                                        <span class="toggle-name">Kihívás mód</span>
-                                        <span class="toggle-desc">A játékosok szavaznak a szavak érvényességéről</span>
+                                        <span class="toggle-name" data-i18n="create.challenge_mode">Kihívás mód</span>
+                                        <span class="toggle-desc" data-i18n="create.challenge_desc">A játékosok szavaznak a szavak érvényességéről</span>
                                     </div>
                                     <div class="toggle-switch">
                                         <input type="checkbox" id="room-challenge-mode">
@@ -242,8 +324,8 @@
                             <div class="toggle-row">
                                 <label class="toggle-label" for="room-private">
                                     <div class="toggle-info">
-                                        <span class="toggle-name">Privát szoba</span>
-                                        <span class="toggle-desc">Csak meghívó kóddal csatlakozható</span>
+                                        <span class="toggle-name" data-i18n="create.private">Privát szoba</span>
+                                        <span class="toggle-desc" data-i18n="create.private_desc">Csak meghívó kóddal csatlakozható</span>
                                     </div>
                                     <div class="toggle-switch">
                                         <input type="checkbox" id="room-private">
@@ -253,7 +335,7 @@
                             </div>
                         </div>
 
-                        <button id="btn-create-room" class="btn-create" type="button">Szoba létrehozása</button>
+                        <button id="btn-create-room" class="btn-create" type="button" data-i18n="create.submit">Szoba létrehozása</button>
                     </div>
                 </section>
             </div>
@@ -262,11 +344,11 @@
             <div class="lobby-tab-panel" id="lobby-panel-saved">
                 <section class="lobby-section">
                     <div class="section-header">
-                        <h2 class="section-title">Mentett játékok</h2>
+                        <h2 class="section-title" data-i18n="lobby.tab_saved">Mentett játékok</h2>
                     </div>
                     <div id="saved-games-container" class="saved-games-list">
                         <div class="empty-state">
-                            <p class="empty-msg">Nincs mentett játék.</p>
+                            <p class="empty-msg" data-i18n="saved.none">Nincs mentett játék.</p>
                         </div>
                     </div>
                 </section>
@@ -276,36 +358,57 @@
             <div class="lobby-tab-panel" id="lobby-panel-friends">
                 <section class="lobby-section">
                     <div class="section-header">
-                        <h2 class="section-title">Barátok keresése</h2>
+                        <h2 class="section-title" data-i18n="friends.find">Barátok keresése</h2>
                     </div>
                     <div class="friend-search-row">
-                        <input type="text" id="friend-search-input" placeholder="Név vagy email" maxlength="30" autocomplete="off">
-                        <button id="btn-search-friends" class="small-btn" type="button">Keresés</button>
+                        <input type="text" id="friend-search-input" placeholder="Név vagy email" data-i18n-placeholder="friends.search_placeholder" maxlength="30" autocomplete="off">
+                        <button id="btn-search-friends" class="small-btn" type="button" data-i18n="common.search">Keresés</button>
                     </div>
                     <div id="friend-search-results" class="friend-list hidden"></div>
                 </section>
 
                 <section class="lobby-section hidden" id="friends-pending-section">
                     <div class="section-header">
-                        <h2 class="section-title">Barátkérések</h2>
+                        <h2 class="section-title" data-i18n="friends.requests">Barátkérések</h2>
                     </div>
                     <div id="friends-pending-container" class="friend-list"></div>
                 </section>
 
                 <section class="lobby-section hidden" id="friends-sent-section">
                     <div class="section-header">
-                        <h2 class="section-title">Elküldött kérések</h2>
+                        <h2 class="section-title" data-i18n="friends.sent">Elküldött kérések</h2>
                     </div>
                     <div id="friends-sent-container" class="friend-list"></div>
                 </section>
 
                 <section class="lobby-section">
                     <div class="section-header">
-                        <h2 class="section-title">Barátlista</h2>
+                        <h2 class="section-title" data-i18n="friends.list">Barátlista</h2>
                     </div>
                     <div id="friends-list-container" class="friend-list">
                         <div class="empty-state">
-                            <p class="empty-msg">Még nincsenek barátaid.</p>
+                            <p class="empty-msg" data-i18n="friends.none">Még nincsenek barátaid.</p>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- TAB 5: Ranglista -->
+            <div class="lobby-tab-panel" id="lobby-panel-leaderboard">
+                <section class="lobby-section">
+                    <div class="section-header">
+                        <h2 class="section-title" data-i18n="lb.title">Ranglista</h2>
+                    </div>
+                    <div class="segmented lb-metrics" id="lb-metrics" role="tablist" aria-label="Rangsor" data-i18n-aria="lb.metrics_label">
+                        <button class="segment lb-metric active" data-metric="wins" type="button" data-i18n="lb.wins">Győzelmek</button>
+                        <button class="segment lb-metric" data-metric="win_rate" type="button" data-i18n="lb.win_rate">Nyerési arány</button>
+                        <button class="segment lb-metric" data-metric="avg_score" type="button" data-i18n="lb.avg_score">Átlagpont</button>
+                        <button class="segment lb-metric" data-metric="best_game" type="button" data-i18n="lb.best_game">Legjobb játék</button>
+                    </div>
+                    <p class="form-hint" id="lb-note"></p>
+                    <div id="leaderboard-container" class="leaderboard-list">
+                        <div class="empty-state">
+                            <p class="empty-msg" data-i18n="lb.empty">Még nincs ranglista — játssz le néhány meccset!</p>
                         </div>
                     </div>
                 </section>
@@ -317,23 +420,29 @@
     <div id="waiting-screen" class="screen screen-column hidden">
         <header class="app-topbar">
             <div class="topbar-left">
-                <button id="btn-leave-room" class="topbar-btn" type="button" aria-label="Kilépés a szobából" title="Kilépés a szobából">
+                <button id="btn-leave-room" class="topbar-btn" type="button" aria-label="Kilépés a szobából" title="Kilépés a szobából" data-i18n-title="wait.leave">
                     <svg class="icon"><use href="#i-back"/></svg>
                 </button>
-                <h1 class="topbar-title" id="waiting-room-name">Szoba</h1>
+                <h1 class="topbar-title" id="waiting-room-name"></h1>
             </div>
             <div class="topbar-right">
-                <button class="topbar-btn btn-profile-nav" type="button" aria-label="Profil" title="Profilom">
+                <button class="topbar-btn btn-profile-nav" type="button" aria-label="Profil" title="Profilom" data-i18n-title="common.profile">
                     <svg class="icon"><use href="#i-user"/></svg>
                 </button>
-                <button class="topbar-btn btn-sound-settings" type="button" aria-label="Hangbeállítások" title="Hangbeállítások">
+                <button class="topbar-btn btn-dictionary" type="button" aria-label="Szótár" title="Szótár" data-i18n-title="dict.title">
+                    <svg class="icon"><use href="#i-book"/></svg>
+                </button>
+                <button class="topbar-btn btn-sound-settings" type="button" aria-label="Hangbeállítások" title="Hangbeállítások" data-i18n-title="common.sound">
                     <svg class="icon"><use href="#i-volume"/></svg>
                 </button>
-                <button class="topbar-btn btn-theme-toggle" type="button" aria-label="Téma váltás" title="Téma váltás">
+                <button class="topbar-btn btn-lang-toggle" type="button" aria-label="Nyelv" title="Nyelv" data-i18n-title="common.language">
+                    <span class="lang-code">HU</span>
+                </button>
+                <button class="topbar-btn btn-theme-toggle" type="button" aria-label="Téma váltás" title="Téma váltás" data-i18n-title="common.theme">
                     <svg class="icon icon-sun"><use href="#i-sun"/></svg>
                     <svg class="icon icon-moon"><use href="#i-moon"/></svg>
                 </button>
-                <button class="topbar-btn topbar-btn-danger btn-logout-nav" type="button" aria-label="Kijelentkezés" title="Kijelentkezés">
+                <button class="topbar-btn topbar-btn-danger btn-logout-nav" type="button" aria-label="Kijelentkezés" title="Kijelentkezés" data-i18n-title="common.logout">
                     <svg class="icon"><use href="#i-logout"/></svg>
                 </button>
             </div>
@@ -341,20 +450,26 @@
         <main class="waiting-main">
             <div class="center-box waiting-card">
                 <div class="waiting-badges">
-                    <div id="waiting-challenge-mode" class="room-badge hidden">Kihívás</div>
-                    <div id="waiting-private-mode" class="room-badge hidden">Privát</div>
+                    <div id="waiting-challenge-mode" class="room-badge hidden" data-i18n="room.badge_challenge">Kihívás</div>
+                    <div id="waiting-private-mode" class="room-badge hidden" data-i18n="room.badge_private">Privát</div>
                     <div id="waiting-turn-limit" class="room-badge hidden"></div>
                 </div>
                 <div id="room-code-display" class="room-code-section hidden">
-                    <p class="code-label">Csatlakozási kód</p>
+                    <p class="code-label" data-i18n="wait.join_code">Csatlakozási kód</p>
                     <div class="code-value" id="room-code-value"></div>
-                    <button id="btn-copy-code" class="small-btn tinted" type="button">Másolás</button>
+                    <div class="code-actions">
+                        <button id="btn-copy-code" class="small-btn tinted" type="button" data-i18n="common.copy">Másolás</button>
+                        <button id="btn-copy-link" class="small-btn tinted" type="button">
+                            <svg class="icon"><use href="#i-share"/></svg>
+                            <span data-i18n="wait.invite_link">Meghívó link</span>
+                        </button>
+                    </div>
                 </div>
                 <div id="waiting-players" class="waiting-players"></div>
                 <div id="invite-friends-list" class="friend-list hidden"></div>
                 <div class="waiting-actions">
-                    <button id="btn-invite-friends" class="secondary hidden" type="button">Barátok meghívása</button>
-                    <button id="btn-start-game" class="hidden" type="button">Játék indítása</button>
+                    <button id="btn-invite-friends" class="secondary hidden" type="button" data-i18n="wait.invite_friends">Barátok meghívása</button>
+                    <button id="btn-start-game" class="hidden" type="button" data-i18n="wait.start">Játék indítása</button>
                 </div>
             </div>
         </main>
@@ -364,23 +479,29 @@
     <div id="game-screen" class="screen screen-column hidden">
         <header class="app-topbar">
             <div class="topbar-left">
-                <button id="btn-exit-game" class="topbar-btn" type="button" aria-label="Kilépés a játékból" title="Kilépés">
+                <button id="btn-exit-game" class="topbar-btn" type="button" aria-label="Kilépés a játékból" title="Kilépés" data-i18n-title="game.leave">
                     <svg class="icon"><use href="#i-back"/></svg>
                 </button>
-                <h1 class="topbar-title game-room-name" id="game-room-name">Szoba</h1>
+                <h1 class="topbar-title game-room-name" id="game-room-name"></h1>
             </div>
             <div class="topbar-right">
-                <button class="topbar-btn btn-profile-nav" type="button" aria-label="Profil" title="Profilom">
+                <button class="topbar-btn btn-profile-nav" type="button" aria-label="Profil" title="Profilom" data-i18n-title="common.profile">
                     <svg class="icon"><use href="#i-user"/></svg>
                 </button>
-                <button class="topbar-btn btn-sound-settings" type="button" aria-label="Hangbeállítások" title="Hangbeállítások">
+                <button class="topbar-btn btn-dictionary" type="button" aria-label="Szótár" title="Szótár" data-i18n-title="dict.title">
+                    <svg class="icon"><use href="#i-book"/></svg>
+                </button>
+                <button class="topbar-btn btn-sound-settings" type="button" aria-label="Hangbeállítások" title="Hangbeállítások" data-i18n-title="common.sound">
                     <svg class="icon"><use href="#i-volume"/></svg>
                 </button>
-                <button id="theme-toggle-game" class="topbar-btn btn-theme-toggle" type="button" aria-label="Téma váltás" title="Téma váltás">
+                <button class="topbar-btn btn-lang-toggle" type="button" aria-label="Nyelv" title="Nyelv" data-i18n-title="common.language">
+                    <span class="lang-code">HU</span>
+                </button>
+                <button id="theme-toggle-game" class="topbar-btn btn-theme-toggle" type="button" aria-label="Téma váltás" title="Téma váltás" data-i18n-title="common.theme">
                     <svg class="icon icon-sun"><use href="#i-sun"/></svg>
                     <svg class="icon icon-moon"><use href="#i-moon"/></svg>
                 </button>
-                <button class="topbar-btn topbar-btn-danger btn-logout-nav" type="button" aria-label="Kijelentkezés" title="Kijelentkezés">
+                <button class="topbar-btn topbar-btn-danger btn-logout-nav" type="button" aria-label="Kijelentkezés" title="Kijelentkezés" data-i18n-title="common.logout">
                     <svg class="icon"><use href="#i-logout"/></svg>
                 </button>
             </div>
@@ -390,39 +511,47 @@
             <aside class="side-panel">
                 <!-- Álló nézetben (telefon, tablet) a felső sáv helyett: szobanév + gombok egy sorban a panel alján -->
                 <div class="game-nav">
-                    <span class="game-nav-title game-room-name">Szoba</span>
+                    <span class="game-nav-title game-room-name"></span>
                     <div class="game-nav-actions">
-                        <button class="topbar-btn btn-exit-panel" type="button" aria-label="Kilépés a játékból" title="Kilépés">
+                        <button class="topbar-btn btn-exit-panel" type="button" aria-label="Kilépés a játékból" title="Kilépés" data-i18n-title="game.leave">
                             <svg class="icon"><use href="#i-back"/></svg>
                         </button>
-                        <button class="topbar-btn btn-profile-nav" type="button" aria-label="Profil" title="Profilom">
+                        <button class="topbar-btn btn-profile-nav" type="button" aria-label="Profil" title="Profilom" data-i18n-title="common.profile">
                             <svg class="icon"><use href="#i-user"/></svg>
                         </button>
-                        <button class="topbar-btn btn-sound-settings" type="button" aria-label="Hangbeállítások" title="Hangbeállítások">
+                        <button class="topbar-btn btn-dictionary" type="button" aria-label="Szótár" title="Szótár" data-i18n-title="dict.title">
+                            <svg class="icon"><use href="#i-book"/></svg>
+                        </button>
+                        <button class="topbar-btn btn-sound-settings" type="button" aria-label="Hangbeállítások" title="Hangbeállítások" data-i18n-title="common.sound">
                             <svg class="icon"><use href="#i-volume"/></svg>
                         </button>
-                        <button class="topbar-btn btn-theme-toggle" type="button" aria-label="Téma váltás" title="Téma váltás">
+                        <button class="topbar-btn btn-theme-toggle" type="button" aria-label="Téma váltás" title="Téma váltás" data-i18n-title="common.theme">
                             <svg class="icon icon-sun"><use href="#i-sun"/></svg>
                             <svg class="icon icon-moon"><use href="#i-moon"/></svg>
                         </button>
-                        <button class="topbar-btn topbar-btn-danger btn-logout-nav" type="button" aria-label="Kijelentkezés" title="Kijelentkezés">
+                        <button class="topbar-btn topbar-btn-danger btn-logout-nav" type="button" aria-label="Kijelentkezés" title="Kijelentkezés" data-i18n-title="common.logout">
                             <svg class="icon"><use href="#i-logout"/></svg>
                         </button>
                     </div>
                 </div>
+                <!-- Megfigyelő mód jelzés -->
+                <div id="spectator-banner" class="spectator-banner hidden" role="status">
+                    <svg class="icon"><use href="#i-eye"/></svg>
+                    <span id="spectator-banner-text"></span>
+                </div>
                 <section class="panel-status">
-                    <h2 class="panel-heading">Pontok</h2>
+                    <h2 class="panel-heading" data-i18n="game.scores">Pontok</h2>
                     <div id="scoreboard" class="scoreboard"></div>
                     <div class="game-info">
-                        <div id="tiles-remaining">Zsák: -</div>
+                        <div id="tiles-remaining"></div>
                         <div id="current-turn">-</div>
                         <div id="last-action" class="last-action"></div>
                     </div>
                     <!-- Kör időlimit -->
                     <div id="turn-timer-display" class="turn-timer-display hidden">
-                        <span class="turn-timer-label">Hátralévő idő:</span>
+                        <span class="turn-timer-label" data-i18n="game.time_left">Hátralévő idő:</span>
                         <span class="turn-timer-seconds">—</span>
-                        <span>mp</span>
+                        <span data-i18n="game.seconds_short">mp</span>
                     </div>
                 </section>
                 <!-- Challenge szekció -->
@@ -431,19 +560,45 @@
                     <div id="challenge-timer" class="challenge-timer"></div>
                     <div id="challenge-buttons" class="challenge-buttons"></div>
                 </div>
-                <div class="actions" role="toolbar" aria-label="Lépések">
-                    <button id="btn-place" class="action-btn" type="button" disabled>Lerak</button>
-                    <button id="btn-exchange" class="action-btn" type="button" disabled>Csere</button>
-                    <button id="btn-pass" class="action-btn" type="button" disabled>Passz</button>
-                    <button id="btn-recall" class="action-btn" type="button">Visszavon</button>
+                <div class="actions" id="main-actions" role="toolbar" aria-label="Lépések" data-i18n-title="game.actions">
+                    <button id="btn-place" class="action-btn" type="button" disabled data-i18n="game.place">Lerak</button>
+                    <button id="btn-exchange" class="action-btn" type="button" disabled data-i18n="game.exchange">Csere</button>
+                    <button id="btn-pass" class="action-btn" type="button" disabled data-i18n="game.pass">Passz</button>
+                    <button id="btn-recall" class="action-btn" type="button" data-i18n="game.recall">Visszavon</button>
                 </div>
+                <!-- Élő pontszám-előnézet a félkész lerakáshoz (a lépés-gombok alatt, hogy azok helye ne ugorjon) -->
+                <div id="move-preview" class="move-preview hidden" aria-live="polite"></div>
+                <!-- Segédeszközök: keverés, rendezés, zsetonszámláló, tipp -->
+                <div class="actions actions-tools" id="tool-actions" role="toolbar" aria-label="Eszközök" data-i18n-title="game.tools">
+                    <button id="btn-shuffle" class="tool-btn" type="button" title="Keverés (S)" data-i18n-title="game.shuffle_title">
+                        <svg class="icon"><use href="#i-shuffle"/></svg>
+                        <span data-i18n="game.shuffle">Keverés</span>
+                    </button>
+                    <button id="btn-sort" class="tool-btn" type="button" title="Rendezés" data-i18n-title="game.sort_title">
+                        <svg class="icon"><use href="#i-sort"/></svg>
+                        <span data-i18n="game.sort">Rendez</span>
+                    </button>
+                    <button id="btn-tracker" class="tool-btn" type="button" title="Mi van még a zsákban?" data-i18n-title="game.tracker_title">
+                        <svg class="icon"><use href="#i-grid"/></svg>
+                        <span data-i18n="game.tracker">Zsetonok</span>
+                    </button>
+                    <button id="btn-hint" class="tool-btn hidden" type="button" title="Tipp kérése" data-i18n-title="game.hint_title">
+                        <svg class="icon"><use href="#i-bulb"/></svg>
+                        <span data-i18n="game.hint">Tipp</span>
+                    </button>
+                </div>
+                <!-- Lépéstörténet -->
+                <details class="history-section" id="history-section">
+                    <summary class="panel-heading" data-i18n="game.history">Lépések</summary>
+                    <ol id="move-history" class="move-history"></ol>
+                </details>
                 <!-- Chat -->
                 <section class="chat-section">
-                    <h3 class="panel-heading">Chat</h3>
+                    <h3 class="panel-heading" data-i18n="game.chat">Chat</h3>
                     <div id="chat-messages" class="chat-messages" aria-live="polite"></div>
                     <div class="chat-input-row">
-                        <input type="text" id="chat-input" placeholder="Üzenet" maxlength="200" autocomplete="off" enterkeyhint="send">
-                        <button id="btn-send-chat" class="small-btn" type="button">Küldés</button>
+                        <input type="text" id="chat-input" placeholder="Üzenet" data-i18n-placeholder="game.chat_placeholder" maxlength="200" autocomplete="off" enterkeyhint="send">
+                        <button id="btn-send-chat" class="small-btn" type="button" data-i18n="common.send">Küldés</button>
                     </div>
                 </section>
             </aside>
@@ -452,7 +607,7 @@
             <div class="board-area">
                 <div id="board-zoom-container" class="board-zoom-container">
                     <div id="board" class="board"></div>
-                    <button id="board-zoom-reset" class="board-zoom-reset hidden" type="button" aria-label="Nagyítás visszaállítása">1×</button>
+                    <button id="board-zoom-reset" class="board-zoom-reset hidden" type="button" aria-label="Nagyítás visszaállítása" data-i18n-title="game.zoom_reset">1×</button>
                 </div>
                 <!-- Betűtartó -->
                 <div id="hand" class="hand"></div>
@@ -462,7 +617,7 @@
         <!-- Joker dialog -->
         <div id="blank-dialog" class="dialog dialog-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="blank-dialog-title">
             <div class="dialog-content">
-                <h3 id="blank-dialog-title">Válaszd ki a betűt</h3>
+                <h3 id="blank-dialog-title" data-i18n="game.choose_letter">Válaszd ki a betűt</h3>
                 <div id="blank-letters" class="blank-letters"></div>
             </div>
         </div>
@@ -470,18 +625,18 @@
         <!-- Kilépés megerősítő dialog -->
         <div id="exit-dialog" class="dialog dialog-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="exit-dialog-title">
             <div class="dialog-content">
-                <h3 id="exit-dialog-title">Kilépés</h3>
-                <p id="exit-dialog-text" class="dialog-text">Biztosan ki akarsz lépni?</p>
+                <h3 id="exit-dialog-title" data-i18n="exit.title">Kilépés</h3>
+                <p id="exit-dialog-text" class="dialog-text" data-i18n="exit.sure">Biztosan ki akarsz lépni?</p>
                 <!-- Owner buttons -->
                 <div id="exit-owner-buttons" class="dialog-buttons dialog-buttons-vertical hidden">
-                    <button id="btn-exit-save" class="btn-primary" type="button">Mentés és kilépés</button>
-                    <button id="btn-exit-nosave" class="danger" type="button">Kilépés mentés nélkül</button>
-                    <button id="btn-exit-cancel-owner" class="secondary" type="button">Mégsem</button>
+                    <button id="btn-exit-save" class="btn-primary" type="button" data-i18n="exit.save_leave">Mentés és kilépés</button>
+                    <button id="btn-exit-nosave" class="danger" type="button" data-i18n="exit.leave_nosave">Kilépés mentés nélkül</button>
+                    <button id="btn-exit-cancel-owner" class="secondary" type="button" data-i18n="common.cancel">Mégsem</button>
                 </div>
                 <!-- Non-owner buttons -->
                 <div id="exit-player-buttons" class="dialog-buttons hidden">
-                    <button id="btn-exit-cancel" class="secondary" type="button">Mégsem</button>
-                    <button id="btn-exit-confirm" class="danger" type="button">Kilépés</button>
+                    <button id="btn-exit-cancel" class="secondary" type="button" data-i18n="common.cancel">Mégsem</button>
+                    <button id="btn-exit-confirm" class="danger" type="button" data-i18n="exit.title">Kilépés</button>
                 </div>
             </div>
         </div>
@@ -489,9 +644,10 @@
         <!-- Játék vége dialog -->
         <div id="game-over-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="game-over-title">
             <div class="dialog-content">
-                <h2 id="game-over-title">Játék vége!</h2>
+                <h2 id="game-over-title" data-i18n="game.over">Játék vége!</h2>
                 <div id="final-scores"></div>
-                <button id="btn-back-lobby" type="button">Vissza a lobbyba</button>
+                <div id="final-stats" class="final-stats"></div>
+                <button id="btn-back-lobby" type="button" data-i18n="game.back_lobby">Vissza a lobbyba</button>
             </div>
         </div>
     </div>
@@ -500,23 +656,26 @@
     <div id="profile-screen" class="screen screen-column hidden">
         <header class="app-topbar">
             <div class="topbar-left">
-                <button id="btn-profile-back" class="topbar-btn" type="button" aria-label="Vissza a lobbyba" title="Vissza a lobbyba">
+                <button id="btn-profile-back" class="topbar-btn" type="button" aria-label="Vissza a lobbyba" title="Vissza a lobbyba" data-i18n-title="profile.back">
                     <svg class="icon"><use href="#i-back"/></svg>
                 </button>
-                <h1 class="topbar-title">Profilom</h1>
+                <h1 class="topbar-title" data-i18n="common.profile">Profilom</h1>
             </div>
             <div class="topbar-right">
                 <div class="topbar-user">
                     <span class="topbar-user-name" id="profile-user-name"></span>
                 </div>
-                <button class="topbar-btn btn-sound-settings" type="button" aria-label="Hangbeállítások" title="Hangbeállítások">
+                <button class="topbar-btn btn-sound-settings" type="button" aria-label="Hangbeállítások" title="Hangbeállítások" data-i18n-title="common.sound">
                     <svg class="icon"><use href="#i-volume"/></svg>
                 </button>
-                <button class="topbar-btn btn-theme-toggle" type="button" aria-label="Téma váltás" title="Téma váltás">
+                <button class="topbar-btn btn-lang-toggle" type="button" aria-label="Nyelv" title="Nyelv" data-i18n-title="common.language">
+                    <span class="lang-code">HU</span>
+                </button>
+                <button class="topbar-btn btn-theme-toggle" type="button" aria-label="Téma váltás" title="Téma váltás" data-i18n-title="common.theme">
                     <svg class="icon icon-sun"><use href="#i-sun"/></svg>
                     <svg class="icon icon-moon"><use href="#i-moon"/></svg>
                 </button>
-                <button class="topbar-btn topbar-btn-danger btn-logout-nav" type="button" aria-label="Kijelentkezés" title="Kijelentkezés">
+                <button class="topbar-btn topbar-btn-danger btn-logout-nav" type="button" aria-label="Kijelentkezés" title="Kijelentkezés" data-i18n-title="common.logout">
                     <svg class="icon"><use href="#i-logout"/></svg>
                 </button>
             </div>
@@ -524,11 +683,11 @@
         <main class="profile-container">
             <div class="stat-cards" id="profile-stats"></div>
             <div class="section-header">
-                <h2 class="section-title">Játékelőzmények</h2>
+                <h2 class="section-title" data-i18n="profile.history">Játékelőzmények</h2>
             </div>
             <div id="profile-history" class="history-list">
                 <div class="empty-state">
-                    <p class="empty-msg">Nincs még befejezett játék.</p>
+                    <p class="empty-msg" data-i18n="common.no_finished_games">Nincs még befejezett játék.</p>
                 </div>
             </div>
         </main>
@@ -538,29 +697,32 @@
     <div id="replay-screen" class="screen screen-column hidden">
         <header class="app-topbar">
             <div class="topbar-left">
-                <button id="btn-replay-back" class="topbar-btn" type="button" aria-label="Vissza" title="Vissza">
+                <button id="btn-replay-back" class="topbar-btn" type="button" aria-label="Vissza" title="Vissza" data-i18n-title="common.back">
                     <svg class="icon"><use href="#i-back"/></svg>
                 </button>
-                <h1 class="topbar-title">Visszajátszás</h1>
+                <h1 class="topbar-title" data-i18n="replay.title">Visszajátszás</h1>
             </div>
             <div class="topbar-right">
-                <button class="topbar-btn btn-sound-settings" type="button" aria-label="Hangbeállítások" title="Hangbeállítások">
+                <button class="topbar-btn btn-sound-settings" type="button" aria-label="Hangbeállítások" title="Hangbeállítások" data-i18n-title="common.sound">
                     <svg class="icon"><use href="#i-volume"/></svg>
                 </button>
-                <button class="topbar-btn btn-theme-toggle" type="button" aria-label="Téma váltás" title="Téma váltás">
+                <button class="topbar-btn btn-lang-toggle" type="button" aria-label="Nyelv" title="Nyelv" data-i18n-title="common.language">
+                    <span class="lang-code">HU</span>
+                </button>
+                <button class="topbar-btn btn-theme-toggle" type="button" aria-label="Téma váltás" title="Téma váltás" data-i18n-title="common.theme">
                     <svg class="icon icon-sun"><use href="#i-sun"/></svg>
                     <svg class="icon icon-moon"><use href="#i-moon"/></svg>
                 </button>
-                <button class="topbar-btn topbar-btn-danger btn-logout-nav" type="button" aria-label="Kijelentkezés" title="Kijelentkezés">
+                <button class="topbar-btn topbar-btn-danger btn-logout-nav" type="button" aria-label="Kijelentkezés" title="Kijelentkezés" data-i18n-title="common.logout">
                     <svg class="icon"><use href="#i-logout"/></svg>
                 </button>
             </div>
         </header>
         <main class="replay-container">
             <div class="replay-controls">
-                <button id="btn-replay-prev" class="secondary" type="button" disabled>&larr; Előző</button>
+                <button id="btn-replay-prev" class="secondary" type="button" disabled data-i18n="replay.prev">&larr; Előző</button>
                 <span id="replay-counter">0 / 0</span>
-                <button id="btn-replay-next" class="secondary" type="button" disabled>Következő &rarr;</button>
+                <button id="btn-replay-next" class="secondary" type="button" disabled data-i18n="replay.next">Következő &rarr;</button>
             </div>
             <div id="replay-move-info" class="replay-move-info"></div>
             <div class="replay-board-area">
@@ -572,11 +734,11 @@
     <!-- Megerősítő dialog (általános) -->
     <div id="confirm-dialog" class="dialog hidden" role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
         <div class="dialog-content">
-            <h3 id="confirm-dialog-title">Megerősítés</h3>
+            <h3 id="confirm-dialog-title" data-i18n="common.confirm">Megerősítés</h3>
             <p id="confirm-dialog-text" class="dialog-text"></p>
             <div class="dialog-buttons">
-                <button id="btn-confirm-no" class="secondary" type="button">Mégsem</button>
-                <button id="btn-confirm-yes" class="danger" type="button">Törlés</button>
+                <button id="btn-confirm-no" class="secondary" type="button" data-i18n="common.cancel">Mégsem</button>
+                <button id="btn-confirm-yes" class="danger" type="button" data-i18n="common.delete">Törlés</button>
             </div>
         </div>
     </div>
@@ -585,29 +747,29 @@
     <div id="sound-settings-overlay" class="dialog dialog-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="sound-settings-title">
         <div class="dialog-content sound-settings-content">
             <div class="sound-settings-header">
-                <h3 id="sound-settings-title">Hangbeállítások</h3>
-                <button id="btn-close-sound-settings" class="topbar-btn" type="button" aria-label="Bezárás">
+                <h3 id="sound-settings-title" data-i18n="sound.title">Hangbeállítások</h3>
+                <button id="btn-close-sound-settings" class="topbar-btn" type="button" aria-label="Bezárás" data-i18n-title="common.close">
                     <svg class="icon"><use href="#i-close"/></svg>
                 </button>
             </div>
             <div class="sound-volume-section">
                 <div class="sound-volume-header">
-                    <span class="toggle-name">Hangerő</span>
+                    <span class="toggle-name" data-i18n="sound.volume">Hangerő</span>
                     <span id="sound-volume-pct" class="sound-volume-pct">70%</span>
                 </div>
                 <div class="sound-volume-control">
-                    <button type="button" id="btn-volume-mute" class="btn-volume-icon" aria-label="Minimum hangerő" title="Némítás">
+                    <button type="button" id="btn-volume-mute" class="btn-volume-icon" aria-label="Minimum hangerő" title="Némítás" data-i18n-title="sound.mute">
                         <svg class="icon"><use href="#i-volume-low"/></svg>
                     </button>
-                    <input type="range" id="sound-volume" class="sound-volume-slider" min="0" max="1" step="0.01" value="0.7" aria-label="Hangerő">
-                    <button type="button" id="btn-volume-max" class="btn-volume-icon" aria-label="Maximum hangerő" title="Maximum">
+                    <input type="range" id="sound-volume" class="sound-volume-slider" min="0" max="1" step="0.01" value="0.7" aria-label="Hangerő" data-i18n-title="sound.volume">
+                    <button type="button" id="btn-volume-max" class="btn-volume-icon" aria-label="Maximum hangerő" title="Maximum" data-i18n-title="sound.max">
                         <svg class="icon"><use href="#i-volume-high"/></svg>
                     </button>
                 </div>
 
                 <label class="sound-toggle-row master-mute-row" for="sound-master-mute">
                     <div class="toggle-info">
-                        <span class="toggle-name">Minden hang némítása</span>
+                        <span class="toggle-name" data-i18n="sound.mute_all">Minden hang némítása</span>
                     </div>
                     <div class="toggle-switch">
                         <input type="checkbox" id="sound-master-mute">
@@ -619,10 +781,58 @@
         </div>
     </div>
 
+    <!-- Szótár-böngésző: szavak ellenőrzése -->
+    <div id="dictionary-dialog" class="dialog dialog-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="dictionary-title">
+        <div class="dialog-content dictionary-content">
+            <div class="sound-settings-header">
+                <h3 id="dictionary-title" data-i18n="dict.title">Szótár</h3>
+                <button id="btn-close-dictionary" class="topbar-btn" type="button" aria-label="Bezárás" data-i18n-title="common.close">
+                    <svg class="icon"><use href="#i-close"/></svg>
+                </button>
+            </div>
+            <p class="dialog-text" data-i18n="dict.intro">Írj be egy vagy több szót (szóközzel elválasztva), és megnézheted, érvényesek-e a játékban, és hány pontot érnek prémium mezők nélkül.</p>
+            <form id="dictionary-form" class="dictionary-form" autocomplete="off">
+                <input type="text" id="dictionary-input" placeholder="pl. alma körte" data-i18n-placeholder="dict.placeholder" maxlength="120" autocapitalize="none" autocorrect="off" spellcheck="false">
+                <button type="submit" id="btn-dictionary-check" data-i18n="dict.check">Ellenőrzés</button>
+            </form>
+            <div id="dictionary-results" class="dictionary-results" aria-live="polite"></div>
+        </div>
+    </div>
+
+    <!-- Zsetonszámláló -->
+    <div id="tracker-dialog" class="dialog dialog-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="tracker-title">
+        <div class="dialog-content tracker-content">
+            <div class="sound-settings-header">
+                <h3 id="tracker-title" data-i18n="tracker.title">Mi van még a zsákban?</h3>
+                <button id="btn-close-tracker" class="topbar-btn" type="button" aria-label="Bezárás" data-i18n-title="common.close">
+                    <svg class="icon"><use href="#i-close"/></svg>
+                </button>
+            </div>
+            <p class="dialog-text" id="tracker-summary"></p>
+            <div id="tracker-grid" class="tracker-grid"></div>
+        </div>
+    </div>
+
+    <!-- Tippek -->
+    <div id="hint-dialog" class="dialog dialog-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="hint-title">
+        <div class="dialog-content">
+            <div class="sound-settings-header">
+                <h3 id="hint-title" data-i18n="hint.title">Tippek</h3>
+                <button id="btn-close-hint" class="topbar-btn" type="button" aria-label="Bezárás" data-i18n-title="common.close">
+                    <svg class="icon"><use href="#i-close"/></svg>
+                </button>
+            </div>
+            <p class="dialog-text" id="hint-text"></p>
+            <div id="hint-list" class="hint-list"></div>
+        </div>
+    </div>
+
     <!-- Toast értesítések -->
     <div id="toast-container" aria-live="polite"></div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.min.js"></script>
-    <script src="/static/app.js"></script>
+    <script src="/static/i18n-data.js?v={{ asset_v }}"></script>
+    <script src="/static/i18n.js?v={{ asset_v }}"></script>
+    <script src="/static/app.js?v={{ asset_v }}"></script>
 </body>
 </html>

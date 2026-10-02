@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#1e293b"/>
+  <rect x="96" y="96" width="320" height="320" rx="52" fill="#f5e6c8"/>
+  <text x="236" y="318" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="184" font-weight="800" text-anchor="middle" fill="#1e293b">SZ</text>
+  <text x="376" y="388" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="64" font-weight="700" text-anchor="end" fill="#5b6577">3</text>
+</svg>
