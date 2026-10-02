@@ -1908,6 +1908,7 @@ const GameBoard = {
             case 'skip': return t('last.skip', { player: info.player });
             case 'vote': return t(info.vote === 'accept' ? 'last.vote_accept' : 'last.vote_reject', { player: info.player });
             case 'game_over': return t('last.game_over', { player: info.player, score: info.score });
+            case 'game_over_draw': return t('last.game_over_draw', { players: (info.players || []).join(', '), score: info.score });
             case 'save_revert': return t('last.save_revert', { player: info.player });
             default: return tServer(gs.last_action) || '';
         }
@@ -2842,9 +2843,11 @@ const GameOver = {
         if (!gs) return;
         const scoresContainer = document.getElementById('final-scores');
         const sorted = [...gs.players].sort((a, b) => b.score - a.score);
-        scoresContainer.innerHTML = sorted.map((p, i) => `
-            <div class="score-final ${i === 0 ? 'winner' : ''}">
-                <span>${i === 0 ? '&#x1F3C6; ' : ''}${escapeHtml(p.name)}</span>
+        // Döntetlennél minden holtversenyben álló első helyezett győztes
+        const topScore = sorted.length ? sorted[0].score : 0;
+        scoresContainer.innerHTML = sorted.map((p) => `
+            <div class="score-final ${p.score === topScore ? 'winner' : ''}">
+                <span>${p.score === topScore ? '&#x1F3C6; ' : ''}${escapeHtml(p.name)}</span>
                 <span>${escapeHtml(t('common.points', { n: p.score }))}</span>
             </div>
         `).join('');

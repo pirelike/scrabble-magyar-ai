@@ -13,7 +13,7 @@ Böngészőben: http://localhost:5000
 
 ## Fájlstruktúra
 - `server.py` — Flask + SocketIO szerver, lobby/szoba kezelés, Cloudflare tunnel integráció, Socket.IO event handlerek, reconnection grace period, robotlépések (`_schedule_bot_turn` / `_play_bot_turn`), megfigyelők, előnézet, tipp
-- `game.py` — Játéklogika (Game osztály), körök, pontozás, játék vége, challenge rendszer, kör időlimit, robotok (`add_bot`), szerkezetes `last_action_info`, lépéstörténet (`get_history`), előnézet (`preview_placement`)
+- `game.py` — Játéklogika (Game osztály), körök, pontozás, játék vége (6 pont nélküli kör; döntetlennél több győztes: `winners`), challenge rendszer, kör időlimit, robotok (`add_bot`), szerkezetes `last_action_info`, lépéstörténet (`get_history`), előnézet (`preview_placement`)
 - `player.py` — Player osztály (id, név, kéz, pontszám, disconnected állapot, `is_bot`, `difficulty`: a robot fokozata 1–10, a régi `easy`/`medium`/`hard` átképeződik)
 - `ai_player.py` — Robot ellenfél: szókincs (a szótár tőszavai), horgonyalapú lépésgenerátor, 10 fokozatú nehézség (`parse_level`, `_PROFILES`), tippek
 - `board.py` — 15×15 tábla, premium mezők, szó elhelyezés validáció és pontozás
@@ -38,7 +38,7 @@ Böngészőben: http://localhost:5000
 - `static/style.css` — Apple HIG ihletésű design rendszer (tokenek, iOS-szerű komponensek), sötét/világos téma, reszponzív layout (asztali / tablet / telefon, álló és fekvő), 17. szakasz: új funkciók és animációk
 - `static/manifest.webmanifest`, `static/offline.html`, `static/icons/` — PWA
 - `tools/bot_arena.py` — Robot-aréna: a fokozatok erejének mérése bot–bot játékokkal (kalibrációhoz, nem része a szervernek)
-- `tests/` — Tesztek (pytest, 933 teszt)
+- `tests/` — Tesztek (pytest, 951 teszt)
 - `requirements.txt` — Python függőségek (flask, flask-socketio, eventlet)
 - `.venv/` — Virtual environment
 
@@ -61,6 +61,7 @@ Böngészőben: http://localhost:5000
 - Drag & drop és kattintásos betű elhelyezés
 - Joker (üres zseton) bármely betűként használható
 - Betűcsere és passz
+- **Játék vége**: ha valaki kirakta az összes zsetonját (és a zsák üres), vagy **6 egymást követő pont nélküli kör** után (passz, csere és elutasított lerakás is számít; a pontot érő lerakás nullázza, `Game.scoreless_turns`). **Döntetlen**: egyenlő végső pontnál mindenki győztes (`Game.winners`, `winner` csak ha egyetlen győztes van); a ranglistán és a profilban mindegyikük győzelmet kap (`is_winner`), a kliens mindegyiket kiemeli
 - **Körönkénti időlimit**: opcionális (0/60/90/120/180/300 mp), lejáratkor automatikus passz
 - Challenge (megtámadás) mód: 2 játékosnál kötelező elfogadás, 3+ játékosnál szavazásos rendszer (nincs szótár)
 - Játék közbeni chat: szöveges üzenetküldés a szobában
@@ -187,7 +188,7 @@ Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztésh
 | Fájl | Tesztek | Lefedettség |
 |---|---|---|
 | `tests/test_auth.py` | 63 | DB, user CRUD, jelszó hash, verifikációs kódok, session kezelés |
-| `tests/test_game_logic.py` | 138 | TileBag, Board, Player, Game, Challenge szavazásos rendszer, kör időlimit |
+| `tests/test_game_logic.py` | 154 | TileBag, Board, Player, Game, Challenge szavazásos rendszer, kör időlimit |
 | `tests/test_server_auth.py` | 52 | HTTP auth route-ok, cookie flow |
 | `tests/test_server_socket.py` | 67 | Socket.IO eventek, lobby, szobák, privát szobák, challenge szavazás, chat, owner kilépés, kör időlimit |
 | `tests/test_challenge.py` | 17 | Challenge szavazásos rendszer |
@@ -196,8 +197,8 @@ Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztésh
 | `tests/test_email_service.py` | 4 | Email küldés |
 | `tests/test_room.py` | 12 | Room osztály |
 | `tests/test_friends.py` | 27 | Barát CRUD, kérések, felhasználókeresés, szobameghívó, online státusz |
-| `tests/test_timer_and_replay.py` | 27 | Kör időlimit, replay perzisztencia |
-| `tests/test_regressions.py` | 80 | Kódátvizsgálás során talált hibák: zsák, dupla cella, passz-végjáték, mentés szavazás közben, IP rate limit, e-mail megerősítés, socket-token, session átvétel, visszaállítás/késői csatlakozás, várakozó szoba türelmi ideje |
+| `tests/test_timer_and_replay.py` | 28 | Kör időlimit, replay perzisztencia |
+| `tests/test_regressions.py` | 81 | Kódátvizsgálás során talált hibák: zsák, dupla cella, passz-végjáték, döntetlen mentése, mentés szavazás közben, IP rate limit, e-mail megerősítés, socket-token, session átvétel, visszaállítás/késői csatlakozás, várakozó szoba türelmi ideje |
 | `tests/test_ai_player.py` | 72 | Robot motor: szókincs, lépésgenerátor (pontszám = játék pontozása), 10 fokozat (monoton skála, régi nevek átképezése, érvénytelen értékek), csere/passz, tipp, erősségpróba |
 | `tests/test_bots.py` | 114 | Robotok a játékmodellben (szavazás, mentés), szerver (lépés, ütemezés, tipp, előnézet), `last_action_info`, lépéstörténet |
 | `tests/test_spectator.py` | 30 | Megfigyelő mód, élő játékok, szoba életciklus |
@@ -206,7 +207,7 @@ Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztésh
 | `tests/test_i18n.py` | 27 | Fordítások teljessége, szerverüzenet-lefedettség (AST), HTML lefedettség, a fordító futtatása node-ban |
 | `tests/test_frontend_consistency.py` | 23 | Kliens ↔ szerver: konstansok (TILE_VALUES, premium mezők), elem-azonosítók, robot-fokozat választó, Socket.IO események, API útvonalak, JS szintaxis |
 
-**Összesen: 933 teszt**
+**Összesen: 951 teszt**
 
 Fixture: `tests/conftest.py` — temp_db (auto-applied, ideiglenes SQLite DB minden teszthez)
 Segédek: `tests/helpers.py` — `registered_set_name_payload()` (érvényes socket-tokennel), `verify_email()`
@@ -429,6 +430,7 @@ A tábla cellái `container-type: inline-size` + `cqw` egységekkel méreteződn
 
 ### game.py
 - `HAND_SIZE = 7`
+- `SCORELESS_TURNS_LIMIT = 6` — ennyi egymást követő pont nélküli kör után véget ér a játék
 - `BONUS_ALL_TILES = 50`
 - `CHALLENGE_TIMEOUT = 30` (mp)
 

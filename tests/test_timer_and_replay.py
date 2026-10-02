@@ -240,31 +240,30 @@ class TestReplayPersistence:
         c2.disconnect()
 
     def test_moves_saved_to_db_after_game_ends_via_passes(self, app, socketio_app):
-        """After 4 consecutive passes (2 each), game ends and moves are in DB."""
+        """After 6 consecutive scoreless turns (3 passes each), game ends and moves are in DB."""
         c1, c2, room_id = _create_started_game(app, socketio_app)
         import server
         from auth import get_game_moves
 
-        # 2-player game: each player must pass twice → 4 passes total
-        # Turn order: P1 → P2 → P1 → P2 (P2's 2nd pass ends the game)
+        # 2-player game: 6 consecutive scoreless turns end the game
+        # Turn order: P1 → P2 → P1 → P2 → P1 → P2 (P2's 3rd pass ends the game)
+        c1.emit('pass_turn'); c1.get_received(); c2.get_received()
+        c2.emit('pass_turn'); c2.get_received(); c1.get_received()
         c1.emit('pass_turn'); c1.get_received(); c2.get_received()
         c2.emit('pass_turn'); c2.get_received(); c1.get_received()
         c1.emit('pass_turn'); c1.get_received(); c2.get_received()
         c2.emit('pass_turn'); c2.get_received(); c1.get_received()
 
         room = server.rooms[room_id]
-        assert room.game.finished, "Game must be finished after 4 passes"
+        assert room.game.finished, "Game must be finished after 6 passes"
         assert room.db_game_id is not None, "_save_game_to_db must have been called"
 
         moves = get_game_moves(room.db_game_id)
-        assert len(moves) == 4, f"Expected 4 pass moves, got {len(moves)}"
+        assert len(moves) == 6, f"Expected 6 pass moves, got {len(moves)}"
         assert all(m['action_type'] == 'pass' for m in moves)
-        assert moves[0]['player_name'] == 'P1'
-        assert moves[1]['player_name'] == 'P2'
-        assert moves[2]['player_name'] == 'P1'
-        assert moves[3]['player_name'] == 'P2'
+        assert [m['player_name'] for m in moves] == ['P1', 'P2'] * 3
         # move_number must be sequential
-        assert [m['move_number'] for m in moves] == [1, 2, 3, 4]
+        assert [m['move_number'] for m in moves] == [1, 2, 3, 4, 5, 6]
         c1.disconnect()
         c2.disconnect()
 
@@ -275,6 +274,8 @@ class TestReplayPersistence:
         import server
         from auth import get_game_moves
 
+        c1.emit('pass_turn'); c1.get_received(); c2.get_received()
+        c2.emit('pass_turn'); c2.get_received(); c1.get_received()
         c1.emit('pass_turn'); c1.get_received(); c2.get_received()
         c2.emit('pass_turn'); c2.get_received(); c1.get_received()
         c1.emit('pass_turn'); c1.get_received(); c2.get_received()
@@ -317,7 +318,7 @@ class TestReplayPersistence:
         c2.emit('pass_turn'); c2.get_received(); c1.get_received()
         c1.emit('pass_turn'); c1.get_received(); c2.get_received()
         c2.emit('pass_turn'); c2.get_received(); c1.get_received()
-
+        c1.emit('pass_turn'); c1.get_received(); c2.get_received()
         assert room.game.finished
         moves = get_game_moves(room.db_game_id)
         action_types = [m['action_type'] for m in moves]
@@ -344,6 +345,8 @@ class TestReplayPersistence:
         # by calling game internals directly
         if not game.pending_challenge:
             # Do passes to create move_log entries then accept to end via pass chain
+            c1.emit('pass_turn'); c1.get_received(); c2.get_received()
+            c2.emit('pass_turn'); c2.get_received(); c1.get_received()
             c1.emit('pass_turn'); c1.get_received(); c2.get_received()
             c2.emit('pass_turn'); c2.get_received(); c1.get_received()
             c1.emit('pass_turn'); c1.get_received(); c2.get_received()
@@ -495,7 +498,9 @@ class TestGameHistoryE2E:
         sid1 = room.game.players[0].id
         server.player_auth[sid1] = {'user_id': uid, 'is_guest': False}
 
-        # End game via 4 passes
+        # End game via 6 scoreless turns
+        c1.emit('pass_turn'); c1.get_received(); c2.get_received()
+        c2.emit('pass_turn'); c2.get_received(); c1.get_received()
         c1.emit('pass_turn'); c1.get_received(); c2.get_received()
         c2.emit('pass_turn'); c2.get_received(); c1.get_received()
         c1.emit('pass_turn'); c1.get_received(); c2.get_received()
@@ -524,6 +529,8 @@ class TestGameHistoryE2E:
         server.player_auth[sid1] = {'user_id': uid, 'is_guest': False}
 
         # End game via passes
+        c1.emit('pass_turn'); c1.get_received(); c2.get_received()
+        c2.emit('pass_turn'); c2.get_received(); c1.get_received()
         c1.emit('pass_turn'); c1.get_received(); c2.get_received()
         c2.emit('pass_turn'); c2.get_received(); c1.get_received()
         c1.emit('pass_turn'); c1.get_received(); c2.get_received()
@@ -607,6 +614,8 @@ class TestGameHistoryE2E:
         c2.emit('pass_turn'); c2.get_received(); c1.get_received()
         c1.emit('pass_turn'); c1.get_received(); c2.get_received()
         c2.emit('pass_turn'); c2.get_received(); c1.get_received()
+        c1.emit('pass_turn'); c1.get_received(); c2.get_received()
+        c2.emit('pass_turn'); c2.get_received(); c1.get_received()
 
         assert room.game.finished
         history = get_user_game_history(uid)
@@ -622,6 +631,8 @@ class TestGameHistoryE2E:
         # Both players are guests (no user_id)
         c1, c2, room_id = _create_started_game(app, socketio_app)
 
+        c1.emit('pass_turn'); c1.get_received(); c2.get_received()
+        c2.emit('pass_turn'); c2.get_received(); c1.get_received()
         c1.emit('pass_turn'); c1.get_received(); c2.get_received()
         c2.emit('pass_turn'); c2.get_received(); c1.get_received()
         c1.emit('pass_turn'); c1.get_received(); c2.get_received()
@@ -647,6 +658,8 @@ class TestGameHistoryE2E:
         c2.emit('pass_turn'); c2.get_received(); c1.get_received()
         c1.emit('pass_turn'); c1.get_received(); c2.get_received()
         c2.emit('pass_turn'); c2.get_received(); c1.get_received()
+        c1.emit('pass_turn'); c1.get_received(); c2.get_received()
+        c2.emit('pass_turn'); c2.get_received(); c1.get_received()
 
         assert room.game.finished
         user = get_user_by_id(uid)
@@ -661,16 +674,36 @@ class TestGameHistoryE2E:
 class TestAllGameEndPaths:
     """Verify _save_game_to_db is called in every possible game-ending scenario.
 
-    There are exactly 5 paths where game.finished can become True:
+    There are exactly 6 paths where game.finished can become True:
+      0. handle_exchange_tiles → 6th consecutive scoreless turn
       1. handle_place_tiles  → non-challenge → hand+bag empty
-      2. handle_pass_turn    → all consecutive_passes >= 2
+      2. handle_pass_turn    → 6 consecutive scoreless turns
       3. _handle_challenge_result (accept_words) → challenge accepts → hand+bag empty
       4. _start_challenge_timer timeout → auto-accept → hand+bag empty
-      5. _start_turn_timer timeout → auto-pass → all consecutive_passes >= 2
+      5. _start_turn_timer timeout → auto-pass → 6 consecutive scoreless turns
 
     Paths 2 and 3 are covered by other test classes.  This class adds explicit
     tests for paths 1, 4, and 5 which use background tasks or direct game-end.
     """
+
+    def test_exchange_as_sixth_scoreless_turn_ends_and_saves_game(self, app, socketio_app):
+        """Path 0: a csere is pont nélküli kör; a hatodik lezárja a játékot, és a szerver menti."""
+        from auth import get_game_moves
+
+        c1, c2, room_id = _create_started_game(app, socketio_app)
+        import server
+        room = server.rooms[room_id]
+        game = room.game
+        game.scoreless_turns = 5
+
+        c1.emit('exchange_tiles', {'indices': [0]})
+        c1.get_received(); c2.get_received()
+
+        assert game.finished, "The 6th scoreless turn (an exchange) must end the game"
+        assert room.db_game_id is not None, "_save_game_to_db must have been called"
+        moves = get_game_moves(room.db_game_id)
+        assert [m['action_type'] for m in moves] == ['exchange']
+        c1.disconnect(); c2.disconnect()
 
     @patch('board.check_words', return_value=(True, []))
     def test_non_challenge_place_tiles_end_saves_to_db(self, mock_check, app, socketio_app):
@@ -762,7 +795,7 @@ class TestAllGameEndPaths:
         c1.disconnect(); c2.disconnect()
 
     def test_turn_timer_autopass_game_end_saves_to_db(self, app, socketio_app):
-        """Path 5: turn timer fires, auto-pass triggers game end (all passed >= 2x).
+        """Path 5: turn timer fires, auto-pass triggers game end (6th scoreless turn).
         server.py _start_turn_timer line 293-298: if game.finished: _save_game_to_db"""
         from auth import get_game_moves
 
@@ -780,12 +813,9 @@ class TestAllGameEndPaths:
             room = server.rooms[room_id]
             game = room.game
 
-            # Pre-set consecutive_passes so P1's one auto-pass triggers game end:
-            # P1 (current player): 1 → auto-pass → 2
-            # P2: already at 2
-            # → all([2, 2]) = True → _end_game called
-            game.players[0].consecutive_passes = 1
-            game.players[1].consecutive_passes = 2
+            # Pre-set the scoreless streak so P1's one auto-pass triggers game end:
+            # 5 scoreless turns so far → the auto-pass is the 6th → _end_game called
+            game.scoreless_turns = 5
 
         # The last background task is the timer callback for P1's turn
         assert bg_tasks, "A turn timer background task must have been registered"
@@ -796,7 +826,7 @@ class TestAllGameEndPaths:
             timer_cb()
 
         assert game.finished, (
-            "Game must be finished: P2 already passed 2x, P1 auto-passed once more"
+            "Game must be finished: 5 scoreless turns already, P1 auto-passed once more"
         )
         assert room.db_game_id is not None, (
             "_save_game_to_db must be called when turn timer auto-pass ends the game"

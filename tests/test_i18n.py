@@ -104,7 +104,7 @@ class TestKeyUsage:
         for prefix in ('dl', 'tl', 'dw', 'tw'):
             assert f'board.{prefix}_long' in data['en'] and f'board.{prefix}_short' in data['en']
         for kind in ('exchange', 'pass', 'rejected', 'skip', 'vote_accept', 'vote_reject',
-                     'game_over', 'save_revert', 'place', 'pending'):
+                     'game_over', 'game_over_draw', 'save_revert', 'place', 'pending'):
             assert f'last.{kind}' in data['en']
 
     def test_no_unused_keys(self, data, app_js, index_html):
@@ -379,7 +379,7 @@ class TestClientTranslator:
         """Ha minden paramétert megadunk, nem marad feldolgozatlan {helyőrző}."""
         cases = []
         keys = [k for k in _ui_keys(data['en'])]
-        params = {name: 'X' for name in ('n', 'max', 'owner', 'name', 'names', 'words', 'score',
+        params = {name: 'X' for name in ('n', 'max', 'owner', 'name', 'names', 'players', 'words', 'score',
                                          'player', 'room', 'word', 'total', 'bag', 'hands',
                                          'vowels', 'consonants', 'blanks', 'played', 'won', 'rate')}
         for key in keys:

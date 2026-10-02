@@ -252,7 +252,7 @@ class TestPlayer:
         assert p.name == 'Alice'
         assert p.hand == []
         assert p.score == 0
-        assert p.consecutive_passes == 0
+        assert not hasattr(p, "consecutive_passes")
 
     def test_to_dict_hidden_hand(self):
         from game import Player
@@ -368,16 +368,16 @@ class TestGame:
         assert success is False
         assert 'Nem te' in msg
 
-    def test_game_ends_after_all_pass_twice(self):
+    def test_game_ends_after_six_scoreless_turns(self):
         from game import Game
         g = Game('test')
         g.add_player('p1', 'Alice')
         g.add_player('p2', 'Bob')
         g.start()
-        # p1 pass, p2 pass, p1 pass, p2 pass => game over
-        g.pass_turn('p1')
-        g.pass_turn('p2')
-        g.pass_turn('p1')
+        # 6 egymást követő pont nélküli kör (3-3 passz) => játék vége
+        for i in range(5):
+            g.pass_turn('p1' if i % 2 == 0 else 'p2')
+            assert g.finished is False
         g.pass_turn('p2')
         assert g.finished is True
 
@@ -1066,14 +1066,35 @@ class TestGameSaveRestore:
         g.add_player('p1', 'Alice')
         g.start()
         g.players[0].score = 42
-        g.players[0].consecutive_passes = 1
         g.players[0].skip_next_turn = True
 
         save_data = g.to_save_dict()
         restored = Game.from_save_dict(save_data)
         assert restored.players[0].score == 42
-        assert restored.players[0].consecutive_passes == 1
         assert restored.players[0].skip_next_turn is True
+
+    def test_save_restore_scoreless_turns(self):
+        from game import Game
+        g = Game('test')
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.start()
+        g.pass_turn('p1')
+        g.pass_turn('p2')
+        assert Game.from_save_dict(g.to_save_dict()).scoreless_turns == 2
+
+    def test_restore_old_save_without_scoreless_counter(self):
+        """Régi mentésben nincs `scoreless_turns`: a játékosonkénti passz-sorozatból indul."""
+        from game import Game
+        g = Game('test')
+        g.add_player('p1', 'Alice')
+        g.add_player('p2', 'Bob')
+        g.start()
+        data = g.to_save_dict()
+        del data['scoreless_turns']
+        data['players'][0]['consecutive_passes'] = 2
+        data['players'][1]['consecutive_passes'] = 1
+        assert Game.from_save_dict(data).scoreless_turns == 2
 
 
 class TestGameEndScoring:
@@ -1196,17 +1217,17 @@ class TestExchangeTilesEdgeCases:
         assert success is False
         assert 'Várj' in msg
 
-    def test_exchange_resets_consecutive_passes(self):
+    def test_exchange_counts_as_scoreless_turn(self):
         from game import Game
         g = Game('test')
         g.add_player('p1', 'Alice')
         g.add_player('p2', 'Bob')
         g.start()
         g.pass_turn('p1')
-        assert g.players[0].consecutive_passes == 1
+        assert g.scoreless_turns == 1
         g.pass_turn('p2')
         g.exchange_tiles('p1', [0])
-        assert g.players[0].consecutive_passes == 0
+        assert g.scoreless_turns == 3
 
 
 class TestGetAllStates:
@@ -1315,18 +1336,18 @@ class TestPlaceTilesEdgeCases:
         assert score >= BONUS_ALL_TILES
 
     @patch('board.check_words', return_value=(True, []))
-    def test_place_tiles_resets_consecutive_passes(self, mock_check):
+    def test_place_tiles_resets_scoreless_turns(self, mock_check):
         from game import Game
         g = Game('test')
         g.add_player('p1', 'Alice')
         g.add_player('p2', 'Bob')
         g.start()
         g.pass_turn('p1')
-        assert g.players[0].consecutive_passes == 1
+        assert g.scoreless_turns == 1
         g.pass_turn('p2')
         g.players[0].hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
         g.place_tiles('p1', [(7, 6, 'A', False), (7, 7, 'B', False)])
-        assert g.players[0].consecutive_passes == 0
+        assert g.scoreless_turns == 0
 
     @patch('board.check_words', return_value=(True, []))
     def test_place_tiles_draws_new_tiles(self, mock_check):
@@ -1663,3 +1684,169 @@ class TestTurnTimeLimit:
         del save_data['turn_time_limit']
         restored = Game.from_save_dict(save_data)
         assert restored.turn_time_limit == 0
+
+
+class TestDrawsAndScorelessTurns:
+    """Döntetlen kezelése és a pont nélküli körök (passz, csere, elutasított lerakás)."""
+
+    @staticmethod
+    def _game(players=('Anna', 'Béla'), **kwargs):
+        from game import Game
+        g = Game('test', **kwargs)
+        for i, name in enumerate(players, 1):
+            g.add_player(f'p{i}', name)
+        g.start()
+        return g
+
+    # --- döntetlen
+
+    def test_tie_makes_every_top_scorer_a_winner(self):
+        g = self._game()
+        g.players[0].score = 50
+        g.players[1].score = 50
+        g.players[0].hand = []
+        g.players[1].hand = []
+        g._end_game(None)
+        assert [p.name for p in g.winners] == ['Anna', 'Béla']
+        assert g.winner is None  # nincs egyetlen győztes
+
+    def test_tie_is_not_decided_by_player_order(self):
+        g = self._game(('Zoli', 'Anna', 'Csaba'))
+        for p, score in zip(g.players, (40, 70, 70)):
+            p.score = score
+            p.hand = []
+        g._end_game(None)
+        assert [p.name for p in g.winners] == ['Anna', 'Csaba']
+
+    def test_single_winner_is_unchanged(self):
+        g = self._game()
+        g.players[0].score = 10
+        g.players[1].score = 30
+        g.players[0].hand = []
+        g.players[1].hand = []
+        g._end_game(None)
+        assert [p.name for p in g.winners] == ['Béla']
+        assert g.winner.name == 'Béla'
+        assert g.last_action_info['type'] == 'game_over'
+
+    def test_draw_is_reported_in_last_action(self):
+        g = self._game()
+        g.players[0].score = g.players[1].score = 50
+        g.players[0].hand = g.players[1].hand = []
+        g._end_game(None)
+        assert g.last_action_info == {'type': 'game_over_draw', 'players': ['Anna', 'Béla'],
+                                      'score': 50}
+        assert 'Döntetlen' in g.last_action
+
+    def test_hand_penalty_can_create_or_break_a_tie(self):
+        """A döntetlent a végső (levonások utáni) pontszám dönti el."""
+        g = self._game()
+        g.players[0].score = 51
+        g.players[0].hand = ['A']  # -1 pont → 50
+        g.players[1].score = 50
+        g.players[1].hand = []
+        g._end_game(None)
+        assert {p.name for p in g.winners} == {'Anna', 'Béla'}
+
+    def test_state_exposes_winners(self):
+        g = self._game()
+        g.players[0].score = g.players[1].score = 20
+        g.players[0].hand = g.players[1].hand = []
+        g._end_game(None)
+        state = g.get_state()
+        assert state['winner'] is None
+        assert [w['name'] for w in state['winners']] == ['Anna', 'Béla']
+
+    def test_save_restore_keeps_all_winners(self):
+        from game import Game
+        g = self._game()
+        g.players[0].score = g.players[1].score = 20
+        g.players[0].hand = g.players[1].hand = []
+        g._end_game(None)
+        restored = Game.from_save_dict(g.to_save_dict())
+        assert [p.name for p in restored.winners] == ['Anna', 'Béla']
+
+    def test_restore_old_save_with_single_winner_name(self):
+        from game import Game
+        g = self._game()
+        g.players[0].score = 5
+        g.players[1].score = 9
+        g.players[0].hand = g.players[1].hand = []
+        g._end_game(None)
+        data = g.to_save_dict()
+        del data['winner_names']
+        data['winner_name'] = 'Béla'
+        assert Game.from_save_dict(data).winner.name == 'Béla'
+
+    # --- pont nélküli körök
+
+    def test_endless_exchanging_ends_the_game(self):
+        g = self._game()
+        for turn in range(1, 7):
+            assert g.finished is False
+            player = g.current_player()
+            success, _msg = g.exchange_tiles(player.id, [0])
+            assert success is True
+        assert g.finished is True
+        assert g.scoreless_turns == 6
+
+    def test_mixed_passes_and_exchanges_count_together(self):
+        g = self._game()
+        for action in ('pass', 'exchange', 'pass', 'exchange', 'pass'):
+            player = g.current_player()
+            if action == 'pass':
+                g.pass_turn(player.id)
+            else:
+                g.exchange_tiles(player.id, [0])
+        assert g.finished is False
+        g.pass_turn(g.current_player().id)
+        assert g.finished is True
+
+    def test_exchange_after_game_end_is_refused(self):
+        g = self._game()
+        for _ in range(6):
+            g.exchange_tiles(g.current_player().id, [0])
+        success, msg = g.exchange_tiles(g.current_player().id, [0])
+        assert success is False
+        assert 'véget ért' in msg
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_scoring_move_resets_the_streak(self, _check):
+        g = self._game()
+        for _ in range(5):
+            g.pass_turn(g.current_player().id)
+        assert g.scoreless_turns == 5
+        player = g.current_player()
+        player.hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        success, _msg, _score = g.place_tiles(player.id, [(7, 6, 'A', False), (7, 7, 'B', False)])
+        assert success is True
+        assert g.scoreless_turns == 0
+        assert g.finished is False
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_rejected_placements_count_as_scoreless_turns(self, _check):
+        g = self._game(challenge_mode=True)
+        for i in range(1, 7):
+            assert g.finished is False
+            placer = g.current_player()
+            assert placer.id == 'p1'  # elutasításnál a lerakó újra jön
+            placer.hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+            success, _msg, _score = g.place_tiles(placer.id, [(7, 6, 'A', False), (7, 7, 'B', False)])
+            assert success is True
+            g.rejected_placements.clear()
+            success, result, _msg = g.reject_pending_by_player('p2')
+            assert success is True and result == 'vote_rejected'
+            assert g.scoreless_turns == i
+        assert g.finished is True
+        assert g.pending_challenge is None
+
+    @patch('board.check_words', return_value=(True, []))
+    def test_rejection_ending_the_game_keeps_the_returned_tiles_in_hand(self, _check):
+        g = self._game(challenge_mode=True)
+        g.scoreless_turns = 5
+        placer = g.current_player()
+        placer.hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        g.place_tiles(placer.id, [(7, 6, 'A', False), (7, 7, 'B', False)])
+        g.reject_pending_by_player('p2')
+        assert g.finished is True
+        assert sorted(placer.hand) == ['A', 'B', 'C', 'D', 'E', 'F', 'G']
