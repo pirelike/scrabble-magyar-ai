@@ -13,6 +13,7 @@ from flask import Flask, request
 from flask_socketio import SocketIO, emit, join_room, leave_room
 
 import ai_player
+import dictionary
 from game import Game, CHALLENGE_TIMEOUT, ALLOWED_HINT_LIMITS, DEFAULT_HINT_LIMIT
 from room import Room
 from config import AUTH_RATE_LIMITS
@@ -1998,6 +1999,7 @@ if __name__ == '__main__':
 
     cleanup_expired()
     _cleanup_finished_saves()
+    dictionary.warm_up()  # a szótár betöltése indításkor (az első lerakásnál ne kelljen várni)
 
     if use_tunnel:
         start_tunnel(port)

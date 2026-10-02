@@ -29,7 +29,7 @@ Open http://localhost:5000 in your browser.
 - **Teljes magyar betűkészlet** — 100 zseton, beleértve a többkarakteres betűket (SZ, CS, GY, LY, NY, ZS, TY)
 - **Standard Scrabble pontozás** — DL, TL, DW, TW premium mezők, 50 pont bónusz mind a 7 zseton kirakásakor
 - **Szótár-böngésző (Challenge fázis)** — a megtámadás során a lerakott szavakra kattintva egy új lapon indíthatunk Google keresést (szótári fókusszal), segítve a szavazást
-- **Szótár-ellenőrzés** — hunspell hu_HU szótár alapján, ragozott alakokat is felismeri
+- **Szótár-ellenőrzés** — beágyazott hu_HU szótár (rendszerfüggőség nélkül): a szótári szavakat és ragozott alakjaikat fogadja el; tulajdonnevek, rövidítések és a szótárban nem szereplő összetételek nem érvényesek
 - **Drag & drop és kattintásos** betűelhelyezés
 - **Joker** — üres zseton bármely betűként használható
 - **Betűcsere és passz**
@@ -44,7 +44,7 @@ Open http://localhost:5000 in your browser.
 - **Hang effektek** — betű lerakás, szavazás, kör értesítő, chat, játék kezdés/vége; hangerő-szabályozó és kategóriánkénti ki/be kapcsolók (Web Audio API, nincs külső fájl)
 - **Stabil újracsatlakozás** — hálózati hiba vagy manuális kilépés után is visszacsatlakozhatnak a játékosok az aktív játékba (120 mp grace period, token alapú)
 - **Pinch-to-zoom** — mobilon a tábla nagyítható/kicsinyíthető csípő mozdulattal
-- **Robot ellenfelek (AI)** — egyedül is játszható 1–3 számítógépes ellenfél ellen, három nehézségi szinttel (könnyű / közepes / nehéz); a robotok a hunspell szótár tőszavaiból építenek, a keresztszavakat a teljes szótárral ellenőrzik. Robotos játék a ranglistába nem számít. Egyedül játszva **tipp** kérhető (a három legjobb lépés)
+- **Robot ellenfelek (AI)** — egyedül is játszható 1–3 számítógépes ellenfél ellen, három nehézségi szinttel (könnyű / közepes / nehéz); a robotok a szótár tőszavaiból építenek, a keresztszavakat a teljes szótárral ellenőrzik. Robotos játék a ranglistába nem számít. Egyedül játszva **tipp** kérhető (a három legjobb lépés)
 - **Megfigyelő mód** — folyamatban lévő nyilvános játék megfigyelése játékos nélkül (lobby „Élő játékok”, privát játék kóddal); a megfigyelő nem lát kezeket, nem lép és nem chatel
 - **Ranglista** — győzelmek, nyerési arány, átlagpont és legjobb játék szerint (csak regisztrált játékosok, robot nélküli, befejezett játékokból)
 - **Szótár-böngésző** — bárhonnan megnyitható szó-ellenőrző: érvényes-e a szó, hány pontot ér prémium nélkül, zsetonokra bontva, javaslatokkal elgépelés esetén
@@ -76,22 +76,6 @@ python3 -m venv .venv
 
 A `dict/` mappában lévő beágyazott magyar szótár automatikusan működik.
 
-<details>
-<summary>Alternatív: rendszer hunspell szótár használata</summary>
-
-```bash
-# Arch Linux
-sudo pacman -S hunspell hunspell-hu
-
-# Debian / Ubuntu
-sudo apt install hunspell hunspell-hu
-
-# Fedora
-sudo dnf install hunspell hunspell-hu
-```
-
-</details>
-
 ### Windows
 
 ```powershell
@@ -103,7 +87,7 @@ python -m venv .venv
 .venv\Scripts\pip install -r requirements.txt
 ```
 
-A `pyenchant` csomag Windows-on automatikusan tartalmazza a hunspell backendet. A magyar szótár fájlok (`hu_HU.dic`, `hu_HU.aff`) a repó `dict/` mappájában vannak, amit a program automatikusan megtalál.
+A magyar szótár fájlok (`hu_HU.dic`, `hu_HU.aff`) a repó `dict/` mappájában vannak, amit a program automatikusan megtalál; semmilyen rendszercsomag nem kell hozzá.
 
 ### macOS
 
@@ -114,11 +98,6 @@ cd scrabble
 # Homebrew-vel ha szükséges: brew install python3
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-```
-
-Ha a `pyenchant` telepítés hibát ad, telepítsd az enchant könyvtárat:
-```bash
-brew install enchant
 ```
 
 ---
@@ -253,9 +232,10 @@ export SMTP_FROM=yourscrabble@gmail.com
 server.py          — Flask + Socket.IO szerver, lobby/szoba kezelés, Socket.IO event handlerek, robotlépések
 game.py            — Játéklogika (Game osztály), körök, pontozás, challenge rendszer, kör időlimit, lépéstörténet, előnézet
 player.py          — Player osztály (id, név, kéz, pontszám, disconnected állapot, robot jelző)
-ai_player.py       — Robot ellenfél: szókincs (hunspell tőszavak), lépésgenerátor, nehézségi szintek, tippek
+ai_player.py       — Robot ellenfél: szókincs (a szótár tőszavai), lépésgenerátor, nehézségi szintek, tippek
 board.py           — 15×15 tábla, premium mezők, szóelhelyezés validáció és pontozás
-dictionary.py      — Magyar szótár-ellenőrzés (pyenchant / hunspell)
+dictionary.py      — Magyar szótár-ellenőrzés (beágyazott), tömeges ellenőrzés, javaslatok
+affix_checker.py   — Hunspell-szerű, függőségmentes szóellenőrző a dict/hu_HU fájlokhoz
 tiles.py           — Magyar betűkészlet (100 zseton), TileBag osztály, szó → zsetonok felbontás
 challenge.py       — Challenge (megtámadás) logika, szavazási állapotgép
 room.py            — Room osztály (szoba állapot, owner, chat, timer kezelés, megfigyelők)
@@ -277,7 +257,7 @@ static/
   i18n-data.js     — Fordítások (hu / en) — szigorú JSON, a tesztek is ezt olvassák
   style.css        — Stílusok, sötét/világos téma (Slate+Gold paletta), reszponzív layout, animációk
   manifest.webmanifest, offline.html, icons/ — PWA: manifest, kapcsolat nélküli oldal, ikonok
-tests/             — Tesztek (pytest, 802 teszt)
+tests/             — Tesztek (pytest, 879 teszt)
 ```
 
 ---
@@ -303,7 +283,7 @@ A játék kiemelt figyelmet fordít a multiplayer sessionök stabilitására:
 | Közepes | a legjobb lépések felső harmadából választ véletlenszerűen |
 | Nehéz | a pontszám + a kézben maradó zsetonok értékelése alapján a legjobb lépést adja, jokert is használ |
 
-- A robotok szókincse a beágyazott hunspell szótár **tőszavai** (kb. 68 000 szó); a keresztszavakat és a kiválasztott lépés szavait a teljes szótár ellenőrzi, így ragozott szavakhoz is kapcsolódnak.
+- A robotok szókincse a beágyazott szótár **tőszavai** (kb. 68 000 szó); a keresztszavakat és a kiválasztott lépés szavait a teljes szótár ellenőrzi, így ragozott szavakhoz is kapcsolódnak.
 - Megtámadás módban a robotok **nem szavaznak**: ha a lerakónak nincs emberi ellenfele, a szótár dönt; a robot lerakására az emberek szavaznak.
 - Egyedül (robotok ellen) játszva a **Tipp** gomb a három legjobb lépést mutatja; az „Elhelyez” a táblára teszi, a lerakást te hagyod jóvá.
 - A tippek **korlátozottak**: szoba létrehozásakor (lobby → Új szoba → *Tippek száma*) kikapcsolhatók, vagy 1 / 3 (alapértelmezett) / 5 / 10 tipp engedélyezhető játékonként. A gomb a hátralévő számot mutatja (`Tipp (2)`), kikapcsolt tippnél nem jelenik meg. A felhasznált tippek száma a mentéssel együtt megmarad; ha nincs javasolható lépés, a tipp nem fogy.
@@ -348,7 +328,7 @@ Támogatott böngészőben a lobby felső sávjában megjelenik a **Telepítés*
 - Az első szónak a középső (csillag) mezőt kell fednie, és legalább 2 betűből kell állnia
 - Minden további szónak csatlakoznia kell meglévő betűkhöz
 - A betűknek egy sorban vagy oszlopban, folytonosan kell elhelyezkedniük
-- A lerakott szavakat a hunspell magyar szótár ellenőrzi (kivéve challenge módban, ahol nincs szótár-ellenőrzés — kizárólag a játékosok döntése számít)
+- A lerakott szavakat a beágyazott magyar szótár ellenőrzi (szótári szavak és ragozott alakjaik; tulajdonnév, rövidítés, betűnév nem érvényes) (kivéve challenge módban, ahol nincs szótár-ellenőrzés — kizárólag a játékosok döntése számít)
 - Premium mezők: dupla/tripla betű (DL/TL) és dupla/tripla szó (DW/TW)
 - Ha valaki mind a 7 zsetonját lerakja, 50 pont bónuszt kap
 - A játék véget ér, ha valaki elfogyasztja az összes zsetonját (és a zsák üres), vagy ha mindenki 2× egymás után passzol
@@ -368,7 +348,8 @@ Támogatott böngészőben a lobby felső sávjában megjelenik a **Telepítés*
 | `tests/test_server_auth.py` | 52 | HTTP auth route-ok, cookie flow |
 | `tests/test_server_socket.py` | 67 | Socket.IO eventek, lobby, szobák, challenge, chat, owner kilépés |
 | `tests/test_challenge.py` | 17 | Challenge szavazásos rendszer |
-| `tests/test_dictionary.py` | 23 | Szótár-ellenőrzés |
+| `tests/test_dictionary.py` | 59 | Szótár-ellenőrzés (valódi szótárral: kisbetűs keresés, tulajdonnevek, rövidítések, értelmetlen szavak pl. SALYT), elérhetőség, javaslatok, tábla-validáció |
+| `tests/test_affix_checker.py` | 39 | Beépített szóellenőrző: toldalékok, előtagok, folytatási osztályok, speciális jelzők, a valódi szótár (hunspellel összevetve) |
 | `tests/test_email_service.py` | 4 | Email küldés |
 | `tests/test_room.py` | 12 | Room osztály |
 | `tests/test_friends.py` | 27 | Barát CRUD, kérések, felhasználókeresés, szobameghívó, online státusz |
@@ -377,38 +358,21 @@ Támogatott böngészőben a lobby felső sávjában megjelenik a **Telepítés*
 | `tests/test_ai_player.py` | 39 | Robot: szókincs, lépésgenerátor, nehézségi szintek, tipp |
 | `tests/test_bots.py` | 106 | Robotok a játékmodellben és a szerveren, lépéstörténet, előnézet, tipp |
 | `tests/test_spectator.py` | 30 | Megfigyelő mód, élő játékok listája |
-| `tests/test_public_api.py` | 50 | Ranglista (DB + route), szótár-ellenőrző API, PWA végpontok |
+| `tests/test_public_api.py` | 52 | Ranglista (DB + route), szótár-ellenőrző API, PWA végpontok |
 | `tests/test_tiles_dictionary.py` | 30 | Zseton-felbontás, tömeges szótár-ellenőrzés, javaslatok |
 | `tests/test_i18n.py` | 27 | Fordítások teljessége (kulcsok, helyőrzők, szerverüzenetek), a böngészős fordító futtatása node-ban |
 | `tests/test_frontend_consistency.py` | 20 | Kliens ↔ szerver összhang: konstansok, elem-azonosítók, Socket.IO események, JS szintaxis |
 
-**Összesen: 802 teszt** (a node-ot igénylő tesztek node nélkül kimaradnak)
+**Összesen: 879 teszt** (a node-ot igénylő tesztek node nélkül kimaradnak)
 
 ---
 
 ## Hibaelhárítás / Troubleshooting
 
 <details>
-<summary><strong>pyenchant telepítési hiba</strong></summary>
+<summary><strong>Szótár (értelmetlen szavak is érvényesnek látszanak)</strong></summary>
 
-**Linux**: Telepítsd az enchant könyvtárat:
-```bash
-# Debian / Ubuntu
-sudo apt install libenchant-2-dev
-
-# Arch
-sudo pacman -S enchant
-
-# Fedora
-sudo dnf install enchant2-devel
-```
-
-**macOS**:
-```bash
-brew install enchant
-```
-
-**Windows**: A `pyenchant` pip csomag automatikusan tartalmazza a szükséges DLL-eket.
+A szótár a `dict/hu_HU.aff` és `dict/hu_HU.dic` fájlokból töltődik be, külön rendszercsomag (enchant, hunspell) nélkül. Indításkor a szerver kiírja: `Szótár: beágyazott hu_HU (… szótő)`. Ha ehelyett a `FIGYELEM: A szótár nem tölthető be` sor jelenik meg, hiányzik vagy sérült a `dict/` mappa, és a szavak ellenőrzése ki van kapcsolva (a Szótár-eszköz ilyenkor hibát jelez, nem "érvényes"-t).
 
 </details>
 

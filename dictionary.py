@@ -1,53 +1,55 @@
 import os
 import re
-import subprocess
 
 # Szótár fájlok helye (a projektben a dict/ mappában)
 _DICT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dict')
 
-# Beállítjuk a DICPATH-ot, hogy a pyenchant/hunspell megtalálja a szótárat
-if os.path.isdir(_DICT_DIR):
-    os.environ.setdefault('DICPATH', _DICT_DIR)
-
 _checker = None
-_checker_type = None
+_checker_type = None  # 'builtin', ha a beágyazott szótár betöltődött
 _init_attempted = False  # a szótár inicializálását csak egyszer próbáljuk meg (ne minden szónál)
+
+# Magánhangzó nélküli tételek a szótárban: betűnevek (B, CS), rövidítések (KG, DB, SMS, TV, PDF)
+# és indulatszavak. A Scrabble-ban a rövidítések és betűnevek nem érvényesek, az indulatszavak igen.
+_HAS_VOWEL_RE = re.compile('[aáeéiíoóöőuúüű]')
+_VOWELLESS_INTERJECTIONS = frozenset({'brr', 'brrr', 'hm', 'hmm', 'hmmm', 'khm', 'khmm', 'pszt'})
 
 
 def _init_checker():
-    """Inicializálja a szótár-ellenőrzőt. Sorrendben próbálja: pyenchant, hunspell CLI."""
+    """Betölti a beágyazott hu_HU szótárat (dict/hu_HU.aff + .dic). Nincs külső függőség:
+    sem a pyenchant/libenchant, sem a hunspell program nem szükséges."""
     global _checker, _checker_type, _init_attempted
     _init_attempted = True
-
-    # 1. Próbáljuk a pyenchant-ot (cross-platform)
     try:
-        import enchant
-        _checker = enchant.Dict('hu_HU')
-        _checker_type = 'enchant'
-        print("Szótár: pyenchant (hu_HU)")
-        return
-    except Exception:
-        pass
+        from affix_checker import AffixChecker
+        _checker = AffixChecker(os.path.join(_DICT_DIR, 'hu_HU.aff'), os.path.join(_DICT_DIR, 'hu_HU.dic'))
+        _checker_type = 'builtin'
+        print(f"Szótár: beágyazott hu_HU ({_checker.entry_count} szótő)")
+    except (OSError, ValueError) as exc:
+        _checker = None
+        _checker_type = None
+        print(f"FIGYELEM: A szótár nem tölthető be ({exc}) — a szavak ellenőrzése ki van kapcsolva! "
+              "Ellenőrizd a dict/hu_HU.aff és dict/hu_HU.dic fájlokat.")
 
-    # 2. Próbáljuk a hunspell CLI-t (Linux/macOS)
-    try:
-        dict_path = os.path.join(_DICT_DIR, 'hu_HU') if os.path.isdir(_DICT_DIR) else 'hu_HU'
-        result = subprocess.run(
-            ['hunspell', '-d', dict_path, '-l'],
-            input='teszt',
-            capture_output=True,
-            text=True,
-            timeout=5,
-            env={**os.environ, 'DICPATH': _DICT_DIR},
-        )
-        _checker_type = 'cli'
-        print("Szótár: hunspell CLI (hu_HU)")
-        return
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
 
-    print("FIGYELEM: Szótár-ellenőrzés nem elérhető! Telepítsd a pyenchant csomagot és a dict/ mappa szótárfájljait.")
-    _checker_type = None
+def warm_up():
+    """Betölti a szótárat (szerverindításkor, hogy az első lerakásnál ne kelljen várni)."""
+    if _checker_type is None and not _init_attempted:
+        _init_checker()
+    return is_available()
+
+
+def is_available():
+    """Igaz, ha működik a szótár-ellenőrzés (különben minden szó elfogadásra kerül)."""
+    if _checker_type is None and not _init_attempted:
+        _init_checker()
+    return _checker_type == 'builtin'
+
+
+def _lookup(word):
+    """Egyetlen kisbetűs szó keresése a szótárban (ragozott alakokkal együtt)."""
+    if not _HAS_VOWEL_RE.search(word) and word not in _VOWELLESS_INTERJECTIONS:
+        return False
+    return _checker.check(word)
 
 
 # Érvényes magyar szó karakterek (nagybetűk + ékezetes betűk)
@@ -74,29 +76,11 @@ def check_words(words):
     if _checker_type is None and not _init_attempted:
         _init_checker()
 
-    # A táblán a szavak nagybetűsek, de kisbetűvel kell keresni: a nagybetűs alak a
-    # tulajdonneveket (BUDAPEST, DUNA) is elfogadja, a Scrabble-ban pedig azok nem érvényesek.
-    if _checker_type == 'enchant':
-        invalid = [w for w in words if not _checker.check(w.lower())]
+    # A táblán a szavak nagybetűsek, de kisbetűvel kell keresni: a nagy kezdőbetűs alak a
+    # tulajdonneveket (BUDAPEST, DUNA) is elfogadná, a Scrabble-ban pedig azok nem érvényesek.
+    if _checker_type == 'builtin':
+        invalid = [w for w in words if not _lookup(w.lower())]
         return len(invalid) == 0, invalid
-
-    if _checker_type == 'cli':
-        try:
-            input_text = '\n'.join(w.lower() for w in words)
-            dict_path = os.path.join(_DICT_DIR, 'hu_HU') if os.path.isdir(_DICT_DIR) else 'hu_HU'
-            result = subprocess.run(
-                ['hunspell', '-d', dict_path, '-l'],
-                input=input_text,
-                capture_output=True,
-                text=True,
-                timeout=5,
-                env={**os.environ, 'DICPATH': _DICT_DIR},
-            )
-            flagged = {w.strip().lower() for w in result.stdout.strip().split('\n') if w.strip()}
-            invalid = [w for w in words if w.lower() in flagged]
-            return len(invalid) == 0, invalid
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
 
     # Nincs elérhető szótár — minden szót elfogadunk
     return True, []
@@ -117,25 +101,8 @@ def _remember(word, valid):
 def _raw_check_many(words):
     """Szótárellenőrzés a már szűrt (kisbetűs, érvényes karakterű) szavakra.
     Visszatér: {szó: bool}. Szótár híján minden szót érvényesnek vesz (mint a check_words)."""
-    if _checker_type == 'enchant':
-        return {w: bool(_checker.check(w)) for w in words}
-
-    if _checker_type == 'cli' and words:
-        try:
-            dict_path = os.path.join(_DICT_DIR, 'hu_HU') if os.path.isdir(_DICT_DIR) else 'hu_HU'
-            result = subprocess.run(
-                ['hunspell', '-d', dict_path, '-l'],
-                input='\n'.join(words),
-                capture_output=True,
-                text=True,
-                timeout=15,
-                env={**os.environ, 'DICPATH': _DICT_DIR},
-            )
-            flagged = {w.strip().lower() for w in result.stdout.split('\n') if w.strip()}
-            return {w: w not in flagged for w in words}
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
-
+    if _checker_type == 'builtin':
+        return {w: _lookup(w) for w in words}
     return {w: True for w in words}
 
 
@@ -173,45 +140,50 @@ def is_word_valid(word):
     return word in filter_valid([word])
 
 
+_SUGGEST_ALPHABET = 'aábcdeéfghiíjklmnoóöőpqrstuúüűvwxyz'
+_ACCENT_BASE = str.maketrans('áéíóöőúüű', 'aeiooouuu')
+
+
+def _edit_candidates(word):
+    """A szóból egyetlen szerkesztéssel (betűcsere, törlés, beszúrás, felcserélés) kapható alakok,
+    jóság szerint rendezve: ékezetcsere, két betű felcserélése, más betűcsere, törlés, beszúrás."""
+    ranked = {}
+
+    def add(candidate, rank):
+        if candidate != word and candidate not in ranked:
+            ranked[candidate] = rank
+
+    n = len(word)
+    for i in range(n):
+        for letter in _SUGGEST_ALPHABET:
+            if letter != word[i]:
+                same_base = letter.translate(_ACCENT_BASE) == word[i].translate(_ACCENT_BASE)
+                add(word[:i] + letter + word[i + 1:], 0 if same_base else 2)
+    for i in range(n - 1):
+        add(word[:i] + word[i + 1] + word[i] + word[i + 2:], 1)
+    for i in range(n):
+        add(word[:i] + word[i + 1:], 3)
+    for i in range(n + 1):
+        for letter in _SUGGEST_ALPHABET:
+            add(word[:i] + letter + word[i:], 4)
+    return sorted(ranked, key=lambda c: (ranked[c], c))
+
+
 def suggest_words(word, limit=6):
-    """Javaslatok egy hibás szóra (nagybetűs, a táblán kirakható szavak). Üres lista, ha nincs."""
+    """Javaslatok egy hibás szóra (nagybetűs, a táblán kirakható szavak). Üres lista, ha nincs.
+    A javaslatok a szóhoz egy betűnyi szerkesztéssel kapható, érvényes szavak."""
     if not isinstance(word, str) or not _VALID_WORD_RE.match(word.upper()) \
             or len(word) > _MAX_WORD_LENGTH:
         return []
     if _checker_type is None and not _init_attempted:
         _init_checker()
-
-    raw = []
-    lowered = word.lower()
-    if _checker_type == 'enchant':
-        try:
-            raw = list(_checker.suggest(lowered))
-        except Exception:
-            raw = []
-    elif _checker_type == 'cli':
-        try:
-            dict_path = os.path.join(_DICT_DIR, 'hu_HU') if os.path.isdir(_DICT_DIR) else 'hu_HU'
-            result = subprocess.run(
-                ['hunspell', '-d', dict_path, '-a'],
-                input=lowered + '\n',
-                capture_output=True,
-                text=True,
-                timeout=8,
-                env={**os.environ, 'DICPATH': _DICT_DIR},
-            )
-            for line in result.stdout.split('\n'):
-                if line.startswith('&') and ':' in line:
-                    raw = [s.strip() for s in line.split(':', 1)[1].split(',')]
-                    break
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            raw = []
+    if _checker_type != 'builtin':
+        return []
 
     suggestions = []
-    for candidate in raw:
-        up = candidate.upper()
-        if up != word.upper() and len(up) <= _MAX_WORD_LENGTH and _VALID_WORD_RE.match(up) \
-                and up not in suggestions:
-            suggestions.append(up)
-        if len(suggestions) >= limit:
-            break
+    for candidate in _edit_candidates(word.lower()):
+        if 2 <= len(candidate) <= _MAX_WORD_LENGTH and _lookup(candidate):
+            suggestions.append(candidate.upper())
+            if len(suggestions) >= limit:
+                break
     return suggestions

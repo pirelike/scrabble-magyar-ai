@@ -1,6 +1,7 @@
 """Tests for dictionary.py - word validation."""
+import os
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 
 @pytest.fixture(autouse=True)
@@ -89,166 +90,153 @@ class TestCheckWordsNoChecker:
         assert invalid == []
 
 
-class TestCheckWordsWithEnchant:
-    """Test with mocked enchant checker."""
+@pytest.fixture(scope='module')
+def real_checker():
+    """A beágyazott szótár egyszer betöltve (a betöltés ~0,3 mp)."""
+    import dictionary
+    from affix_checker import AffixChecker
+    return AffixChecker(os.path.join(dictionary._DICT_DIR, 'hu_HU.aff'),
+                        os.path.join(dictionary._DICT_DIR, 'hu_HU.dic'))
 
-    def test_enchant_valid_words(self):
-        from dictionary import check_words
-        import dictionary
-        mock_checker = MagicMock()
-        mock_checker.check.return_value = True
-        dictionary._checker = mock_checker
-        dictionary._checker_type = 'enchant'
 
-        valid, invalid = check_words(['ALMA', 'KÖRTE'])
-        assert valid is True
-        assert invalid == []
-        assert mock_checker.check.call_count == 2
+@pytest.fixture
+def real_dictionary(real_checker):
+    import dictionary
+    dictionary._checker = real_checker
+    dictionary._checker_type = 'builtin'
+    dictionary._init_attempted = True
+    return dictionary
 
-    def test_enchant_invalid_word(self):
-        from dictionary import check_words
-        import dictionary
-        mock_checker = MagicMock()
-        mock_checker.check.side_effect = lambda w: w != 'xyzzy'
-        dictionary._checker = mock_checker
-        dictionary._checker_type = 'enchant'
 
-        valid, invalid = check_words(['ALMA', 'XYZZY'])
+class TestBuiltinDictionary:
+    """A beágyazott szótár a valódi hu_HU fájlokkal."""
+
+    @pytest.mark.parametrize('word', [
+        'ALMA', 'KÖRTE', 'SZÉKEK', 'ÉJSZAKA',            # szótő
+        'ALMÁT', 'KUTYÁKNAK', 'HÁZAT', 'KÖNYVEKET',      # ragozott alak
+        'LEGSZEBBEK', 'MEGETTE', 'LEGHÍRESEBBEK',     # előtag, többszörös toldalék
+    ])
+    def test_real_words_are_valid(self, real_dictionary, word):
+        assert real_dictionary.check_words([word]) == (True, [])
+
+    @pytest.mark.parametrize('word', [
+        'SALYT', 'SALYAK', 'XQZ', 'ÁLMAK', 'KÖNYVKET', 'ALMAK',   # nem létező alakok
+        'PAGONYAGY', 'EBÁSZ',                                       # összetétel-szabályokkal átcsúszó értelmetlen szavak
+    ])
+    def test_nonsense_words_are_invalid(self, real_dictionary, word):
+        valid, invalid = real_dictionary.check_words([word])
         assert valid is False
-        assert 'XYZZY' in invalid
+        assert invalid == [word]
 
-    def test_enchant_all_invalid(self):
-        from dictionary import check_words
-        import dictionary
-        mock_checker = MagicMock()
-        mock_checker.check.return_value = False
-        dictionary._checker = mock_checker
-        dictionary._checker_type = 'enchant'
+    def test_salyt_is_not_a_hungarian_word(self, real_dictionary):
+        """Regresszió: a Szótár-eszköz "érvényes"-nek jelölte a SALYT-ot (nem volt szótár a szerveren)."""
+        assert real_dictionary.is_word_valid('SALYT') is False
+        assert real_dictionary.filter_valid(['SALYT', 'SÁLAT']) == {'SÁLAT'}
 
-        valid, invalid = check_words(['XXX', 'YYY'])
+    @pytest.mark.parametrize('word', ['DUNA', 'BUDAPEST', 'MAGYARORSZÁG'])
+    def test_proper_nouns_are_invalid(self, real_dictionary, word):
+        assert real_dictionary.check_words([word])[0] is False
+
+    @pytest.mark.parametrize('word', ['KG', 'DB', 'TV', 'SMS', 'PDF', 'TB', 'CS', 'SZ'])
+    def test_abbreviations_and_letter_names_are_invalid(self, real_dictionary, word):
+        assert real_dictionary.check_words([word])[0] is False
+
+    @pytest.mark.parametrize('word', ['BRR', 'HM', 'HMM', 'PSZT'])
+    def test_vowelless_interjections_are_valid(self, real_dictionary, word):
+        assert real_dictionary.check_words([word])[0] is True
+
+    def test_all_words_must_be_valid(self, real_dictionary):
+        valid, invalid = real_dictionary.check_words(['ALMA', 'SALYT', 'KÖRTE', 'XQZ'])
         assert valid is False
-        assert len(invalid) == 2
+        assert invalid == ['SALYT', 'XQZ']
 
-
-class TestCheckWordsWithCLI:
-    """Test with mocked hunspell CLI."""
-
-    def test_cli_valid_words(self):
-        from dictionary import check_words
-        import dictionary
-        dictionary._checker_type = 'cli'
-
-        mock_result = MagicMock()
-        mock_result.stdout = ''
-        with patch('dictionary.subprocess.run', return_value=mock_result):
-            valid, invalid = check_words(['ALMA'])
-            assert valid is True
-
-    def test_cli_invalid_words(self):
-        from dictionary import check_words
-        import dictionary
-        dictionary._checker_type = 'cli'
-
-        mock_result = MagicMock()
-        mock_result.stdout = 'XYZZY\n'
-        with patch('dictionary.subprocess.run', return_value=mock_result):
-            valid, invalid = check_words(['ALMA', 'XYZZY'])
-            assert valid is False
-            assert 'XYZZY' in invalid
-
-    def test_cli_timeout_fallback(self):
-        from dictionary import check_words
-        import dictionary, subprocess
-        dictionary._checker_type = 'cli'
-
-        with patch('dictionary.subprocess.run', side_effect=subprocess.TimeoutExpired('cmd', 5)):
-            valid, invalid = check_words(['ALMA'])
-            # Timeout => fallback to accepting
-            assert valid is True
-
-
-class TestInitChecker:
-    def test_init_with_enchant(self):
-        import dictionary
-
-        mock_dict = MagicMock()
-        mock_enchant = MagicMock()
-        mock_enchant.Dict.return_value = mock_dict
-
-        with patch.dict('sys.modules', {'enchant': mock_enchant}):
-            dictionary._init_checker()
-            assert dictionary._checker_type == 'enchant'
-            assert dictionary._checker is mock_dict
-
-    def test_init_fallback_to_cli(self):
-        import dictionary
-
-        # enchant import fails, hunspell CLI works
-        def fail_enchant_import():
-            raise ImportError("no enchant")
-
-        with patch('builtins.__import__', side_effect=lambda name, *a, **kw: fail_enchant_import() if name == 'enchant' else __import__(name, *a, **kw)):
-            mock_result = MagicMock()
-            mock_result.returncode = 0
-            with patch('dictionary.subprocess.run', return_value=mock_result):
-                dictionary._init_checker()
-                assert dictionary._checker_type == 'cli'
-
-    def test_init_no_checker_available(self):
-        import dictionary
-
-        with patch('builtins.__import__', side_effect=lambda name, *a, **kw: (_ for _ in ()).throw(ImportError()) if name == 'enchant' else __import__(name, *a, **kw)):
-            with patch('dictionary.subprocess.run', side_effect=FileNotFoundError()):
-                dictionary._init_checker()
-                assert dictionary._checker_type is None
-
-
-class TestProperNounsAndLookup:
-    """A tábla nagybetűs szavait kisbetűvel keressük: tulajdonnév nem érvényes Scrabble-szó."""
-
-    def test_enchant_is_queried_with_lowercase_words(self):
-        from dictionary import check_words
-        import dictionary
-        mock_checker = MagicMock()
-        mock_checker.check.return_value = True
-        dictionary._checker = mock_checker
-        dictionary._checker_type = 'enchant'
-
-        check_words(['ÁLMOK', 'SZÉK'])
-        asked = [c.args[0] for c in mock_checker.check.call_args_list]
+    def test_lookup_is_lowercase(self, real_dictionary, real_checker):
+        asked = []
+        original = real_checker.check
+        real_checker.check = lambda w: asked.append(w) or original(w)
+        try:
+            real_dictionary.check_words(['ÁLMOK', 'SZÉK'])
+        finally:
+            del real_checker.check
         assert asked == ['álmok', 'szék']
 
-    def test_proper_noun_is_rejected_by_enchant(self):
-        from dictionary import check_words
-        import dictionary
-        known = {'alma', 'duna'.capitalize()}  # a szótárban a tulajdonnév nagy kezdőbetűs
-        mock_checker = MagicMock()
-        mock_checker.check.side_effect = lambda w: w in known
-        dictionary._checker = mock_checker
-        dictionary._checker_type = 'enchant'
+    def test_filter_valid_agrees_with_check_words(self, real_dictionary):
+        words = ['ALMA', 'SALYT', 'KUTYÁNAK', 'PAGONYAGY', 'DUNA', 'KG', 'HM']
+        valid = real_dictionary.filter_valid(words)
+        for word in words:
+            assert (word in valid) == real_dictionary.check_words([word])[0], word
 
-        valid, invalid = check_words(['ALMA', 'DUNA'])
-        assert valid is False
-        assert invalid == ['DUNA']
 
-    def test_cli_receives_lowercase_and_reports_original_words(self):
-        from dictionary import check_words
+class TestAvailability:
+    def test_available_with_embedded_dictionary(self):
         import dictionary
-        dictionary._checker_type = 'cli'
-        mock_result = MagicMock()
-        mock_result.stdout = 'duna\n'  # a hunspell kisbetűs bemenetre kisbetűvel válaszol
-        with patch('dictionary.subprocess.run', return_value=mock_result) as run:
-            valid, invalid = check_words(['ALMA', 'DUNA'])
-        assert run.call_args.kwargs['input'] == 'alma\nduna'
-        assert valid is False
-        assert invalid == ['DUNA']
+        assert dictionary.is_available() is True
+        assert dictionary._checker_type == 'builtin'
 
-    def test_missing_dictionary_is_initialised_only_once(self):
+    def test_warm_up_loads_the_dictionary_once(self):
         import dictionary
-        with patch('dictionary.subprocess.run', side_effect=FileNotFoundError), \
-                patch.dict('sys.modules', {'enchant': None}), \
+        assert dictionary.warm_up() is True
+        checker = dictionary._checker
+        assert dictionary.warm_up() is True
+        assert dictionary._checker is checker
+
+    def test_missing_dictionary_files_disable_checking(self, tmp_path):
+        import dictionary
+        with patch.object(dictionary, '_DICT_DIR', str(tmp_path)):
+            dictionary._init_checker()
+        assert dictionary._checker_type is None
+        assert dictionary.is_available() is False
+        # Szótár nélkül minden szót elfogadunk (és ezt a Szótár-eszköz jelzi)
+        assert dictionary.check_words(['SALYT']) == (True, [])
+
+    def test_missing_dictionary_is_initialised_only_once(self, tmp_path):
+        import dictionary
+        with patch.object(dictionary, '_DICT_DIR', str(tmp_path)), \
                 patch('dictionary._init_checker', wraps=dictionary._init_checker) as init:
             dictionary.check_words(['ALMA'])
             dictionary.check_words(['KUTYA'])
             dictionary.check_words(['MACSKA'])
         assert init.call_count == 1
+
+    def test_no_checker_suggests_nothing(self):
+        import dictionary
+        dictionary._checker_type = 'none'
+        assert dictionary.suggest_words('SALYT') == []
+
+
+class TestSuggestions:
+    def test_accent_fix_comes_first(self, real_dictionary):
+        assert real_dictionary.suggest_words('ALMAK')[0] == 'ALMÁK'
+
+    def test_suggestions_are_valid_words(self, real_dictionary):
+        for word in real_dictionary.suggest_words('SALYT'):
+            assert real_dictionary.check_words([word])[0] is True
+
+    def test_deletion_and_insertion(self, real_dictionary):
+        assert 'KÖNYVEKET' in real_dictionary.suggest_words('KÖNYVEKT') or \
+            'KÖNYVEKET' in real_dictionary.suggest_words('KÖNYVEKKET')
+        assert 'ALMA' in real_dictionary.suggest_words('ALMMA')  # felesleges betű
+        assert 'KUTYA' in real_dictionary.suggest_words('KUTY')  # hiányzó betű
+
+    def test_swapped_letters(self, real_dictionary):
+        assert 'KUTYA' in real_dictionary.suggest_words('KUYTA')
+
+
+class TestBoardUsesTheRealDictionary:
+    """Szótár-mock nélkül: a táblán a nem létező szó nem rakható le."""
+
+    @staticmethod
+    def _row(word, row=7, start=5):
+        return [(row, start + i, ch, False) for i, ch in enumerate(word)]
+
+    def test_nonsense_word_is_rejected(self, real_dictionary):
+        from board import Board
+        valid, _words, error = Board().validate_placement(self._row('SALYT'))
+        assert valid is False
+        assert 'SALYT' in error
+
+    def test_real_word_is_accepted(self, real_dictionary):
+        from board import Board
+        valid, words, _error = Board().validate_placement(self._row('SALAK'))
+        assert valid is True
+        assert words[0][0] == 'SALAK'

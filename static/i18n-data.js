@@ -745,6 +745,7 @@ window.I18N_DATA = {
     "A játék nem aktív.": "The game is not active.",
     "A kód 6 számjegyből áll.": "The code has 6 digits.",
     "Adj meg legalább egy szót.": "Enter at least one word.",
+    "A szótár jelenleg nem elérhető.": "The dictionary is currently unavailable.",
     "Az email címet előbb meg kell erősíteni a kóddal.": "The email address must be confirmed with the code first.",
     "Bejelentkezés szükséges.": "Login required.",
     "Csak a mentés tulajdonosa törölheti a játékot.": "Only the owner of the save can delete the game.",

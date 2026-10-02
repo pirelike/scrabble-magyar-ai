@@ -1,10 +1,10 @@
 """Számítógépes ellenfél (AI): lépésgenerátor és döntési stratégia.
 
 Működés:
-  * Szókincs: a beágyazott hu_HU hunspell szótár tőszavai (ragozott alakok nélkül), egy rendezett
+  * Szókincs: a beágyazott hu_HU szótár tőszavai (ragozott alakok nélkül), egy rendezett
     listában. A prefixkeresés `bisect`-tel történik, így nincs szükség nagy memóriájú trie-ra.
   * Lépésgenerálás: horgonyalapú (Appel–Jacobson) keresés vízszintes és függőleges irányban.
-    A keresztszavak érvényességét a hunspell szótár dönti el (egyetlen tömeges híváson belül), így a
+    A keresztszavak érvényességét a szótár dönti el (egyetlen tömeges híváson belül), így a
     robot ragozott szavakhoz is tud kapcsolódni. A fő szó tőszó; a kiválasztott lépés minden szavát
     a játék saját szótára is ellenőrzi, mielőtt a robot lerakja.
   * Nehézségi szintek: könnyű (rövid, gyenge lépések), közepes (jó lépések közül véletlen),
