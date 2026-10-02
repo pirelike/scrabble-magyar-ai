@@ -1,15 +1,3 @@
-# Erőforrás-kezelés és Subagent Delegáció
-Az iterációs ciklusok és a memóriaterhelés optimalizálása érdekében rendelkezel egy dedikált elemző eszközzel: a Gemini CLI-vel.
-
-SZABÁLYOK A GEMINI HASZNÁLATÁRA:
-- Ha egy feladat a teljes projekt áttekintését (több száz fájl) igényli, vagy "Read-Heavy" (pl. elavult kódmintázatok keresése).
-- Ha naprakész webes információra van szükséged egy új API-ról vagy CVE sebezhetőségről.
-- Ha független kód-felülvizsgálatot (Second Opinion / Code Review) szeretnél kérni a megírt kódodra.
-
-ILYENKOR HASZNÁLD AZ Gemini CLI-t a feladatok leadása érdekében és kontextusablak megtakarítás érdekében:
-
-A Gemini kimenetét tekintsd desztillált ténynek, és használd fel a saját, precíziós kódolási folyamatodban.
-
 # Magyar Scrabble Klón
 
 ## Áttekintés
