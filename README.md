@@ -42,7 +42,7 @@ Open http://localhost:5000 in your browser.
 - **Játékos profil** — statisztikák (játszott, győzelem, nyerési arány, átl. pontszám) és játékelőzmények
 - **Sötét / világos téma** — automatikus detektálás (`prefers-color-scheme`), manuális váltás, Slate+Gold paletta
 - **Hang effektek** — betű lerakás, szavazás, kör értesítő, chat, játék kezdés/vége; hangerő-szabályozó és kategóriánkénti ki/be kapcsolók (Web Audio API, nincs külső fájl)
-- **Stabil újracsatlakozás** — hálózati hiba vagy manuális kilépés után is visszacsatlakozhatnak a játékosok az aktív játékba (120 mp grace period, token alapú)
+- **Stabil újracsatlakozás** — hálózati hiba vagy manuális kilépés után is visszacsatlakozhatnak a játékosok az aktív játékba (120 mp grace period, token alapú); a **várakozó szoba** sem szűnik meg azonnal, ha a tulajdonos kapcsolata megszakad (pl. telefonon átvált az üzenetküldő appra a kód elküldéséhez): 10 percig megmarad, és a tulajdonos visszatérhet
 - **Pinch-to-zoom** — mobilon a tábla nagyítható/kicsinyíthető csípő mozdulattal
 - **Robot ellenfelek (AI)** — egyedül is játszható 1–3 számítógépes ellenfél ellen, három nehézségi szinttel (könnyű / közepes / nehéz); a robotok a szótár tőszavaiból építenek, a keresztszavakat a teljes szótárral ellenőrzik. Robotos játék a ranglistába nem számít. Egyedül játszva **tipp** kérhető (a három legjobb lépés)
 - **Megfigyelő mód** — folyamatban lévő nyilvános játék megfigyelése játékos nélkül (lobby „Élő játékok”, privát játék kóddal); a megfigyelő nem lát kezeket, nem lép és nem chatel
@@ -257,7 +257,7 @@ static/
   i18n-data.js     — Fordítások (hu / en) — szigorú JSON, a tesztek is ezt olvassák
   style.css        — Stílusok, sötét/világos téma (Slate+Gold paletta), reszponzív layout, animációk
   manifest.webmanifest, offline.html, icons/ — PWA: manifest, kapcsolat nélküli oldal, ikonok
-tests/             — Tesztek (pytest, 879 teszt)
+tests/             — Tesztek (pytest, 889 teszt)
 ```
 
 ---
@@ -354,7 +354,7 @@ Támogatott böngészőben a lobby felső sávjában megjelenik a **Telepítés*
 | `tests/test_room.py` | 12 | Room osztály |
 | `tests/test_friends.py` | 27 | Barát CRUD, kérések, felhasználókeresés, szobameghívó, online státusz |
 | `tests/test_timer_and_replay.py` | 27 | Körszámláló UI, kör időlimit, replay perzisztencia |
-| `tests/test_regressions.py` | 70 | Kódátvizsgálás során talált hibák regressziós tesztjei |
+| `tests/test_regressions.py` | 80 | Kódátvizsgálás során talált hibák regressziós tesztjei |
 | `tests/test_ai_player.py` | 39 | Robot: szókincs, lépésgenerátor, nehézségi szintek, tipp |
 | `tests/test_bots.py` | 106 | Robotok a játékmodellben és a szerveren, lépéstörténet, előnézet, tipp |
 | `tests/test_spectator.py` | 30 | Megfigyelő mód, élő játékok listája |
@@ -363,7 +363,7 @@ Támogatott böngészőben a lobby felső sávjában megjelenik a **Telepítés*
 | `tests/test_i18n.py` | 27 | Fordítások teljessége (kulcsok, helyőrzők, szerverüzenetek), a böngészős fordító futtatása node-ban |
 | `tests/test_frontend_consistency.py` | 20 | Kliens ↔ szerver összhang: konstansok, elem-azonosítók, Socket.IO események, JS szintaxis |
 
-**Összesen: 879 teszt** (a node-ot igénylő tesztek node nélkül kimaradnak)
+**Összesen: 889 teszt** (a node-ot igénylő tesztek node nélkül kimaradnak)
 
 ---
 

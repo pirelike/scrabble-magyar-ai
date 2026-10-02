@@ -515,11 +515,13 @@ class TestBotTurns:
         client.emit('leave_room')
         assert room.id not in server.state.rooms
 
-    def test_disconnect_in_waiting_room_removes_bot_room(self, make_client):
+    def test_waiting_room_with_bots_is_removed_after_the_grace_period(self, make_client):
         import server
         client = make_client()
         room = _create(client, ai_players=['easy'])
         client.disconnect()
+        assert room.id in server.state.rooms  # türelmi idő: a játékos visszatérhet
+        server._finalize_player_disconnect(list(server.state._disconnected_players)[0])
         assert room.id not in server.state.rooms
 
     def test_bots_are_not_sent_states(self, make_client, monkeypatch):

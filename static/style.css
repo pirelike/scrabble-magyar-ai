@@ -1377,16 +1377,19 @@ button.btn-rejoin {
     color: var(--success-text);
 }
 
-.player-item.missing {
+.player-item.missing,
+.player-item.offline {
     color: var(--text-muted);
 }
 
-.player-item.missing .player-avatar {
+.player-item.missing .player-avatar,
+.player-item.offline .player-avatar {
     background: var(--color-fill);
     color: var(--text-muted);
 }
 
-.player-item.missing .player-tag {
+.player-item.missing .player-tag,
+.player-item.offline .player-tag {
     color: var(--text-muted);
     font-weight: 500;
 }

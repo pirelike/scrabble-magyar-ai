@@ -96,6 +96,10 @@ app.register_blueprint(public_bp)
 
 # --- Grace period ---
 _DISCONNECT_GRACE_PERIOD = 120
+# Várakozó szoba (a játék indítása előtt): a tulajdonos ennyi ideig lehet távol, mielőtt a szoba
+# megszűnik. Telefonon az üzenetküldő appra váltás (a kód / meghívó link elküldése) megszakítja a
+# kapcsolatot, ezért ez hosszabb, mint a játék közbeni türelmi idő.
+_WAITING_OWNER_GRACE_PERIOD = 600
 ALLOWED_TURN_TIME_LIMITS = {0, 60, 90, 120, 180, 300}
 MAX_BOTS = 3
 # Robot "gondolkodási" ideje másodpercben (min, max): a lépés ennyi várakozás után jelenik meg
@@ -620,23 +624,29 @@ def handle_disconnect():
     user_id = auth_info.get('user_id') if isinstance(auth_info, dict) else None
     is_registered_user = bool(user_id and not auth_info.get('is_guest')) if isinstance(auth_info, dict) else False
     was_online = state.is_user_online(user_id) if is_registered_user else False
+    kept_for_grace = False
 
     if room_id and room_id in state.rooms:
         room = state.rooms[room_id]
         game = room.game
 
-        if game.started and not game.finished and token:
-            # Aktív játék: grace period
+        if token and not game.finished:
+            # Aktív játék és várakozó szoba: türelmi idő, a játékos a tokenjével visszatérhet
+            kept_for_grace = True
+            was_owner = room.owner == sid or (room.owner_token is not None and room.owner_token == token)
+            grace = (_DISCONNECT_GRACE_PERIOD if game.started or not was_owner
+                     else _WAITING_OWNER_GRACE_PERIOD)
+
             game.mark_disconnected(sid)
             leave_room(room_id)
 
-            state.mark_disconnected(token, sid, room_id,
-                                    state.player_names.get(sid, '?'),
-                                    state.player_auth.get(sid))
+            disconnect_seq = state.mark_disconnected(token, sid, room_id,
+                                                      state.player_names.get(sid, '?'),
+                                                      state.player_auth.get(sid))
 
             def grace_timeout():
-                time.sleep(_DISCONNECT_GRACE_PERIOD)
-                if token in state._disconnected_players:
+                time.sleep(grace)
+                if state.disconnect_is_current(token, disconnect_seq):
                     _finalize_player_disconnect(token)
 
             socketio.start_background_task(grace_timeout)
@@ -646,7 +656,7 @@ def handle_disconnect():
                  {'name': state.player_names.get(sid, '?')}, room=room_id)
             del state.player_rooms[sid]
         else:
-            # Nem aktív játék (vagy befejezett): azonnali eltávolítás
+            # Befejezett játék (vagy token nélküli játékos): azonnali eltávolítás
             game.remove_player(sid)
             leave_room(room_id)
 
@@ -672,12 +682,10 @@ def handle_disconnect():
     state.remove_online_user(sid)
     if is_registered_user and was_online and not state.is_user_online(user_id):
         _notify_friends_presence_change(user_id, False)
-    # player_auth törlése: csak ha NEM grace period-ban van (aktív játék disconnect)
+    # player_auth törlése: csak ha NEM grace period-ban van (aktív játék vagy várakozó szoba).
     # Grace period esetén az auth info a _disconnected_players-ben van mentve,
     # és a _finalize_player_disconnect fogja törölni.
-    if not (room_id and room_id in state.rooms and
-            state.rooms[room_id].game.started and
-            not state.rooms[room_id].game.finished and token):
+    if not kept_for_grace:
         state.player_auth.pop(sid, None)
     rate_limiter.clear_sid(sid)
 
@@ -911,15 +919,15 @@ def handle_rejoin_room(data):
 
 
 def _release_live_session(token, token_info):
-    """Aktív játékban lévő, még "élő" kapcsolatot lecsatlakozottnak jelöl, hogy a token
-    új kapcsolatról átvehető legyen. Visszaadja a régi SID-t, vagy None-t, ha nincs mit átvenni."""
+    """Aktív játékban vagy várakozó szobában lévő, még "élő" kapcsolatot lecsatlakozottnak jelöl,
+    hogy a token új kapcsolatról átvehető legyen. Visszaadja a régi SID-t, vagy None-t, ha nincs mit átvenni."""
     old_sid = token_info.get('sid')
     room_id = token_info.get('room_id')
     room = state.rooms.get(room_id)
     if not old_sid or not room:
         return None
     game = room.game
-    if not game.started or game.finished or state.player_rooms.get(old_sid) != room_id:
+    if game.finished or state.player_rooms.get(old_sid) != room_id:
         return None
 
     game.mark_disconnected(old_sid)
