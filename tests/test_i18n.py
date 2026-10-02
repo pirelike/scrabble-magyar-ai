@@ -40,7 +40,7 @@ def _ui_keys(translations):
 
 
 # Dinamikusan összerakott kulcscsaládok (a kódban `t('előtag.' + ...)` formában szerepelnek)
-_DYNAMIC_PREFIXES = ('ai.', 'history.', 'dict.reason_', 'sound.cat_', 'board.', 'last.vote_')
+_DYNAMIC_PREFIXES = ('ai.', 'history.', 'dict.reason_', 'sound.cat_', 'board.', 'last.vote_', 'badge.')
 
 
 class TestDataFile:
@@ -103,8 +103,12 @@ class TestKeyUsage:
             assert f'sound.cat_{cat}' in data['en'] and f'sound.cat_{cat}_desc' in data['en']
         for prefix in ('dl', 'tl', 'dw', 'tw'):
             assert f'board.{prefix}_long' in data['en'] and f'board.{prefix}_short' in data['en']
+        from achievements import BADGES
+        for badge in BADGES:
+            for lang in ('hu', 'en'):
+                assert f'badge.{badge}' in data[lang] and f'badge.{badge}_desc' in data[lang]
         for kind in ('exchange', 'pass', 'rejected', 'skip', 'vote_accept', 'vote_reject',
-                     'game_over', 'game_over_draw', 'save_revert', 'place', 'pending'):
+                     'game_over', 'game_over_draw', 'save_revert', 'place', 'pending', 'withdrawn', 'timeout', 'resigned'):
             assert f'last.{kind}' in data['en']
 
     def test_no_unused_keys(self, data, app_js, index_html):
@@ -248,6 +252,8 @@ _NOT_SHOWN = {
     '7 elfogadta.',
     '7 elutasította.',
     '7 lerakása a mentés miatt visszavonva.',
+    '7 visszavonta a lerakását.',
+    '7 feladta a játékot.',
 }
 
 
@@ -300,7 +306,7 @@ class TestClientTranslator:
     new Function('module', 'exports', 'window', 'document', 'localStorage', 'CustomEvent', code)(
         m, m.exports, global.window, global.document, global.localStorage, global.CustomEvent);
     const { I18N, t, tServer } = m.exports;
-    const cases = JSON.parse(process.argv[3]);
+    const cases = JSON.parse(fs.readFileSync(0, 'utf8'));
     const out = cases.map((c) => {
         if (c.op === 't') return t(c.key, c.params);
         if (c.op === 'server') return tServer(c.msg);
@@ -313,8 +319,8 @@ class TestClientTranslator:
 
     def _run(self, lang, cases):
         result = subprocess.run(
-            ['node', '-e', self.HARNESS, ROOT, lang, json.dumps(cases)],
-            capture_output=True, text=True, timeout=30,
+            ['node', '-e', self.HARNESS, ROOT, lang],
+            input=json.dumps(cases), capture_output=True, text=True, timeout=30,
         )
         assert result.returncode == 0, result.stderr
         return json.loads(result.stdout.strip().splitlines()[-1])
@@ -381,7 +387,9 @@ class TestClientTranslator:
         keys = [k for k in _ui_keys(data['en'])]
         params = {name: 'X' for name in ('n', 'max', 'owner', 'name', 'names', 'players', 'words', 'score',
                                          'player', 'room', 'word', 'total', 'bag', 'hands',
-                                         'vowels', 'consonants', 'blanks', 'played', 'won', 'rate')}
+                                         'vowels', 'consonants', 'blanks', 'played', 'won', 'rate',
+                                         'rating', 'change', 'done', 'lost', 'missed', 'optimal', 'turns',
+                                         'rank', 'best', 'date', 'correct', 'd', 'h', 'm', 'time', 'room')}
         for key in keys:
             cases.append({'op': 't', 'key': key, 'params': params})
         for lang in ('hu', 'en'):

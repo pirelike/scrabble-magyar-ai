@@ -47,6 +47,37 @@ self.addEventListener('message', (event) => {
     if (event.data === 'SKIP_WAITING') self.skipWaiting();
 });
 
+// Web Push: "Te jössz!" értesítés (a szerver a felhasználó nyelvén küldi a szöveget)
+self.addEventListener('push', (event) => {
+    let data = {};
+    try {
+        data = event.data ? event.data.json() : {};
+    } catch (err) {
+        data = { body: event.data ? event.data.text() : '' };
+    }
+    event.waitUntil(self.registration.showNotification(data.title || 'Magyar Scrabble', {
+        body: data.body || '',
+        tag: data.tag || 'scrabble',
+        renotify: true,
+        icon: '/static/icons/icon-192.png',
+        badge: '/static/icons/icon-192.png',
+        data: { url: data.url || '/' },
+    }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+    event.notification.close();
+    const url = (event.notification.data && event.notification.data.url) || '/';
+    event.waitUntil(
+        self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
+            for (const client of windows) {
+                if ('focus' in client) return client.focus();
+            }
+            return self.clients.openWindow(url);
+        })
+    );
+});
+
 function isApiRequest(url) {
     return url.pathname.startsWith('/socket.io/') || url.pathname.startsWith('/api/');
 }

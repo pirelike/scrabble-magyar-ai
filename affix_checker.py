@@ -54,6 +54,7 @@ class AffixChecker:
         self._suffixes = {}  # {add: [_Rule]}
         self._cont_flags = set()  # azok a jelzők, amelyek valamelyik folytatási osztályban szerepelnek
         self._entries = {}  # {szó: [flag-bájtok, ...]}
+        self._sfx_by_flag = None  # lusta: {jelző: [végződés-szabály]}
         self._load_aff(aff_path)
         self._load_dic(dic_path)
 
@@ -287,6 +288,55 @@ class AffixChecker:
     def check(self, word):
         """Igaz, ha a (kisbetűs) szó a szótárban szerepel vagy annak ragozott alakja."""
         return self._compute(word)
+
+    # ---------- ragozott alakok előállítása ----------
+
+    def _rules_by_flag(self):
+        """A végződés-szabályok jelzők szerint csoportosítva (egyszer épül fel)."""
+        if self._sfx_by_flag is None:
+            by_flag = {}
+            for rules in self._suffixes.values():
+                for rule in rules:
+                    by_flag.setdefault(rule.flag, []).append(rule)
+            self._sfx_by_flag = by_flag
+        return self._sfx_by_flag
+
+    def inflected_forms(self, stems, adds, max_form_len=15):
+        """A megadott szótövek ragozott alakjai: szótő + EGY végződés, a szótár saját szabályaival.
+
+        stems: kisbetűs szótövek (a .dic szócikkei); adds: a megengedett végződések (pl. {'ban',
+        'ek'}) — a teljes szabályrendszer több tízmillió alakot adna, ezért csak a kért végződésekkel
+        dolgozunk. A tővégi a/e nyúlásával járó alak (alma → almá-ban: a szabály `add` része 'ában')
+        ugyanannak a végződésnek számít. A szótári szavakat (és a szótárban magában szereplő alakokat)
+        nem adja vissza újra. Visszatér: a ragozott alakok halmaza.
+        """
+        by_flag = self._rules_by_flag()
+
+        def wanted_rule(rule):
+            if rule.need_affix or rule.only_in_compound:
+                return False
+            if rule.add in adds:
+                return True
+            return rule.strip in ('a', 'e') and rule.add[:1] in ('á', 'é') and rule.add[1:] in adds
+
+        wanted = {flag: [r for r in rules if wanted_rule(r)] for flag, rules in by_flag.items()}
+        forms = set()
+        for stem in stems:
+            for flags in self._entries.get(stem, ()):
+                if self._forbidden is not None and self._forbidden in flags:
+                    continue
+                if self._onlyincompound is not None and self._onlyincompound in flags:
+                    continue
+                for flag in flags:
+                    for rule in wanted.get(flag, ()):
+                        if rule.strip and not stem.endswith(rule.strip):
+                            continue
+                        if rule.cond is not None and rule.cond.search(stem) is None:
+                            continue
+                        form = (stem[:len(stem) - len(rule.strip)] if rule.strip else stem) + rule.add
+                        if form != stem and len(form) <= max_form_len and form not in self._entries:
+                            forms.add(form)
+        return forms
 
     def __contains__(self, word):
         return self.check(word)

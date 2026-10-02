@@ -89,8 +89,8 @@ class TestBotLevelSelector:
     def test_difficulty_select_offers_exactly_the_server_levels(self, index_html):
         import ai_player
         select = re.search(r'<select id="room-ai-difficulty"[^>]*>(.*?)</select>', index_html, re.S).group(1)
-        values = [int(v) for v in re.findall(r'<option value="(\d+)"', select)]
-        assert values == list(ai_player.DIFFICULTIES)
+        values = re.findall(r'<option value="(\w+)"', select)
+        assert values == [str(d) for d in ai_player.DIFFICULTIES] + [ai_player.ADAPTIVE]
 
     def test_default_option_is_the_default_level(self, index_html):
         import ai_player
@@ -100,7 +100,7 @@ class TestBotLevelSelector:
 
     def test_every_option_has_a_matching_translation_key(self, index_html):
         select = re.search(r'<select id="room-ai-difficulty"[^>]*>(.*?)</select>', index_html, re.S).group(1)
-        for value, key in re.findall(r'<option value="(\d+)"[^>]*data-i18n="([^"]+)"', select):
+        for value, key in re.findall(r'<option value="(\w+)"[^>]*data-i18n="([^"]+)"', select):
             assert key == f'ai.level_{value}'
 
 

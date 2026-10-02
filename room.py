@@ -19,12 +19,18 @@ class Room:
         self.join_code = join_code
         self.is_private = is_private
         self.is_restored = False
+        self.is_puzzle = False  # napi feladvány (egyjátékos, nem mentődik)
+        self.pushed_turn = -1   # melyik körhöz küldtünk már push értesítést
+        self.is_async = False   # levelezős játék: tartós, a játékosok bármikor visszatérhetnek
+        self.notified_turn = -1  # levelezős játék: melyik körről értesítettük a lobbyban lévő játékost
+        self.persisted_sig = None  # levelezős játék: a legutóbb mentett állapot ujjlenyomata
         self.chat_messages = []
         self._challenge_timer_id = 0
         self._turn_timer_id = 0
         self._bot_turn_id = 0
         self.spectators = {}  # {sid: név} — megfigyelők
         self.turn_timer_expires_at = None  # float Unix timestamp or None
+        self.withdraw_time_left = None  # a szavazásra váró lerakáskor hátralévő köridő (visszavonáshoz)
         # Persistence tracking (korábban a Game-ben volt)
         self.db_game_id = None
         self.last_saved_move_count = 0

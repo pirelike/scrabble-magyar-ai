@@ -31,6 +31,13 @@ def _init_checker():
               "Ellenőrizd a dict/hu_HU.aff és dict/hu_HU.dic fájlokat.")
 
 
+def get_checker():
+    """A beépített szóellenőrző (a ragozott alakok előállításához), vagy None, ha nem töltődött be."""
+    if _checker_type is None and not _init_attempted:
+        _init_checker()
+    return _checker if _checker_type == 'builtin' else None
+
+
 def warm_up():
     """Betölti a szótárat (szerverindításkor, hogy az első lerakásnál ne kelljen várni)."""
     if _checker_type is None and not _init_attempted:

@@ -33,6 +33,8 @@ class ServerState:
         
         # Megfigyelők: {sid: room_id}
         self.spectator_rooms = {}
+        # Háttérbe került (nem látható) böngészőlapok: a push értesítés ilyenkor is elmegy
+        self.hidden_sids = set()
 
         # Online tracking és meghívók
         self._online_users = {}        # {user_id: set(sid, ...)} — online regisztrált felhasználók

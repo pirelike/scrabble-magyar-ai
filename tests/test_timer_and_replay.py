@@ -216,6 +216,31 @@ class TestTimerDisplay:
         c1.disconnect()
         c2.disconnect()
 
+    @pytest.mark.parametrize('left, expected', [(25, 25), (2, 10)])
+    def test_withdrawn_placement_does_not_restart_the_clock(self, app, socketio_app, left, expected):
+        """Lerakás + visszavonás nem ad új, teljes kört: a lerakáskor hátralévő idő folytatódik
+        (legalább 10 mp), különben a gondolkodási idő korlátlan lenne."""
+        c1, c2, room_id = _create_started_game(app, socketio_app, turn_time_limit=60,
+                                               challenge_mode=True)
+        import server
+        room = server.rooms[room_id]
+        placer = room.game.current_player()
+        client = c1 if placer.name == 'P1' else c2
+        placer.hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        room.turn_timer_expires_at = time.time() + left   # a kör nagy része már eltelt
+        with patch('board.check_words', return_value=(True, [])):
+            client.emit('place_tiles', {'tiles': [
+                {'row': 7, 'col': 6, 'letter': 'A', 'is_blank': False},
+                {'row': 7, 'col': 7, 'letter': 'B', 'is_blank': False},
+            ]})
+        assert room.game.pending_challenge is not None
+        client.emit('withdraw_words')
+        gs = _latest_game_state(client.get_received())
+        assert room.game.pending_challenge is None
+        assert expected - 2 < gs['turn_timer_expires_at'] - time.time() <= expected + 0.5
+        c1.disconnect()
+        c2.disconnect()
+
 
 # ===========================================================================
 # Replay / move persistence tests

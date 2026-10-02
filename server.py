@@ -1,5 +1,5 @@
-import eventlet
-eventlet.monkey_patch()
+from gevent import monkey
+monkey.patch_all()
 
 import json
 import random
@@ -12,8 +12,12 @@ import sys
 from flask import Flask, request
 from flask_socketio import SocketIO, emit, join_room, leave_room
 
+import achievements
 import ai_player
+import async_games
+import daily
 import dictionary
+import push_service
 from game import Game, CHALLENGE_TIMEOUT, ALLOWED_HINT_LIMITS, DEFAULT_HINT_LIMIT
 from room import Room
 from config import AUTH_RATE_LIMITS
@@ -21,7 +25,8 @@ from auth import (
     init_db, save_game, finish_game, add_game_move,
     load_active_games, abandon_game, abandon_game_by_id,
     is_user_in_game, get_game_by_id, get_game_moves, get_game_players,
-    get_user_by_id,
+    get_daily_puzzle, get_daily_entry, mark_daily_revealed, get_active_async_games,
+    get_user_by_id, grant_achievements, get_game_rating_changes,
     send_friend_request as auth_send_friend_request,
     accept_friend_request as auth_accept_friend_request,
     decline_friend_request as auth_decline_friend_request,
@@ -36,7 +41,7 @@ from socket_auth import verify_socket_token
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(32).hex())
-socketio = SocketIO(app, cors_allowed_origins='*',
+socketio = SocketIO(app, cors_allowed_origins='*', async_mode='gevent',
                     ping_timeout=120, ping_interval=25)
 
 # Adatbázis inicializálása
@@ -56,6 +61,7 @@ _SOCKET_RATE_LIMITS = {
     'get_rooms': (10, 5),
     'accept_words': (5, 10),
     'reject_words': (5, 10),
+    'withdraw_words': (5, 10),
     'send_chat': (10, 10),
     'rejoin_room': (5, 10),
     'save_game': (3, 30),
@@ -68,11 +74,19 @@ _SOCKET_RATE_LIMITS = {
     'respond_invite': (10, 10),
     'preview_move': (30, 10),
     'request_hint': (3, 30),
+    'set_visibility': (20, 10),
+    'create_async_game': (3, 30),
+    'open_async_game': (10, 10),
+    'resign_game': (3, 30),
+    'start_daily': (3, 30),
+    'retry_daily': (10, 30),
+    'reveal_daily': (5, 30),
     'spectate_room': (5, 10),
     'leave_spectate': (5, 10),
 }
 
 rate_limiter = RateLimiter(_SOCKET_RATE_LIMITS, AUTH_RATE_LIMITS)
+push_service.init(socketio.start_background_task)
 
 # --- Backward compatibility ---
 # A tesztek közvetlenül elérik ezeket a dict-eket (server.rooms, server.player_names, stb.)
@@ -101,6 +115,8 @@ _DISCONNECT_GRACE_PERIOD = 120
 # kapcsolatot, ezért ez hosszabb, mint a játék közbeni türelmi idő.
 _WAITING_OWNER_GRACE_PERIOD = 600
 ALLOWED_TURN_TIME_LIMITS = {0, 60, 90, 120, 180, 300}
+# A visszavont lerakás után legalább ennyi idő marad a körből (mp)
+_MIN_TIME_AFTER_WITHDRAW = 10
 MAX_BOTS = 3
 # Robot "gondolkodási" ideje másodpercben (min, max): a lépés ennyi várakozás után jelenik meg
 _BOT_THINK_DELAY = {'easy': (1.5, 3.0), 'medium': (1.2, 2.6), 'hard': (1.0, 2.2)}
@@ -243,7 +259,12 @@ def _emit_all_states(game, room_id=None):
     room = _find_room_of(game, room_id)
     expires_at = room.turn_timer_expires_at if room else None
     spectator_count = len(room.spectators) if room else 0
+    # A lecsatlakozott / kilépett játékos SID-je még élhet (a lobbyban van, pl. levelezős játékból
+    # kilépve): neki nem küldünk állapotot, különben a kliense visszaugrana a játékképernyőre
+    away = {p.id for p in game.players if p.disconnected}
     for player_id, gs in game.get_all_states().items():
+        if player_id in away:
+            continue
         gs['turn_timer_expires_at'] = expires_at
         gs['spectator_count'] = spectator_count
         socketio.emit('game_state', gs, room=player_id)
@@ -253,6 +274,42 @@ def _emit_all_states(game, room_id=None):
         spectator_state['spectator_count'] = spectator_count
         for sid in list(room.spectators):
             socketio.emit('game_state', spectator_state, room=sid)
+    _persist_async(room)
+    _maybe_push_turn(room, game)
+
+
+def _persist_async(room):
+    """Levelezős játék: minden változás után menti az állapotot (a játék tartós otthona az adatbázis)."""
+    if not room or not room.is_async or not room.game.started:
+        return
+    game = room.game
+    signature = (len(game.move_log), game.finished, game.turn_number)
+    if room.persisted_sig != signature:
+        room.persisted_sig = signature
+        _save_game_to_db(room.id)
+
+
+def _maybe_push_turn(room, game):
+    """Web Push „Te jössz!”, ha a soron lévő regisztrált játékos nincs jelen (lecsatlakozott vagy a
+    böngészőlapja háttérbe került). Körönként legfeljebb egyszer."""
+    if not room or room.is_puzzle or not game.started or game.finished or game.pending_challenge:
+        return
+    player = game.current_player()
+    if not player or player.is_bot or room.pushed_turn == game.turn_number:
+        return
+    if not (player.disconnected or player.id in state.hidden_sids):
+        return
+    user_id = _user_id_for_player(room, player)
+    if not user_id:
+        return
+    if room.is_async and room.notified_turn != game.turn_number:
+        # A lobbyban (más képernyőn) lévő játékos az alkalmazáson belül is értesül
+        room.notified_turn = game.turn_number
+        for user_sid in list(state.get_user_sids(user_id)):
+            socketio.emit('async_your_turn', {'game_id': room.db_game_id, 'room_name': room.name},
+                          room=user_sid)
+    if push_service.notify_turn(user_id, room.name, room.id):
+        room.pushed_turn = game.turn_number
 
 
 def _broadcast_rooms():
@@ -343,8 +400,9 @@ def _start_challenge_timer(room_id):
     socketio.start_background_task(timeout_callback)
 
 
-def _start_turn_timer(room_id):
-    """Kör visszaszámlálás indítása. Ha lejár, auto-passz."""
+def _start_turn_timer(room_id, seconds=None):
+    """Kör visszaszámlálás indítása. Ha lejár, auto-passz. `seconds`: a teljes körnél rövidebb
+    hátralévő idő (pl. a visszavont lerakás után)."""
     room = state.rooms.get(room_id)
     if not room or not room.game.turn_time_limit:
         return
@@ -352,7 +410,7 @@ def _start_turn_timer(room_id):
         return  # challenge fut, nem indítunk kör timert
 
     timer_id = room.invalidate_turn_timer()
-    limit = room.game.turn_time_limit
+    limit = seconds if seconds is not None else room.game.turn_time_limit
     room.turn_timer_expires_at = time.time() + limit
 
     def timeout_callback():
@@ -487,14 +545,14 @@ def _play_bot_turn(room_id, turn_id=None, turn_number=None):
 
     try:
         action = ai_player.choose_action(
-            game.board, list(bot.hand), bot.difficulty or ai_player.DEFAULT_DIFFICULTY,
+            game.board, list(bot.hand), game.bot_level(bot) or ai_player.DEFAULT_DIFFICULTY,
             game.bag.remaining(), yield_fn=lambda: socketio.sleep(0),
             avoid=game.rejected_placements)
     except Exception as e:  # a robot hibája ne akassza meg a játékot
         print(f"[bot] Hiba a lépés keresésében ({room_id}): {e}")
         action = {'action': 'pass'}
 
-    # A keresés közben (eventlet-váltásnál) megváltozhatott az állapot
+    # A keresés közben (kooperatív váltásnál) megváltozhatott az állapot
     room = state.rooms.get(room_id)
     if (not room or room.game is not game or game.finished or game.pending_challenge
             or game.current_player() is not bot or game.turn_number != started_turn
@@ -533,6 +591,8 @@ def _save_game_to_db(room_id):
     if not room:
         return False, "A szoba nem létezik."
     game = room.game
+    if game.puzzle is not None:
+        return True, "Játék mentve."   # a napi feladvány nem mentődik (az eredmény külön rögzül)
     if not game.started:
         return False, "A játék még nem indult el."
 
@@ -552,11 +612,15 @@ def _save_game_to_db(room_id):
                     'user_id': _user_id_for_player(room, p),
                     'final_score': p.score,
                     'is_winner': any(w.name == p.name for w in game.winners),
+                    'resigned': p.resigned,
                 })
             db_id = finish_game(room_id, state_json, players_data, room_name=room.name,
                                 has_bots=has_bots)
             room.db_game_id = db_id
             room.result_saved = True
+            _award_achievements(game, players_data, db_id)
+            _announce_rating_changes(game, players_data, db_id)
+            _announce_saved_game(game, players_data, db_id)
             socketio.emit('rooms_list', state.get_rooms_list())
             socketio.emit('live_games', state.get_live_games())
         else:
@@ -570,7 +634,7 @@ def _save_game_to_db(room_id):
             db_id = save_game(room_id, room.name, state_json, game.challenge_mode,
                               players_data, owner_name=owner_name,
                               owner_token=getattr(room, 'owner_token', None),
-                              has_bots=has_bots)
+                              has_bots=has_bots, is_async=room.is_async)
             room.db_game_id = db_id
 
         # Új lépések mentése
@@ -586,6 +650,51 @@ def _save_game_to_db(room_id):
     except Exception as e:
         print(f"[save] Hiba a mentésnél ({room_id}): {e}")
         return False, "Mentési hiba."
+
+
+def _award_achievements(game, players_data, db_id):
+    """A befejezett játék kitüntetéseinek rögzítése; az újakról a játékos értesítést kap."""
+    try:
+        name_to_user = {pd['player_name']: pd['user_id'] for pd in players_data if pd.get('user_id')}
+        per_game = achievements.evaluate_game(game, name_to_user)
+        for player in game.players:
+            uid = name_to_user.get(player.name)
+            if not uid or player.is_bot:
+                continue
+            user = get_user_by_id(uid)
+            badges = set(per_game.get(uid, ()))
+            if user:
+                badges |= achievements.cumulative_badges(user['games_played'], user['games_won'])
+            new = grant_achievements(uid, badges, db_id)
+            if new:
+                socketio.emit('achievements_earned', {'badges': new}, room=player.id)
+    except Exception as e:  # a kitüntetés hibája ne akadályozza a mentést
+        print(f"[achievements] Hiba a kitüntetések rögzítésénél: {e}")
+
+
+def _announce_saved_game(game, players_data, db_id):
+    """A regisztrált játékosoknak elküldi a befejezett játék azonosítóját (visszajátszás, elemzés)."""
+    name_to_user = {pd['player_name']: pd['user_id'] for pd in players_data if pd.get('user_id')}
+    for player in game.players:
+        if not player.is_bot and player.name in name_to_user:
+            socketio.emit('game_saved', {'game_id': db_id}, room=player.id)
+
+
+def _announce_rating_changes(game, players_data, db_id):
+    """Az értékelt játékosoknak elküldi az új értékszámukat és a változást."""
+    try:
+        changes = get_game_rating_changes(db_id)
+        name_to_user = {pd['player_name']: pd['user_id'] for pd in players_data if pd.get('user_id')}
+        for player in game.players:
+            if player.is_bot:
+                continue
+            uid = name_to_user.get(player.name)
+            if uid in changes:
+                before, after = changes[uid]
+                socketio.emit('rating_update', {'rating': after, 'change': after - before},
+                              room=player.id)
+    except Exception as e:  # az értékszám kijelzése ne akadályozza a mentést
+        print(f"[rating] Hiba az értékszám küldésénél: {e}")
 
 
 def _cleanup_finished_saves():
@@ -638,7 +747,17 @@ def handle_disconnect():
         room = state.rooms[room_id]
         game = room.game
 
-        if token and not game.finished:
+        if room.is_async and game.started and not game.finished:
+            # Levelezős játék: a játék tovább él, a játékos bármikor visszatérhet (nincs türelmi idő)
+            game.mark_disconnected(sid)
+            leave_room(room_id)
+            if token:
+                state.mark_disconnected(token, sid, room_id, state.player_names.get(sid, '?'),
+                                        state.player_auth.get(sid))
+            _emit_all_states(game, room_id)
+            emit('player_disconnected', {'name': state.player_names.get(sid, '?')}, room=room_id)
+            del state.player_rooms[sid]
+        elif token and not game.finished:
             # Aktív játék és várakozó szoba: türelmi idő, a játékos a tokenjével visszatérhet
             kept_for_grace = True
             was_owner = room.owner == sid or (room.owner_token is not None and room.owner_token == token)
@@ -668,7 +787,7 @@ def handle_disconnect():
             game.remove_player(sid)
             leave_room(room_id)
 
-            if not game.human_players():
+            if not game.human_players() or (room.is_async and not game.has_connected_human()):
                 _cleanup_room(room_id)
             else:
                 if room.owner == sid:
@@ -687,6 +806,7 @@ def handle_disconnect():
             state.cleanup_player_token(sid)
 
     state.player_names.pop(sid, None)
+    state.hidden_sids.discard(sid)
     state.remove_online_user(sid)
     if is_registered_user and was_online and not state.is_user_online(user_id):
         _notify_friends_presence_change(user_id, False)
@@ -994,7 +1114,7 @@ def handle_create_room(data):
     ai_levels = data.get('ai_players', [])
     if not isinstance(ai_levels, list):
         ai_levels = []
-    ai_levels = [ai_player.parse_level(lv) for lv in ai_levels]
+    ai_levels = [ai_player.parse_difficulty(lv) for lv in ai_levels]
     ai_levels = [lv for lv in ai_levels if lv is not None][:MAX_BOTS]
     ai_levels = ai_levels[:max_players - 1]
 
@@ -1209,6 +1329,18 @@ def handle_leave_room(data=None):
     is_owner = room.owner == sid
     is_active_game = game.started and not game.finished
 
+    # Levelezős játék: a kilépés csak a nézetet zárja be, a játék megmarad, és később folytatható
+    if room.is_async and is_active_game:
+        game.mark_disconnected(sid)
+        if token:
+            state.mark_disconnected(token, sid, room_id, player_name, state.player_auth.get(sid))
+        leave_room(room_id)
+        del state.player_rooms[sid]
+        emit('room_left', {})
+        _emit_all_states(game, room_id)
+        emit('player_disconnected', {'name': player_name}, room=room_id)
+        return
+
     # Owner leaving an active game: kick all players and disband room
     if is_owner and is_active_game:
         _disband_active_room(
@@ -1249,7 +1381,7 @@ def handle_leave_room(data=None):
     if is_active_game and token:
         # Mar kezelve fentebb, semmit nem kell csinalni
         pass
-    elif not game.human_players():
+    elif not game.human_players() or (room.is_async and not game.has_connected_human()):
         _cleanup_room(room_id)
     else:
         if room.owner == sid:
@@ -1428,6 +1560,9 @@ def handle_restore_game(data):
     if game_row['status'] != 'active':
         emit('error', {'message': 'A mentett játék nem aktív.'})
         return
+    if game_row.get('is_async'):
+        emit('error', {'message': 'A levelezős játékot a Levelezős fülről nyithatod meg.'})
+        return
 
     # Ellenőrzés: a hívó játékos részese-e a játéknak
     if not is_user_in_game(game_id, user_id):
@@ -1512,13 +1647,19 @@ def handle_place_tiles(data):
         emit('action_result', {'success': False, 'message': err})
         return
 
+    timer_expires_at = room.turn_timer_expires_at
     success, msg, score = game.place_tiles(sid, tiles_placed)
 
     if success:
         room.invalidate_turn_timer()
         emit('action_result', {'success': True, 'message': msg, 'score': score, 'own_turn': True})
         if game.pending_challenge:
+            # Ha a lerakó visszavonja a lerakását, csak a maradék idejét kapja vissza
+            room.withdraw_time_left = (max(0.0, timer_expires_at - time.time())
+                                       if timer_expires_at else None)
             _start_challenge_timer(room_id)
+        elif game.finished and game.puzzle is not None:
+            _finish_puzzle(sid, game)
         elif game.finished:
             _save_game_to_db(room_id)
         else:
@@ -1613,6 +1754,26 @@ def handle_reject_words():
         emit('action_result', {'success': False, 'message': msg})
 
 
+@socketio.on('withdraw_words')
+def handle_withdraw_words():
+    """A lerakó visszavonja a szavazásra váró lerakását (amíg senki sem szavazott)."""
+    sid = request.sid
+    room_id, room, game = _get_room_context(sid, 'withdraw_words')
+    if not room:
+        return
+
+    success, msg = game.withdraw_pending(sid)
+    if success:
+        room.invalidate_challenge_timer()
+        # A lerakás + visszavonás ne adjon új, teljes kört: a lerakáskor hátralévő idő folytatódik
+        left = room.withdraw_time_left
+        _start_turn_timer(room_id, None if left is None else max(_MIN_TIME_AFTER_WITHDRAW, left))
+        emit('action_result', {'success': True, 'message': msg, 'own_turn': True})
+        _emit_all_states(game, room_id)
+    else:
+        emit('action_result', {'success': False, 'message': msg})
+
+
 @socketio.on('send_chat')
 def handle_send_chat(data):
     sid = request.sid
@@ -1691,7 +1852,7 @@ def handle_request_hint():
         emit('hint_result', {'success': False, 'message': 'Nem sikerült tippet adni.'})
         return
 
-    # A keresés közben (eventlet-váltásnál) elfogyhatott a tipp vagy véget érhetett a kör
+    # A keresés közben (kooperatív váltásnál) elfogyhatott a tipp vagy véget érhetett a kör
     if game.finished or game.current_player() is not player:
         emit('hint_result', {'success': False, 'message': 'Most nem kérhetsz tippet.'})
         return
@@ -1713,6 +1874,351 @@ def handle_request_hint():
             for m in moves
         ],
     })
+
+
+@socketio.on('set_visibility')
+def handle_set_visibility(data):
+    """A kliens jelzi, ha a lapja háttérbe került: ilyenkor a saját körről push értesítést kap."""
+    sid = request.sid
+    if not rate_limiter.check_socket(sid, 'set_visibility') or not isinstance(data, dict):
+        return
+    if data.get('hidden') is True:
+        state.hidden_sids.add(sid)
+        room_id, room, game = state.get_room_for_player(sid)
+        if room:
+            _maybe_push_turn(room, game)   # már az ő köre van: azonnal értesítjük
+    else:
+        state.hidden_sids.discard(sid)
+
+
+# --- Napi feladvány ---
+
+def _registered_user_id(sid):
+    auth_info = state.player_auth.get(sid) or {}
+    return None if auth_info.get('is_guest') else auth_info.get('user_id')
+
+
+def _daily_started_payload(sid, date_str):
+    user_id = _registered_user_id(sid)
+    return {'date': date_str, 'registered': bool(user_id),
+            'my': get_daily_entry(date_str, user_id) if user_id else None}
+
+
+@socketio.on('start_daily')
+def handle_start_daily():
+    """Napi feladvány indítása: egyjátékos, nem listázott szoba a nap közös állásával."""
+    sid = request.sid
+    if not rate_limiter.check_socket(sid, 'start_daily'):
+        emit('error', {'message': 'Túl sok kérés, várj egy kicsit.'})
+        return
+    if state.player_rooms.get(sid) in state.rooms:
+        emit('error', {'message': 'Már egy szobában vagy. Előbb lépj ki belőle.'})
+        return
+    try:
+        puzzle = daily.ensure_puzzle(yield_fn=lambda: socketio.sleep(0))
+    except Exception as e:
+        print(f"[daily] Nem sikerült a feladvány: {e}")
+        emit('error', {'message': 'A napi feladvány most nem érhető el.'})
+        return
+    # A feladvány előállítása alatt (kooperatív váltás) egy második kérés már szobát nyithatott
+    if state.player_rooms.get(sid) in state.rooms:
+        return
+
+    player_name = state.player_names.get(sid, 'Névtelen')
+    room_id = str(uuid.uuid4())[:8]
+    join_code = state.generate_join_code()
+    game = daily.build_game(room_id, sid, player_name, puzzle)
+    token = state.generate_reconnect_token(sid, room_id, player_name, state.player_auth.get(sid))
+    room = Room(room_id=room_id, game=game, owner_sid=sid, owner_name=player_name,
+                name='Napi feladvány', max_players=1, join_code=join_code,
+                is_private=True, owner_token=token)
+    room.is_puzzle = True
+    state.add_room(room)
+    state.player_rooms[sid] = room_id
+    join_room(room_id)
+
+    emit('room_joined', {
+        'room_id': room_id, 'room_name': room.name, 'is_owner': True, 'challenge_mode': False,
+        'is_private': True, 'turn_time_limit': 0, 'hint_limit': 0,
+        'reconnect_token': token, 'chat_messages': [],
+    })
+    _emit_all_states(game, room_id)
+    emit('game_started', {})
+    emit('daily_started', _daily_started_payload(sid, puzzle['date']))
+
+
+def _finish_puzzle(sid, game):
+    """A beküldött lépés rögzítése (ranglista, kitüntetés) és az eredmény elküldése."""
+    puzzle = get_daily_puzzle(game.puzzle['date'])
+    if not puzzle:
+        return
+    details = json.loads(game.move_log[-1]['details_json'])
+    user_id = _registered_user_id(sid)
+    result = daily.record_result(puzzle, user_id, game.puzzle['score'],
+                                 details.get('tiles', []), details.get('words', []))
+    if user_id and result['recorded'] and result['is_best']:
+        new = grant_achievements(user_id, {'daily_best'})
+        if new:
+            socketio.emit('achievements_earned', {'badges': new}, room=sid)
+    socketio.emit('daily_result', result, room=sid)
+
+
+@socketio.on('retry_daily')
+def handle_retry_daily():
+    """Új próbálkozás ugyanarra a feladványra (a legjobb eredmény számít)."""
+    sid = request.sid
+    room_id, room, game = _get_room_context(sid, 'retry_daily')
+    if not room or game.puzzle is None or not game.finished:
+        return
+    puzzle = get_daily_puzzle(game.puzzle['date'])
+    if not puzzle:
+        return
+    daily.reset_game(game, puzzle)
+    _emit_all_states(game, room_id)
+    emit('daily_started', _daily_started_payload(sid, puzzle['date']))
+
+
+@socketio.on('reveal_daily')
+def handle_reveal_daily():
+    """A megoldás megmutatása: innentől a további próbálkozások nem kerülnek a ranglistára."""
+    sid = request.sid
+    room_id, room, game = _get_room_context(sid, 'reveal_daily')
+    if not room or game.puzzle is None:
+        return
+    puzzle = get_daily_puzzle(game.puzzle['date'])
+    if not puzzle:
+        return
+    user_id = _registered_user_id(sid)
+    if user_id:
+        mark_daily_revealed(puzzle['date'], user_id)
+    emit('daily_solution', {'tiles': puzzle['best']['tiles'], 'words': puzzle['best']['words'],
+                            'score': puzzle['best_score'], 'ranked': False})
+
+
+# --- Levelezős (aszinkron) játék ---
+
+def _load_async_room(row):
+    """A mentett levelezős játékból szobát épít (minden játékos lecsatlakozottként). None, ha hibás."""
+    try:
+        game = Game.from_save_dict(json.loads(row['state_json']))
+    except Exception as e:
+        print(f"[async] A mentett játék nem tölthető be (game #{row['id']}): {e}")
+        return None
+    game.async_mode = True
+    room_id = row['room_id']
+    known = {gp['player_name']: gp['user_id'] for gp in get_game_players(row['id'])}
+    for player in game.players:
+        if not player.is_bot:
+            player.disconnected = True
+            if known.get(player.name):
+                player.id = async_games.placeholder_id(room_id, known[player.name])
+    game.move_log = [
+        {
+            'move_number': m['move_number'], 'player_name': m['player_name'],
+            'action_type': m['action_type'], 'details_json': m['details_json'],
+            'board_snapshot_json': m['board_snapshot_json'],
+        }
+        for m in get_game_moves(row['id'])
+    ]
+    room = Room(room_id=room_id, game=game, owner_sid=None, owner_name=row.get('owner_name') or '',
+                name=row.get('room_name') or 'Levelezős játék', max_players=len(game.players),
+                join_code=state.generate_join_code(), is_private=True)
+    room.is_async = True
+    room.db_game_id = row['id']
+    room.known_user_ids = known
+    room.last_saved_move_count = len(game.move_log)
+    room.persisted_sig = (len(game.move_log), game.finished, game.turn_number)
+    state.add_room(room)
+    return room
+
+
+def _async_room_for_db_game(row):
+    """A levelezős játék szobája: a memóriában lévő, ennek híján az adatbázisból visszaépített."""
+    for room in state.rooms.values():
+        if room.is_async and room.db_game_id == row['id']:
+            return room
+    return _load_async_room(row)
+
+
+def restore_async_games():
+    """Szerverindításkor: a folyamatban lévő levelezős játékok szobáinak visszaépítése."""
+    restored = 0
+    for row in get_active_async_games():
+        if _async_room_for_db_game(row):
+            restored += 1
+    return restored
+
+
+def _cleanup_finished_async(room_id):
+    """A befejezett levelezős játék szobája megszűnik, ha senki sem néz éppen."""
+    room = state.rooms.get(room_id)
+    if room and room.is_async and room.game.finished and not room.game.has_connected_human():
+        _cleanup_room(room_id)
+
+
+def _expire_async_turns(now=None):
+    """Lejárt határidejű körök: automatikus passz (három egymás utáni után a játékos feladja).
+    Visszatér: a léptetett játékok száma."""
+    now = now if now is not None else time.time()
+    expired = 0
+    for room_id, room in list(state.rooms.items()):
+        game = room.game
+        if not room.is_async or not game.started or game.finished:
+            continue
+        if game.turn_deadline and now > game.turn_deadline and game.expire_turn():
+            expired += 1
+            _emit_all_states(game, room_id)
+            _cleanup_finished_async(room_id)
+    return expired
+
+
+def _async_sweeper():
+    """Háttérfeladat: percenként ellenőrzi a levelezős játékok határidejét."""
+    while True:
+        socketio.sleep(60)
+        try:
+            _expire_async_turns()
+        except Exception as e:
+            print(f"[async] Hiba a határidők ellenőrzésénél: {e}")
+
+
+@socketio.on('create_async_game')
+def handle_create_async_game(data):
+    """Levelezős játék indítása barátokkal: a barátok a Levelezős fülön látják, és értesítést kapnak."""
+    sid = request.sid
+    if not rate_limiter.check_socket(sid, 'create_async_game'):
+        emit('error', {'message': 'Túl sok kérés, várj egy kicsit.'})
+        return
+    if not isinstance(data, dict):
+        return
+    user_id = _registered_user_id(sid)
+    if not user_id:
+        emit('error', {'message': 'Csak regisztrált felhasználók játszhatnak levelezős játékot.'})
+        return
+    if state.player_rooms.get(sid) in state.rooms:
+        emit('error', {'message': 'Már egy szobában vagy. Előbb lépj ki belőle.'})
+        return
+
+    ids = data.get('friend_ids')
+    if (not isinstance(ids, list) or not 1 <= len(ids) <= async_games.MAX_FRIENDS
+            or any(not isinstance(i, int) or isinstance(i, bool) for i in ids) or len(set(ids)) != len(ids)):
+        emit('error', {'message': 'Válassz egy-három barátot a játékhoz.'})
+        return
+    friends_by_id = {f['id']: f for f in auth_get_friends(user_id)}
+    if any(i not in friends_by_id for i in ids):
+        emit('error', {'message': 'Csak barátaidat hívhatod meg.'})
+        return
+    try:
+        turn_hours = int(data.get('turn_hours', async_games.DEFAULT_TURN_HOURS))
+    except (ValueError, TypeError):
+        turn_hours = async_games.DEFAULT_TURN_HOURS
+    if turn_hours not in async_games.ALLOWED_TURN_HOURS:
+        turn_hours = async_games.DEFAULT_TURN_HOURS
+
+    name = _sanitize_room_name(data.get('name', '')) or 'Levelezős játék'
+    player_name = state.player_names.get(sid, 'Névtelen')
+    room_id = str(uuid.uuid4())[:8]
+    friends = [{'id': i, 'name': _sanitize_name(friends_by_id[i]['display_name']) or 'Játékos'} for i in ids]
+    game, known = async_games.build_game(room_id, sid, player_name, user_id, friends, turn_hours)
+
+    token = state.generate_reconnect_token(sid, room_id, player_name, state.player_auth.get(sid))
+    room = Room(room_id=room_id, game=game, owner_sid=sid, owner_name=player_name, name=name,
+                max_players=len(game.players), join_code=state.generate_join_code(),
+                is_private=True, owner_token=token)
+    room.is_async = True
+    room.known_user_ids = known
+    state.add_room(room)
+    state.player_rooms[sid] = room_id
+    join_room(room_id)
+
+    emit('room_joined', {
+        'room_id': room_id, 'room_name': name, 'is_owner': False, 'challenge_mode': False,
+        'is_private': True, 'turn_time_limit': 0, 'hint_limit': 0, 'is_async': True,
+        'reconnect_token': token, 'chat_messages': [],
+    })
+    _emit_all_states(game, room_id)   # elmenti a játékot, és értesíti a kezdő játékost, ha nem te vagy az
+    emit('game_started', {})
+
+    starter = game.current_player().name
+    for friend in friends:
+        for friend_sid in list(state.get_user_sids(friend['id'])):
+            socketio.emit('async_invited', {'game_id': room.db_game_id, 'room_name': name,
+                                            'from_name': player_name}, room=friend_sid)
+        if known.get(starter) != friend['id']:   # a kezdő játékos a „Te jössz!” értesítést kapja
+            push_service.notify_turn(friend['id'], name, room_id, kind='invite')
+
+
+@socketio.on('open_async_game')
+def handle_open_async_game(data):
+    """Egy folyamatban lévő levelezős játék megnyitása (a lobby listájából)."""
+    sid = request.sid
+    if not rate_limiter.check_socket(sid, 'open_async_game'):
+        emit('error', {'message': 'Túl sok kérés, várj egy kicsit.'})
+        return
+    if not isinstance(data, dict):
+        return
+    game_id = data.get('game_id')
+    if not isinstance(game_id, int) or isinstance(game_id, bool):
+        emit('error', {'message': 'Érvénytelen játék azonosító.'})
+        return
+    user_id = _registered_user_id(sid)
+    if not user_id:
+        emit('error', {'message': 'Csak regisztrált felhasználók játszhatnak levelezős játékot.'})
+        return
+    if state.player_rooms.get(sid) in state.rooms:
+        emit('error', {'message': 'Már egy szobában vagy. Előbb lépj ki belőle.'})
+        return
+    row = get_game_by_id(game_id)
+    if not row or not row.get('is_async') or row['status'] != 'active':
+        emit('error', {'message': 'Ez a levelezős játék nem található.'})
+        return
+    if not is_user_in_game(game_id, user_id):
+        emit('error', {'message': 'Nem vagy részese ennek a játéknak.'})
+        return
+    room = _async_room_for_db_game(row)
+    if room is None:
+        emit('error', {'message': 'Ez a levelezős játék nem tölthető be.'})
+        return
+
+    game = room.game
+    my_name = next((n for n, uid in room.known_user_ids.items() if uid == user_id), None)
+    player = next((p for p in game.players if p.name == my_name), None)
+    if player is None:
+        emit('error', {'message': 'Nem vagy részese ennek a játéknak.'})
+        return
+    old_sid = player.id
+    if not player.disconnected and state.player_rooms.get(old_sid) == room.id:
+        # Másik eszközön már meg van nyitva: onnan átvesszük
+        _sio_leave_room(old_sid, room.id)
+        state.player_rooms.pop(old_sid, None)
+        state.cleanup_player_token(old_sid)
+        socketio.emit('room_left', {}, room=old_sid)
+
+    game.replace_player_sid(old_sid, sid)
+    state.player_rooms[sid] = room.id
+    join_room(room.id)
+    token = state.generate_reconnect_token(sid, room.id, player.name, state.player_auth.get(sid))
+    emit('room_joined', {
+        'room_id': room.id, 'room_name': room.name, 'is_owner': False, 'challenge_mode': False,
+        'is_private': True, 'turn_time_limit': 0, 'hint_limit': 0, 'is_async': True,
+        'reconnect_token': token, 'chat_messages': room.chat_messages,
+    })
+    _emit_all_states(game, room.id)
+    emit('game_started', {})
+    emit('player_reconnected', {'name': player.name}, room=room.id)
+
+
+@socketio.on('resign_game')
+def handle_resign_game():
+    """Levelezős játék feladása: a játék véget ér, a feladó nem lehet győztes."""
+    sid = request.sid
+    room_id, room, game = _get_room_context(sid, 'resign_game')
+    if not room or not room.is_async:
+        return
+    success, msg = game.resign(sid)
+    emit('action_result', {'success': success, 'message': msg, **({'own_turn': True} if success else {})})
+    if success:
+        _emit_all_states(game, room_id)   # elmenti a végeredményt
 
 
 # --- Megfigyelő mód ---
@@ -2020,6 +2526,13 @@ if __name__ == '__main__':
     cleanup_expired()
     _cleanup_finished_saves()
     dictionary.warm_up()  # a szótár betöltése indításkor (az első lerakásnál ne kelljen várni)
+    ai_player.get_vocabulary()  # a robot szókincse (a ragozott alakokkal ~2 mp) is előre épüljön fel
+    try:
+        daily.ensure_puzzle()  # a mai feladvány is készen álljon
+    except Exception as e:
+        print(f"[daily] A mai feladvány előállítása nem sikerült: {e}")
+    print(f"[async] {restore_async_games()} levelezős játék visszaállítva")
+    socketio.start_background_task(_async_sweeper)
 
     if use_tunnel:
         start_tunnel(port)

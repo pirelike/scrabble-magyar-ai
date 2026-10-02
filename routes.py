@@ -1,11 +1,18 @@
+import json
 import os
 import re
+import time
 
 from flask import (
     Blueprint, render_template, request, jsonify, make_response, current_app, send_from_directory,
 )
 
+import analysis
+import async_games
+import daily
 import dictionary
+import practice
+import push_service
 from config import SMTP_CONFIGURED
 from tiles import tokenize_word, word_base_score, TILE_VALUES
 from auth import (
@@ -15,6 +22,11 @@ from auth import (
     create_session, validate_session, delete_session,
     is_email_verified, clear_email_verification,
     get_game_moves, get_user_game_history, get_game_by_id,
+    get_or_create_share_token, get_game_by_share_token, get_game_results,
+    get_user_achievements, get_game_analysis, save_game_analysis,
+    get_daily_puzzle, get_daily_entry, get_daily_leaderboard,
+    save_push_subscription, delete_push_subscription, count_push_subscriptions,
+    get_user_async_games,
     get_user_active_games, abandon_game_by_id, is_user_in_game,
     get_friends, get_pending_requests, get_sent_requests, search_users,
 )
@@ -344,12 +356,15 @@ def profile():
 
     return jsonify({
         'success': True,
+        'badges': get_user_achievements(user['id']),
         'stats': {
             'games_played': games_played,
             'games_won': games_won,
             'win_rate': win_rate,
             'avg_score': avg_score,
             'total_score': total_score,
+            'rating': user['rating'],
+            'rated_games': user['rated_games'],
         },
         'history': [
             {
@@ -358,6 +373,9 @@ def profile():
                 'created_at': h['created_at'],
                 'final_score': h['final_score'],
                 'is_winner': bool(h['is_winner']),
+                'rating_change': (h['rating_after'] - h['rating_before']
+                                  if h['rating_after'] is not None and h['rating_before'] is not None
+                                  else None),
                 'opponents': h['opponents'],
             }
             for h in history
@@ -474,6 +492,159 @@ def leaderboard():
     })
 
 
+@public_bp.route('/api/daily', methods=['GET'])
+def daily_info():
+    """A mai napi feladvány adatai: a saját eredményed, a nap ranglistájának eleje és a tegnapi megoldás.
+
+    A feladvány legjobb pontszáma csak azoknak látszik, akik már beküldtek egy lépést."""
+    if not _rate_limiter.check_ip(_get_client_ip(), 'daily'):
+        return jsonify({'success': False, 'message': 'Túl sok kérés. Próbáld újra később.'}), 429
+    user = validate_session(request.cookies.get('session_token'))
+    user_id = user['id'] if user else None
+    today = daily.today_str()
+    entries, me = get_daily_leaderboard(today, 10, user_id)
+    mine = get_daily_entry(today, user_id) if user_id else None
+    played = bool(mine and mine['attempts'] > 0)
+    puzzle = get_daily_puzzle(today)
+
+    yesterday = None
+    yesterday_puzzle = get_daily_puzzle(daily.previous_date(today))
+    if yesterday_puzzle:
+        top, _ = get_daily_leaderboard(yesterday_puzzle['date'], 3)
+        yesterday = {'date': yesterday_puzzle['date'], 'best_score': yesterday_puzzle['best_score'],
+                     'best_words': yesterday_puzzle['best']['words'], 'top': top}
+    for entry in entries:
+        entry['is_me'] = entry['user_id'] == user_id
+    return jsonify({
+        'success': True,
+        'date': today,
+        'ready': puzzle is not None,
+        'my': mine,
+        'best_score': puzzle['best_score'] if puzzle and (played or (mine and mine['revealed'])) else None,
+        'leaderboard': entries,
+        'me': me,
+        'yesterday': yesterday,
+    })
+
+
+@public_bp.route('/api/daily/leaderboard', methods=['GET'])
+def daily_leaderboard():
+    """Egy nap ranglistája (alapértelmezés: ma; csak a mai és a korábbi napok kérhetők)."""
+    if not _rate_limiter.check_ip(_get_client_ip(), 'daily'):
+        return jsonify({'success': False, 'message': 'Túl sok kérés. Próbáld újra később.'}), 429
+    today = daily.today_str()
+    date_str = request.args.get('date', today)
+    if not daily.is_valid_date(date_str) or date_str > today:
+        return jsonify({'success': False, 'message': 'Érvénytelen dátum.'}), 400
+    user = validate_session(request.cookies.get('session_token'))
+    user_id = user['id'] if user else None
+    entries, me = get_daily_leaderboard(date_str, 50, user_id)
+    for entry in entries:
+        entry['is_me'] = entry['user_id'] == user_id
+    return jsonify({'success': True, 'date': date_str, 'entries': entries, 'me': me})
+
+
+@auth_bp.route('/api/push/public-key', methods=['GET'])
+def push_public_key():
+    """A Web Push nyilvános kulcsa; `available` hamis, ha a szerveren nincs push támogatás."""
+    user = validate_session(request.cookies.get('session_token'))
+    if not user:
+        return jsonify({'success': False, 'message': 'Bejelentkezés szükséges.'}), 401
+    if not push_service.is_available():
+        return jsonify({'success': True, 'available': False})
+    return jsonify({'success': True, 'available': True, 'public_key': push_service.public_key(),
+                    'subscribed': count_push_subscriptions(user['id']) > 0})
+
+
+_PUSH_ENDPOINT_RE = re.compile(r'^https://[^\s]{10,1000}$')
+
+
+@auth_bp.route('/api/push/subscribe', methods=['POST'])
+def push_subscribe():
+    """Web Push feliratkozás (vagy a nyelvének frissítése) a bejelentkezett felhasználónak."""
+    user = validate_session(request.cookies.get('session_token'))
+    if not user:
+        return jsonify({'success': False, 'message': 'Bejelentkezés szükséges.'}), 401
+    if not _rate_limiter.check_ip(_get_client_ip(), 'push'):
+        return jsonify({'success': False, 'message': 'Túl sok kérés. Próbáld újra később.'}), 429
+    if not push_service.is_available():
+        return jsonify({'success': False, 'message': 'Az értesítések ezen a szerveren nem érhetők el.'}), 503
+    data = request.get_json(silent=True) or {}
+    keys = data.get('keys') if isinstance(data.get('keys'), dict) else {}
+    endpoint, p256dh, auth_key = data.get('endpoint'), keys.get('p256dh'), keys.get('auth')
+    if not (isinstance(endpoint, str) and _PUSH_ENDPOINT_RE.match(endpoint)
+            and isinstance(p256dh, str) and 20 <= len(p256dh) <= 200
+            and isinstance(auth_key, str) and 8 <= len(auth_key) <= 100):
+        return jsonify({'success': False, 'message': 'Érvénytelen feliratkozás.'}), 400
+    lang = data.get('lang') if data.get('lang') in push_service.MESSAGES else push_service.DEFAULT_LANG
+    save_push_subscription(user['id'], endpoint, p256dh, auth_key, lang)
+    return jsonify({'success': True})
+
+
+@auth_bp.route('/api/push/unsubscribe', methods=['POST'])
+def push_unsubscribe():
+    user = validate_session(request.cookies.get('session_token'))
+    if not user:
+        return jsonify({'success': False, 'message': 'Bejelentkezés szükséges.'}), 401
+    data = request.get_json(silent=True) or {}
+    endpoint = data.get('endpoint')
+    if not isinstance(endpoint, str):
+        return jsonify({'success': False, 'message': 'Érvénytelen feliratkozás.'}), 400
+    delete_push_subscription(endpoint, user['id'])
+    return jsonify({'success': True})
+
+
+@public_bp.route('/api/practice/quiz', methods=['GET'])
+def practice_quiz():
+    """„Melyik szó érvényes?” kvíz: a kérdések (szavak) listája, a válaszokat nem tartalmazza."""
+    if not _rate_limiter.check_ip(_get_client_ip(), 'practice'):
+        return jsonify({'success': False, 'message': 'Túl sok kérés. Próbáld újra később.'}), 429
+    try:
+        count = int(request.args.get('n', practice.QUESTION_COUNT))
+    except ValueError:
+        count = practice.QUESTION_COUNT
+    length_text = request.args.get('length', '')
+    if length_text not in ('', '2', '3'):
+        return jsonify({'success': False, 'message': 'Érvénytelen szóhossz.'}), 400
+    if not dictionary.is_available():
+        return jsonify({'success': False, 'message': 'A szótár nem érhető el.'}), 503
+    questions = practice.make_quiz(count, int(length_text) if length_text else None)
+    return jsonify({'success': True, 'questions': questions})
+
+
+@public_bp.route('/api/practice/answer', methods=['POST'])
+def practice_answer():
+    """Egy kvíz-válasz kiértékelése: érvényes-e a szó, helyes volt-e a tipp, pontérték, javaslatok."""
+    if not _rate_limiter.check_ip(_get_client_ip(), 'practice'):
+        return jsonify({'success': False, 'message': 'Túl sok kérés. Próbáld újra később.'}), 429
+    data = request.get_json(silent=True) or {}
+    word = data.get('word')
+    if not isinstance(word, str) or not isinstance(data.get('answer'), bool):
+        return jsonify({'success': False, 'message': 'Érvénytelen kérés.'}), 400
+    if not dictionary.is_available():
+        return jsonify({'success': False, 'message': 'A szótár nem érhető el.'}), 503
+    result = practice.check_answer(word, data['answer'])
+    if result is None:
+        return jsonify({'success': False, 'message': 'Érvénytelen szó.'}), 400
+    return jsonify({'success': True, **result})
+
+
+@public_bp.route('/api/practice/short-words', methods=['GET'])
+def practice_short_words():
+    """Az összes érvényes 2 vagy 3 zsetonos szó pontértékkel (a tanuláshoz)."""
+    if not _rate_limiter.check_ip(_get_client_ip(), 'practice'):
+        return jsonify({'success': False, 'message': 'Túl sok kérés. Próbáld újra később.'}), 429
+    try:
+        length = int(request.args.get('length', 2))
+    except ValueError:
+        length = 0
+    if length not in practice.SHORT_LENGTHS:
+        return jsonify({'success': False, 'message': 'Érvénytelen szóhossz.'}), 400
+    if not dictionary.is_available():
+        return jsonify({'success': False, 'message': 'A szótár nem érhető el.'}), 503
+    return jsonify({'success': True, 'length': length, 'words': practice.short_words(length)})
+
+
 _MAX_DICT_WORDS = 8
 _MAX_SUGGESTION_WORDS = 3
 
@@ -545,6 +716,69 @@ def dictionary_check():
 
 # ===== GAME ROUTES =====
 
+def _without_rack(details_json):
+    """A lépés részletei a játékos keze (`rack`) nélkül."""
+    try:
+        details = json.loads(details_json or '{}')
+    except (TypeError, ValueError):
+        return details_json
+    if not isinstance(details, dict) or 'rack' not in details:
+        return details_json
+    details.pop('rack')
+    return json.dumps(details, ensure_ascii=False)
+
+
+def _moves_payload(game_id, hide_racks=False):
+    """A lépésnapló a kliensnek. `hide_racks`: folyamatban lévő játéknál a kezek rejtve maradnak
+    (különben a játékosok lépésenként látnák egymás zsetonjait)."""
+    return [
+        {
+            'move_number': m['move_number'],
+            'player_name': m['player_name'],
+            'action_type': m['action_type'],
+            'details_json': _without_rack(m['details_json']) if hide_racks else m['details_json'],
+            'board_snapshot_json': m['board_snapshot_json'],
+        }
+        for m in get_game_moves(game_id)
+    ]
+
+
+_SHARE_TOKEN_RE = re.compile(r'^[A-Za-z0-9_-]{6,40}$')
+
+
+@game_bp.route('/api/game/<int:game_id>/share', methods=['POST'])
+def share_game(game_id):
+    """Megosztható linket készít egy befejezett játék visszajátszásához (csak a résztvevőknek)."""
+    user = validate_session(request.cookies.get('session_token'))
+    if not user:
+        return jsonify({'success': False, 'message': 'Bejelentkezés szükséges.'}), 401
+    if not get_game_by_id(game_id):
+        return jsonify({'success': False, 'message': 'Játék nem található.'}), 404
+    if not is_user_in_game(game_id, user['id']):
+        return jsonify({'success': False, 'message': 'Nincs jogosultságod a játék megosztásához.'}), 403
+    token = get_or_create_share_token(game_id)
+    if not token:
+        return jsonify({'success': False, 'message': 'Csak befejezett játék osztható meg.'}), 400
+    return jsonify({'success': True, 'token': token})
+
+
+@game_bp.route('/api/replay/<token>', methods=['GET'])
+def shared_replay(token):
+    """Megosztott visszajátszás: nyilvános, bejelentkezés nélkül is elérhető."""
+    if not _rate_limiter.check_ip(_get_client_ip(), 'replay'):
+        return jsonify({'success': False, 'message': 'Túl sok kérés. Próbáld újra később.'}), 429
+    game_row = get_game_by_share_token(token) if _SHARE_TOKEN_RE.match(token) else None
+    if not game_row:
+        return jsonify({'success': False, 'message': 'A megosztott visszajátszás nem található.'}), 404
+    return jsonify({
+        'success': True,
+        'room_name': game_row['room_name'],
+        'created_at': game_row['created_at'],
+        'players': get_game_results(game_row['id']),
+        'moves': _moves_payload(game_row['id']),
+    })
+
+
 @game_bp.route('/api/game/<int:game_id>/moves', methods=['GET'])
 def game_moves(game_id):
     token = request.cookies.get('session_token')
@@ -559,20 +793,86 @@ def game_moves(game_id):
     if not is_user_in_game(game_id, user['id']):
         return jsonify({'success': False, 'message': 'Nincs jogosultságod a játék megtekintéséhez.'}), 403
 
-    moves = get_game_moves(game_id)
+    finished = game_row['status'] == 'finished'
     return jsonify({
         'success': True,
-        'moves': [
-            {
-                'move_number': m['move_number'],
-                'player_name': m['player_name'],
-                'action_type': m['action_type'],
-                'details_json': m['details_json'],
-                'board_snapshot_json': m['board_snapshot_json'],
-            }
-            for m in moves
-        ],
+        'moves': _moves_payload(game_id, hide_racks=not finished),
+        'players': get_game_results(game_id),
+        'finished': finished,
     })
+
+
+# Futó elemzések: {game_id: {'done', 'total'}} vagy {'error': True, 'at': idő} hiba után
+_analysis_jobs = {}
+_ANALYSIS_RETRY_AFTER = 30  # mp: hibás elemzés újrapróbálásáig
+
+
+def _run_analysis(game_id, moves):
+    """Háttérfeladat: elemzi a játékot, és elmenti az eredményt."""
+    job = _analysis_jobs[game_id]
+
+    def progress(done, total):
+        job['done'], job['total'] = done, total
+
+    try:
+        result = analysis.analyze_game(
+            moves, yield_fn=(lambda: _socketio.sleep(0)) if _socketio else None, progress=progress)
+        save_game_analysis(game_id, analysis.ANALYSIS_VERSION, json.dumps(result, ensure_ascii=False))
+        _analysis_jobs.pop(game_id, None)
+    except Exception as e:  # az elemzés hibája ne dobjon ki a háttérből
+        print(f"[analysis] Hiba az elemzésnél (game #{game_id}): {e}")
+        _analysis_jobs[game_id] = {'error': True, 'at': time.time()}
+
+
+@game_bp.route('/api/game/<int:game_id>/analysis', methods=['GET'])
+def game_analysis(game_id):
+    """A befejezett játék elemzése: lépésenként a legjobb lehetséges lépés és a kint maradt pont.
+
+    A számítás háttérben fut; amíg tart, `status: 'running'` (a kliens időnként újrakérdezi)."""
+    user = validate_session(request.cookies.get('session_token'))
+    if not user:
+        return jsonify({'success': False, 'message': 'Bejelentkezés szükséges.'}), 401
+    if not _rate_limiter.check_ip(_get_client_ip(), 'analysis'):
+        return jsonify({'success': False, 'message': 'Túl sok kérés. Próbáld újra később.'}), 429
+    game_row = get_game_by_id(game_id)
+    if not game_row:
+        return jsonify({'success': False, 'message': 'Játék nem található.'}), 404
+    if not is_user_in_game(game_id, user['id']):
+        return jsonify({'success': False, 'message': 'Nincs jogosultságod a játék megtekintéséhez.'}), 403
+    if game_row['status'] != 'finished':
+        return jsonify({'success': False, 'message': 'Csak befejezett játék elemezhető.'}), 400
+
+    cached = get_game_analysis(game_id)
+    if cached and cached['version'] == analysis.ANALYSIS_VERSION:
+        return jsonify({'success': True, 'status': 'ready', **json.loads(cached['result_json'])})
+
+    job = _analysis_jobs.get(game_id)
+    if job and not job.get('error'):
+        return jsonify({'success': True, 'status': 'running',
+                        'done': job.get('done', 0), 'total': job.get('total', 0)})
+    if job and time.time() - job['at'] < _ANALYSIS_RETRY_AFTER:
+        return jsonify({'success': True, 'status': 'error'})
+
+    moves = get_game_moves(game_id)
+    turns = analysis.analyzable_turns(moves)
+    if not turns:
+        # Régi játék: a lépésnapló nem őrizte meg a kezeket
+        return jsonify({'success': True, 'status': 'unavailable'})
+    _analysis_jobs[game_id] = {'done': 0, 'total': len(turns)}
+    _socketio.start_background_task(_run_analysis, game_id, moves)
+    return jsonify({'success': True, 'status': 'running', 'done': 0, 'total': len(turns)})
+
+
+@game_bp.route('/api/async/games', methods=['GET'])
+def async_games_list():
+    """A bejelentkezett felhasználó folyamatban lévő levelezős játékai (akinél a sor, az elöl)."""
+    user = validate_session(request.cookies.get('session_token'))
+    if not user:
+        return jsonify({'success': False, 'message': 'Bejelentkezés szükséges.'}), 401
+    games = [g for g in (async_games.summarize(r) for r in get_user_async_games(user['id'])) if g]
+    games.sort(key=lambda g: not g['my_turn'])   # a rendezés stabil: a többi az utolsó lépés szerinti
+    return jsonify({'success': True, 'games': games,
+                    'my_turn_count': sum(1 for g in games if g['my_turn'])})
 
 
 @game_bp.route('/api/game/<int:game_id>/abandon', methods=['POST'])
@@ -589,6 +889,9 @@ def abandon_game(game_id):
         return jsonify({'success': False, 'message': 'Játék nem található.'}), 404
     if game_row['status'] != 'active':
         return jsonify({'success': False, 'message': 'A játék nem aktív.'}), 400
+    if game_row.get('is_async'):
+        return jsonify({'success': False,
+                        'message': 'A levelezős játékot a játékban, a Feladom gombbal fejezheted be.'}), 400
 
     is_owner = False
     if game_row.get('owner_token') and user.get('reconnect_token'):

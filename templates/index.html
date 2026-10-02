@@ -162,6 +162,11 @@
                     <span data-i18n="lobby.tab_friends">Barátok</span>
                     <span class="friend-badge hidden" id="friend-badge">0</span>
                 </button>
+                <button class="lobby-nav-tab segment" data-lobby-tab="async" id="nav-tab-async" type="button">
+                    <span data-i18n="lobby.tab_async">Levelezős</span>
+                    <span class="friend-badge hidden" id="async-badge">0</span>
+                </button>
+                <button class="lobby-nav-tab segment" data-lobby-tab="practice" id="nav-tab-practice" type="button" data-i18n="lobby.tab_practice">Gyakorlás</button>
                 <button class="lobby-nav-tab segment" data-lobby-tab="leaderboard" id="nav-tab-leaderboard" type="button" data-i18n="lobby.tab_leaderboard">Ranglista</button>
                 <button class="lobby-nav-tab segment hidden" data-lobby-tab="room" id="nav-tab-room" type="button" disabled data-i18n="lobby.tab_room">Nyitott szoba</button>
             </nav>
@@ -309,9 +314,11 @@
                                     <option value="8" data-i18n="ai.level_8">8 · Haladó</option>
                                     <option value="9" data-i18n="ai.level_9">9 · Erős</option>
                                     <option value="10" data-i18n="ai.level_10">10 · Mester</option>
+                                    <option value="auto" data-i18n="ai.level_auto">Igazodik hozzám</option>
                                 </select>
                             </div>
                         </div>
+                        <p class="form-hint hidden" id="room-ai-auto-hint" data-i18n="create.ai_auto_hint">Az „Igazodik hozzám” robot az utolsó köreid átlagához állítja az erejét: nehezebb lesz, ha jól játszol, könnyebb, ha elakadsz.</p>
                         <p class="form-hint" id="room-ai-hint" data-i18n="create.ai_hint">Egyedül is játszhatsz a robotok ellen. A robotok is foglalnak egy férőhelyet a szobában.</p>
 
                         <!-- Tippek száma (csak egyedül, robotok ellen játszva érhető el) -->
@@ -413,6 +420,108 @@
                 </section>
             </div>
 
+            <!-- TAB: Levelezős játékok (órák / napok alatt lépnek) -->
+            <div class="lobby-tab-panel" id="lobby-panel-async">
+                <section class="lobby-section">
+                    <div class="section-header">
+                        <h2 class="section-title" data-i18n="async.title">Levelezős játékaim</h2>
+                    </div>
+                    <p class="form-hint" data-i18n="async.intro">Barátaiddal órák vagy napok alatt lépkedtek: a játék közben bezárhatod az alkalmazást, és értesítést kapsz, ha rád kerül a sor.</p>
+                    <div id="async-games" class="rooms-list">
+                        <div class="empty-state">
+                            <p class="empty-msg" data-i18n="async.empty">Még nincs folyamatban lévő levelezős játékod.</p>
+                        </div>
+                    </div>
+                </section>
+                <section class="lobby-section">
+                    <div class="section-header">
+                        <h2 class="section-title" data-i18n="async.new">Új levelezős játék</h2>
+                    </div>
+                    <div class="create-room-form">
+                        <div class="form-group">
+                            <label for="async-name" class="form-label" data-i18n="create.room_name">Szoba neve</label>
+                            <input type="text" id="async-name" class="form-input" maxlength="30" placeholder="Levelezős játék" data-i18n-placeholder="async.name_placeholder">
+                        </div>
+                        <div class="form-group">
+                            <label for="async-hours" class="form-label" data-i18n="async.hours_label">Gondolkodási idő lépésenként</label>
+                            <select id="async-hours" class="form-select">
+                                <option value="24" data-i18n="async.hours_24">24 óra</option>
+                                <option value="48" selected data-i18n="async.hours_48">48 óra</option>
+                                <option value="72" data-i18n="async.hours_72">72 óra</option>
+                                <option value="168" data-i18n="async.hours_168">7 nap</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <span class="form-label" data-i18n="async.friends_label">Játékosok (1–3 barát)</span>
+                            <div id="async-friends" class="friend-check-list"></div>
+                        </div>
+                        <button id="btn-async-create" type="button" data-i18n="async.create">Játék indítása</button>
+                    </div>
+                </section>
+            </div>
+
+            <!-- TAB: Gyakorlás (napi feladvány, szókvíz, rövid szavak) -->
+            <div class="lobby-tab-panel" id="lobby-panel-practice">
+                <section class="lobby-section" id="daily-section">
+                    <div class="section-header">
+                        <h2 class="section-title" data-i18n="daily.title">Napi feladvány</h2>
+                    </div>
+                    <p class="form-hint" data-i18n="daily.intro">Naponta egy közös táblaállás és betűkészlet mindenkinek: keresd meg a legtöbb pontot érő lépést!</p>
+                    <div class="daily-card">
+                        <div id="daily-status" class="daily-status"></div>
+                        <button id="btn-daily-start" type="button" data-i18n="daily.start">Feladvány megnyitása</button>
+                    </div>
+                    <p id="daily-yesterday" class="form-hint hidden"></p>
+                    <h3 class="panel-heading" data-i18n="daily.leaderboard">Mai ranglista</h3>
+                    <div id="daily-leaderboard" class="leaderboard-list">
+                        <div class="empty-state">
+                            <p class="empty-msg" data-i18n="daily.empty">Még senki nem küldött be megoldást ma.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Szókvíz: melyik szó érvényes? -->
+                <section class="lobby-section" id="quiz-section">
+                    <div class="section-header">
+                        <h2 class="section-title" data-i18n="quiz.title">Szókvíz</h2>
+                    </div>
+                    <p class="form-hint" data-i18n="quiz.intro">Melyik szó érvényes a játékban? Tíz kérdés, a szótár dönt.</p>
+                    <div class="segmented" id="quiz-modes" role="tablist" aria-label="Szóhossz" data-i18n-aria="quiz.modes_label">
+                        <button class="segment quiz-mode active" data-mode="mixed" type="button" data-i18n="quiz.mode_mixed">Vegyes szavak</button>
+                        <button class="segment quiz-mode" data-mode="2" type="button" data-i18n="quiz.mode_2">Kétzsetonos</button>
+                        <button class="segment quiz-mode" data-mode="3" type="button" data-i18n="quiz.mode_3">Háromzsetonos</button>
+                    </div>
+                    <div class="quiz-start-row">
+                        <button id="btn-quiz-start" type="button" data-i18n="quiz.start">Kvíz indítása</button>
+                    </div>
+                    <div id="quiz-play" class="quiz-play hidden">
+                        <div id="quiz-progress" class="quiz-progress"></div>
+                        <div id="quiz-word" class="quiz-word"></div>
+                        <div class="quiz-buttons">
+                            <button id="btn-quiz-valid" class="btn-accept" type="button" data-i18n="quiz.valid">Érvényes</button>
+                            <button id="btn-quiz-invalid" class="btn-challenge" type="button" data-i18n="quiz.invalid">Nem érvényes</button>
+                        </div>
+                        <div id="quiz-feedback" class="quiz-feedback" aria-live="polite"></div>
+                        <button id="btn-quiz-next" class="secondary hidden" type="button" data-i18n="quiz.next">Következő</button>
+                    </div>
+                    <div id="quiz-result" class="quiz-result hidden"></div>
+                </section>
+
+                <!-- Rövid szavak -->
+                <section class="lobby-section" id="shortwords-section">
+                    <div class="section-header">
+                        <h2 class="section-title" data-i18n="short.title">Rövid szavak</h2>
+                    </div>
+                    <p class="form-hint" data-i18n="short.intro">A két- és háromzsetonos szavak a Scrabble legfontosabb fegyverei: ezekkel zsúfolt táblán is lehet pontot szerezni.</p>
+                    <div class="segmented" id="short-lengths" role="tablist" aria-label="Szóhossz" data-i18n-aria="quiz.modes_label">
+                        <button class="segment short-len active" data-length="2" type="button" data-i18n="quiz.mode_2">Kétzsetonos</button>
+                        <button class="segment short-len" data-length="3" type="button" data-i18n="quiz.mode_3">Háromzsetonos</button>
+                    </div>
+                    <p class="form-hint" id="short-count"></p>
+                    <div id="short-words" class="short-words"></div>
+                </section>
+            </div>
+
             <!-- TAB 5: Ranglista -->
             <div class="lobby-tab-panel" id="lobby-panel-leaderboard">
                 <section class="lobby-section">
@@ -420,7 +529,8 @@
                         <h2 class="section-title" data-i18n="lb.title">Ranglista</h2>
                     </div>
                     <div class="segmented lb-metrics" id="lb-metrics" role="tablist" aria-label="Rangsor" data-i18n-aria="lb.metrics_label">
-                        <button class="segment lb-metric active" data-metric="wins" type="button" data-i18n="lb.wins">Győzelmek</button>
+                        <button class="segment lb-metric active" data-metric="rating" type="button" data-i18n="lb.rating">Értékszám</button>
+                        <button class="segment lb-metric" data-metric="wins" type="button" data-i18n="lb.wins">Győzelmek</button>
                         <button class="segment lb-metric" data-metric="win_rate" type="button" data-i18n="lb.win_rate">Nyerési arány</button>
                         <button class="segment lb-metric" data-metric="avg_score" type="button" data-i18n="lb.avg_score">Átlagpont</button>
                         <button class="segment lb-metric" data-metric="best_game" type="button" data-i18n="lb.best_game">Legjobb játék</button>
@@ -560,12 +670,18 @@
                     <svg class="icon"><use href="#i-eye"/></svg>
                     <span id="spectator-banner-text"></span>
                 </div>
+                <!-- Napi feladvány jelzés -->
+                <div id="puzzle-banner" class="puzzle-banner hidden" role="status">
+                    <span id="puzzle-banner-text"></span>
+                    <button id="btn-puzzle-reveal" class="small-btn secondary" type="button" data-i18n="daily.reveal">Megoldás</button>
+                </div>
                 <section class="panel-status">
                     <h2 class="panel-heading" data-i18n="game.scores">Pontok</h2>
                     <div id="scoreboard" class="scoreboard"></div>
                     <div class="game-info">
                         <div id="tiles-remaining"></div>
                         <div id="current-turn">-</div>
+                        <div id="async-deadline" class="async-deadline hidden"></div>
                         <div id="last-action" class="last-action"></div>
                     </div>
                     <!-- Kör időlimit -->
@@ -654,10 +770,29 @@
                     <button id="btn-exit-nosave" class="danger" type="button" data-i18n="exit.leave_nosave">Kilépés mentés nélkül</button>
                     <button id="btn-exit-cancel-owner" class="secondary" type="button" data-i18n="common.cancel">Mégsem</button>
                 </div>
+                <!-- Levelezős játék: a kilépés nem veszíti el a játékot -->
+                <div id="exit-async-buttons" class="dialog-buttons dialog-buttons-vertical hidden">
+                    <button id="btn-exit-async-leave" class="btn-primary" type="button" data-i18n="async.leave_keep">Kilépés (a játék folytatódik)</button>
+                    <button id="btn-exit-async-resign" class="danger" type="button" data-i18n="async.resign">Játék feladása</button>
+                    <button id="btn-exit-async-cancel" class="secondary" type="button" data-i18n="common.cancel">Mégsem</button>
+                </div>
                 <!-- Non-owner buttons -->
                 <div id="exit-player-buttons" class="dialog-buttons hidden">
                     <button id="btn-exit-cancel" class="secondary" type="button" data-i18n="common.cancel">Mégsem</button>
                     <button id="btn-exit-confirm" class="danger" type="button" data-i18n="exit.title">Kilépés</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Napi feladvány eredménye -->
+        <div id="puzzle-result-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="puzzle-result-title">
+            <div class="dialog-content">
+                <h2 id="puzzle-result-title" data-i18n="daily.result_title">Eredményed</h2>
+                <div id="puzzle-result-body" class="puzzle-result-body"></div>
+                <div class="dialog-buttons dialog-buttons-vertical">
+                    <button id="btn-puzzle-retry" type="button" data-i18n="daily.retry">Újra próbálom</button>
+                    <button id="btn-puzzle-solution" class="secondary" type="button" data-i18n="daily.show_solution">Megoldás megmutatása</button>
+                    <button id="btn-puzzle-exit" class="secondary" type="button" data-i18n="game.back_lobby">Vissza a lobbyba</button>
                 </div>
             </div>
         </div>
@@ -668,6 +803,9 @@
                 <h2 id="game-over-title" data-i18n="game.over">Játék vége!</h2>
                 <div id="final-scores"></div>
                 <div id="final-stats" class="final-stats"></div>
+                <div id="final-rating" class="final-rating hidden"></div>
+                <button id="btn-final-analysis" class="secondary hidden" type="button" data-i18n="game.analysis">Elemzés és visszajátszás</button>
+                <div id="final-badges" class="final-badges hidden"></div>
                 <button id="btn-back-lobby" type="button" data-i18n="game.back_lobby">Vissza a lobbyba</button>
             </div>
         </div>
@@ -703,6 +841,25 @@
         </header>
         <main class="profile-container">
             <div class="stat-cards" id="profile-stats"></div>
+            <div class="section-header">
+                <h2 class="section-title" data-i18n="badge.title">Kitüntetések</h2>
+            </div>
+            <div id="profile-badges" class="badge-grid"></div>
+            <div id="push-settings" class="settings-group hidden">
+                <div class="toggle-row">
+                    <label class="toggle-label" for="push-toggle">
+                        <div class="toggle-info">
+                            <span class="toggle-name" data-i18n="push.title">Értesítés, ha te jössz</span>
+                            <span class="toggle-desc" data-i18n="push.desc">Értesítést kapsz a telefonodra / böngésződbe, ha rád kerül a sor, miközben nem nézed a játékot.</span>
+                        </div>
+                        <div class="toggle-switch">
+                            <input type="checkbox" id="push-toggle">
+                            <span class="toggle-slider"></span>
+                        </div>
+                    </label>
+                </div>
+                <p class="form-hint" id="push-hint"></p>
+            </div>
             <div class="section-header">
                 <h2 class="section-title" data-i18n="profile.history">Játékelőzmények</h2>
             </div>
@@ -740,6 +897,10 @@
             </div>
         </header>
         <main class="replay-container">
+            <div class="replay-summary">
+                <div id="replay-players" class="replay-players"></div>
+                <button id="btn-replay-share" class="small-btn secondary hidden" type="button" data-i18n="replay.share">Megosztás</button>
+            </div>
             <div class="replay-controls">
                 <button id="btn-replay-prev" class="secondary" type="button" disabled data-i18n="replay.prev">&larr; Előző</button>
                 <span id="replay-counter">0 / 0</span>
@@ -749,6 +910,15 @@
             <div class="replay-board-area">
                 <div id="replay-board" class="board replay-board"></div>
             </div>
+            <section id="replay-analysis" class="replay-analysis hidden">
+                <button id="btn-replay-analysis" class="secondary" type="button" data-i18n="analysis.run">Elemzés indítása</button>
+                <p id="analysis-status" class="form-hint hidden"></p>
+                <div id="analysis-body" class="hidden">
+                    <button id="btn-replay-best" class="small-btn tinted" type="button" disabled data-i18n="analysis.show_best">Legjobb lépés mutatása</button>
+                    <div id="analysis-move" class="analysis-move"></div>
+                    <div id="analysis-summary" class="analysis-summary"></div>
+                </div>
+            </section>
         </main>
     </div>
 

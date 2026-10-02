@@ -1,13 +1,11 @@
 import atexit
 import re
+import shutil as _shutil
+import subprocess as _subprocess
+import threading as _threading
 
-import eventlet.patcher
-
-# Az eredeti (nem eventlet-patchelt) modulok kellenek,
-# mert a green thread nem tud blokkoló pipe-ot olvasni.
-_subprocess = eventlet.patcher.original('subprocess')
-_threading = eventlet.patcher.original('threading')
-_shutil = eventlet.patcher.original('shutil')
+# A szerver a gevent monkey patch után importálja: a subprocess és a threading itt már
+# kooperatív (a pipe olvasása nem blokkolja a szervert).
 
 tunnel_process = None
 

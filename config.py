@@ -25,4 +25,9 @@ AUTH_RATE_LIMITS = {
     'search_users': (20, 60),    # 20 kérés / 1 perc
     'leaderboard': (30, 60),     # 30 kérés / 1 perc
     'dictionary': (60, 60),      # 60 kérés / 1 perc
+    'replay': (60, 60),          # 60 kérés / 1 perc (megosztott visszajátszás)
+    'analysis': (30, 60),        # 30 kérés / 1 perc (játékelemzés lekérdezése)
+    'daily': (60, 60),           # 60 kérés / 1 perc (napi feladvány, ranglista)
+    'practice': (120, 60),       # 120 kérés / 1 perc (kvíz, rövid szavak)
+    'push': (20, 60),            # 20 kérés / 1 perc (push feliratkozás)
 }

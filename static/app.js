@@ -236,6 +236,24 @@ function formatServerDate(value, options) {
     return d ? d.toLocaleString(I18N.locale(), options) : '';
 }
 
+// Link megosztása: telefonon a rendszer megosztó lapja, egyébként vágólap
+async function shareOrCopy(url, title, text, copiedMessage) {
+    if (isTouchDevice && navigator.share) {
+        try {
+            await navigator.share({ title, text, url });
+            return;
+        } catch (e) {
+            if (e && e.name === 'AbortError') return;  // a felhasználó bezárta a megosztó lapot
+        }
+    }
+    try {
+        await navigator.clipboard.writeText(url);
+        showMessage(copiedMessage);
+    } catch {
+        showMessage(t('common.copy_failed'), true);
+    }
+}
+
 // ===== APP STATE =====
 // Consolidated game & session state
 
@@ -293,6 +311,8 @@ const AppState = {
         this.spectateRoomId = null;
         this.spectateCode = null;
         this.gameState = null;
+        Badges.newInGame = [];
+        Daily.reset();
         // Clear saved rejoin info
         localStorage.removeItem('scrabble-rejoin');
         // Hide room tab
@@ -623,6 +643,7 @@ const Auth = {
             }
         } catch { /* no session */ }
         document.documentElement.classList.remove('booting');
+        if (!AppState.currentUser) Replay.openSharedLink();
     },
 };
 
@@ -637,6 +658,7 @@ const Lobby = {
             if (e.key === 'Enter') this.joinByCode();
         });
         document.getElementById('room-ai-count').addEventListener('change', () => this.updateAiControls());
+        document.getElementById('room-ai-difficulty').addEventListener('change', () => this.updateAiControls());
         this.updateAiControls();
 
         // Lobby nav tab switching
@@ -669,7 +691,9 @@ const Lobby = {
     // A robotok is foglalnak helyet: a tulajdonosnak is maradnia kell
     updateAiControls() {
         const count = parseInt(document.getElementById('room-ai-count').value) || 0;
-        document.getElementById('room-ai-difficulty').disabled = count === 0;
+        const difficulty = document.getElementById('room-ai-difficulty');
+        difficulty.disabled = count === 0;
+        document.getElementById('room-ai-auto-hint').classList.toggle('hidden', count === 0 || difficulty.value !== 'auto');
         const maxSel = document.getElementById('room-max-players');
         if (count > 0 && parseInt(maxSel.value) < count + 1) maxSel.value = String(Math.min(count + 1, 4));
         for (const opt of maxSel.options) opt.disabled = count > 0 && parseInt(opt.value) < count + 1;
@@ -706,6 +730,11 @@ const Lobby = {
             Friends.load();
         } else if (tabId === 'leaderboard') {
             Leaderboard.load();
+        } else if (tabId === 'practice') {
+            Daily.load();
+            Practice.onShow();
+        } else if (tabId === 'async') {
+            AsyncGames.onShow();
         }
     },
 
@@ -750,6 +779,8 @@ const Lobby = {
         const createTab = document.getElementById('nav-tab-create');
         const savedTab = document.getElementById('nav-tab-saved');
         const friendsTab = document.getElementById('nav-tab-friends');
+        const asyncTab = document.getElementById('nav-tab-async');
+        if (asyncTab) asyncTab.classList.toggle('hidden', AppState.isGuest);
         if (createTab) createTab.classList.toggle('hidden', AppState.isGuest);
         if (savedTab) savedTab.classList.toggle('hidden', AppState.isGuest);
         if (friendsTab) friendsTab.classList.toggle('hidden', AppState.isGuest);
@@ -760,6 +791,7 @@ const Lobby = {
         
         if (!AppState.isGuest) {
             Friends.load(); // Kérések badge frissítéséhez
+            AsyncGames.load();   // a "te jössz" jelvényhez
         }
 
         // Reset to home tab
@@ -778,7 +810,8 @@ const Lobby = {
         const join = params.get('join');
         const spectate = params.get('spectate');
         const action = params.get('action');
-        if (!join && !spectate && !action) return;
+        const replay = params.get('replay');
+        if (!join && !spectate && !action && !replay) return;
         // A cím megtisztítása, hogy frissítésre ne ismétlődjön a művelet
         try { history.replaceState(null, '', location.pathname); } catch { /* ignore */ }
 
@@ -790,6 +823,8 @@ const Lobby = {
             socket.emit('spectate_room', { code: spectate });
         } else if (action === 'create' && !AppState.isGuest) {
             this.switchTab('create');
+        } else if (replay) {
+            Replay.loadShared(replay);
         }
     },
 
@@ -818,7 +853,8 @@ const Lobby = {
         const isPrivate = document.getElementById('room-private').checked;
         const turnTimeLimit = parseInt(document.getElementById('room-turn-limit').value) || 0;
         const aiCount = parseInt(document.getElementById('room-ai-count').value) || 0;
-        const aiDifficulty = parseInt(document.getElementById('room-ai-difficulty').value) || 6;
+        const difficultyValue = document.getElementById('room-ai-difficulty').value;
+        const aiDifficulty = difficultyValue === 'auto' ? 'auto' : (parseInt(difficultyValue) || 6);
         const hintLimit = Number(document.getElementById('room-hint-limit').value);
         socket.emit('create_room', {
             name, max_players: maxPlayers,
@@ -1321,27 +1357,10 @@ const WaitingRoom = {
         return `${location.origin}/?join=${AppState.currentRoomCode}`;
     },
 
-    async shareLink() {
+    shareLink() {
         if (!AppState.currentRoomCode) return;
-        const url = this.inviteUrl();
-        if (isTouchDevice && navigator.share) {
-            try {
-                await navigator.share({
-                    title: t('app.title'),
-                    text: t('wait.share_text', { room: AppState.roomName || '' }),
-                    url,
-                });
-                return;
-            } catch (e) {
-                if (e && e.name === 'AbortError') return;  // a felhasználó bezárta a megosztó lapot
-            }
-        }
-        try {
-            await navigator.clipboard.writeText(url);
-            showMessage(t('wait.link_copied'));
-        } catch {
-            showMessage(t('common.copy_failed'), true);
-        }
+        return shareOrCopy(this.inviteUrl(), t('app.title'),
+            t('wait.share_text', { room: AppState.roomName || '' }), t('wait.link_copied'));
     },
 
     update() {
@@ -1475,6 +1494,8 @@ const GameBoard = {
         AppState.gameState = state;
         AppState.myPlayerId = socket.id;
         AppState.isSpectator = !!state.spectator;
+        Daily.onGameState(state);
+        AsyncGames.onGameState(state);
 
         // Clear placed tiles when turn changes away from us
         if (state.current_player !== socket.id && BoardState.placedTiles.length > 0) {
@@ -1514,7 +1535,7 @@ const GameBoard = {
             if (state.finished) {
                 ChallengeUI.stopCountdown(); TurnTimerUI._stop();
                 localStorage.removeItem('scrabble-rejoin');
-                GameOver.show();
+                if (!state.puzzle) GameOver.show();   // a napi feladvány saját eredmény-ablakot kap
             }
         } else {
             WaitingRoom.update();
@@ -1909,6 +1930,10 @@ const GameBoard = {
             case 'vote': return t(info.vote === 'accept' ? 'last.vote_accept' : 'last.vote_reject', { player: info.player });
             case 'game_over': return t('last.game_over', { player: info.player, score: info.score });
             case 'game_over_draw': return t('last.game_over_draw', { players: (info.players || []).join(', '), score: info.score });
+            case 'withdrawn': return t('last.withdrawn', { player: info.player });
+            case 'timeout': return t('last.timeout', { player: info.player });
+            case 'resigned': return t('last.resigned', { player: info.player });
+            case 'puzzle': return t('last.place', { player: info.player, words, score: info.score });
             case 'save_revert': return t('last.save_revert', { player: info.player });
             default: return tServer(gs.last_action) || '';
         }
@@ -2309,11 +2334,22 @@ const Hint = {
 };
 
 // ===== GYORSBILLENTYŰK =====
-// Enter: lerak · Esc: visszavon · S: keverés · R: rendezés · Backspace: az utolsó lerakott betű visszavétele
+// Enter: lerak · Esc: visszavon · S: keverés · R: rendezés · Backspace / Ctrl+Z: az utolsó lerakott betű visszavétele
 
 const Shortcuts = {
     init() {
         document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
+                const tag = e.target && e.target.tagName;
+                if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+                if (!document.getElementById('game-screen').classList.contains('hidden')
+                        && !AppState.isSpectator && BoardState.placedTiles.length) {
+                    e.preventDefault();
+                    BoardState.placedTiles.pop();
+                    GameBoard.afterPlacementChange();
+                }
+                return;
+            }
             if (e.ctrlKey || e.metaKey || e.altKey) return;
             if (document.getElementById('game-screen').classList.contains('hidden')) return;
             const target = e.target;
@@ -2520,8 +2556,9 @@ const ChallengeUI = {
 
         // Buttons — csak állapotváltozáskor építjük újra: a másodpercenkénti újrarajzolás
         // elnyelhette a kattintást és visszakapcsolta a már letiltott gombokat
+        const canWithdraw = isMyPlacement && !Object.keys(pc.votes || {}).length;
         const sig = (AppState.isSpectator ? 'spectator:' : '') + I18N.lang + ':' +
-            (isMyPlacement ? 'placer' : (myVote ? `voted:${myVote}` : 'vote'));
+            (isMyPlacement ? (canWithdraw ? 'placer' : 'placer-voted') : (myVote ? `voted:${myVote}` : 'vote'));
         if (this._buttonsSig !== sig) {
             this._buttonsSig = sig;
             buttonsEl.innerHTML = '';
@@ -2529,6 +2566,7 @@ const ChallengeUI = {
                 this._addWaitText(buttonsEl, t('challenge.spectator'));
             } else if (isMyPlacement) {
                 this._addWaitText(buttonsEl, t('challenge.voting'));
+                if (!Object.keys(pc.votes || {}).length) this._renderWithdrawButton(buttonsEl);
             } else if (myVote) {
                 this._addWaitText(buttonsEl, myVote === 'accept' ? t('challenge.you_accepted') : t('challenge.you_rejected'));
             } else {
@@ -2593,6 +2631,18 @@ const ChallengeUI = {
         el.className = 'challenge-wait';
         el.textContent = text;
         container.appendChild(el);
+    },
+
+    // A lerakó visszavonhatja a lerakását, amíg senki sem szavazott
+    _renderWithdrawButton(buttonsEl) {
+        const btn = document.createElement('button');
+        btn.className = 'secondary';
+        btn.textContent = t('challenge.withdraw');
+        btn.addEventListener('click', () => {
+            btn.disabled = true;
+            socket.emit('withdraw_words');
+        });
+        buttonsEl.appendChild(btn);
     },
 
     _renderVoteButtons(buttonsEl) {
@@ -2822,7 +2872,18 @@ const BoardZoom = {
 // ===== GAME OVER =====
 
 const GameOver = {
+    _rating: null,
+    _savedGameId: null,   // a befejezett játék adatbázis-azonosítója (elemzéshez, visszajátszáshoz)
+
+    setSavedGame(gameId) {
+        this._savedGameId = gameId || null;
+        document.getElementById('btn-final-analysis').classList.toggle('hidden', !this._savedGameId);
+    },
+
     init() {
+        document.getElementById('btn-final-analysis').addEventListener('click', () => {
+            if (this._savedGameId) Replay.load(this._savedGameId, { analysis: true });
+        });
         document.getElementById('btn-back-lobby').addEventListener('click', () => this.backToLobby());
         window.addEventListener('langchange', () => {
             if (!document.getElementById('game-over-dialog').classList.contains('hidden')) this.render();
@@ -2837,17 +2898,36 @@ const GameOver = {
         document.getElementById('game-over-dialog').classList.remove('hidden');
     },
 
+    // Az értékelt játék után az új értékszám és a változás
+    setRating(data) {
+        this._rating = data;
+        this.renderRating();
+    },
+
+    renderRating() {
+        const box = document.getElementById('final-rating');
+        const data = this._rating;
+        box.classList.toggle('hidden', !data);
+        if (!data) return;
+        const sign = data.change > 0 ? '+' : '';
+        box.textContent = t('game.rating_update', { rating: data.rating, change: sign + data.change });
+        box.classList.toggle('up', data.change > 0);
+        box.classList.toggle('down', data.change < 0);
+    },
+
     // Végeredmény + játékonkénti érdekességek (legjobb szó, legtöbb pont egy lépésben)
     render() {
         const gs = AppState.gameState;
         if (!gs) return;
         const scoresContainer = document.getElementById('final-scores');
-        const sorted = [...gs.players].sort((a, b) => b.score - a.score);
-        // Döntetlennél minden holtversenyben álló első helyezett győztes
-        const topScore = sorted.length ? sorted[0].score : 0;
+        // A győztesek a szerver szerint (döntetlennél több is; aki feladta, nem lehet az); régi állapotban a legtöbb pont
+        const serverWinners = new Set((gs.winners || []).map(w => w.name));
+        const topScore = gs.players.length ? Math.max(...gs.players.map(p => p.score)) : 0;
+        const isWinner = (p) => (serverWinners.size ? serverWinners.has(p.name) : p.score === topScore);
+        const sorted = [...gs.players].sort((a, b) => (isWinner(b) - isWinner(a)) || (b.score - a.score));
         scoresContainer.innerHTML = sorted.map((p) => `
-            <div class="score-final ${p.score === topScore ? 'winner' : ''}">
-                <span>${p.score === topScore ? '&#x1F3C6; ' : ''}${escapeHtml(p.name)}</span>
+            <div class="score-final ${isWinner(p) ? 'winner' : ''}">
+                <span>${isWinner(p) ? '&#x1F3C6; ' : ''}${escapeHtml(p.name)}${p.resigned ? ' <small>(' + escapeHtml(t('async.resigned_tag')) + ')</small>' : ''}</span>
                 <span>${escapeHtml(t('common.points', { n: p.score }))}</span>
             </div>
         `).join('');
@@ -2861,6 +2941,8 @@ const GameOver = {
             line.textContent = text;
             stats.appendChild(line);
         };
+        Badges.renderGameOver();
+        this.renderRating();
         if (best) addLine(t('game.best_move', { player: best.player, words: best.words.join(', '), score: best.score }));
         const moves = (gs.history || []).filter(h => h.type === 'place' || h.type === 'challenge_accept').length;
         if (moves) addLine(t('game.total_moves', { n: (gs.history || []).length, words: moves }));
@@ -2877,6 +2959,8 @@ const GameOver = {
 
     backToLobby() {
         document.getElementById('game-over-dialog').classList.add('hidden');
+        this._rating = null;
+        this.setSavedGame(null);
         const spectating = AppState.isSpectator;
         AppState.reset();
         ChallengeUI.stopCountdown(); TurnTimerUI._stop();
@@ -2977,19 +3061,31 @@ const ExitGame = {
         // Non-owner buttons
         document.getElementById('btn-exit-confirm').addEventListener('click', () => this.leave());
         document.getElementById('btn-exit-cancel').addEventListener('click', () => this.hideDialog());
+        // Levelezős játék
+        document.getElementById('btn-exit-async-leave').addEventListener('click', () => this.leave());
+        document.getElementById('btn-exit-async-cancel').addEventListener('click', () => this.hideDialog());
+        document.getElementById('btn-exit-async-resign').addEventListener('click', () => {
+            this.hideDialog();
+            showConfirm(t('async.resign'), t('async.resign_confirm'), t('async.resign'),
+                () => socket.emit('resign_game'));
+        });
     },
 
     showDialog() {
         // Megfigyelőként nincs mit megerősíteni: a kilépés azonnali
         if (AppState.isSpectator) { this._doLeave(); return; }
+        // A napi feladványnál nincs mit menteni vagy megerősíteni
+        if (AppState.gameState && AppState.gameState.puzzle) { this._doLeave(); return; }
         const gs = AppState.gameState;
         const isActiveGame = gs && gs.started && !gs.finished;
-        const showOwner = AppState.isOwner && isActiveGame;
+        const isAsync = !!(isActiveGame && gs.async_mode);   // levelezős: kilépés = a játék megmarad
+        const showOwner = AppState.isOwner && isActiveGame && !isAsync;
 
         document.getElementById('exit-dialog-text').textContent =
-            showOwner ? t('exit.what_to_do') : t('exit.sure');
+            isAsync ? t('async.exit_text') : (showOwner ? t('exit.what_to_do') : t('exit.sure'));
         document.getElementById('exit-owner-buttons').classList.toggle('hidden', !showOwner);
-        document.getElementById('exit-player-buttons').classList.toggle('hidden', showOwner);
+        document.getElementById('exit-async-buttons').classList.toggle('hidden', !isAsync);
+        document.getElementById('exit-player-buttons').classList.toggle('hidden', showOwner || isAsync);
         document.getElementById('exit-dialog').classList.remove('hidden');
     },
 
@@ -3033,6 +3129,704 @@ const ExitGame = {
     },
 };
 
+// ===== NAPI FELADVÁNY =====
+// Naponta egy közös táblaállás és kéz; a játék a szokásos játékképernyőn zajlik (a szerver egyjátékos,
+// nem listázott "feladvány-szobát" nyit), egyetlen lerakás után eredményt kapsz.
+
+const Daily = {
+    current: null,        // {date, registered, my} a futó feladványról
+    _pendingSolution: null,
+    _lobbyData: null,
+
+    init() {
+        socket.on('daily_started', (data) => this.onStarted(data));
+        socket.on('daily_result', (result) => this.onResult(result));
+        socket.on('daily_solution', (solution) => this.onSolution(solution));
+        document.getElementById('btn-daily-start').addEventListener('click', () => socket.emit('start_daily'));
+        document.getElementById('btn-puzzle-retry').addEventListener('click', () => this.retry());
+        document.getElementById('btn-puzzle-solution').addEventListener('click', () => this.reveal());
+        document.getElementById('btn-puzzle-reveal').addEventListener('click', () => this.confirmReveal());
+        document.getElementById('btn-puzzle-exit').addEventListener('click', () => {
+            document.getElementById('puzzle-result-dialog').classList.add('hidden');
+            ExitGame._doLeave();
+        });
+        window.addEventListener('langchange', () => {
+            if (this._lobbyData) this.render(this._lobbyData);
+            if (this.current && AppState.gameState) this.onGameState(AppState.gameState);
+        });
+    },
+
+    reset() {
+        this.current = null;
+        this._pendingSolution = null;
+        const dialog = document.getElementById('puzzle-result-dialog');
+        if (dialog) dialog.classList.add('hidden');
+        const screen = document.getElementById('game-screen');
+        if (screen) screen.classList.remove('puzzle-mode');
+    },
+
+    // --- Lobby ---
+
+    async load() {
+        try {
+            const res = await fetch('/api/daily');
+            const data = await res.json();
+            if (!data.success) return;
+            this._lobbyData = data;
+            this.render(data);
+        } catch { /* a lobby többi része enélkül is működik */ }
+    },
+
+    render(data) {
+        const status = document.getElementById('daily-status');
+        const my = data.my;
+        if (!my || !my.attempts) {
+            status.textContent = my && my.revealed ? t('daily.revealed') : t('daily.not_played');
+        } else {
+            status.textContent = t('daily.my_best', { score: my.best_score, n: my.attempts })
+                + (data.best_score !== null && data.best_score !== undefined
+                    ? ' · ' + t('daily.best_known', { score: data.best_score }) : '');
+        }
+        document.getElementById('btn-daily-start').textContent = my && my.attempts ? t('daily.again') : t('daily.start');
+
+        const y = data.yesterday;
+        const yEl = document.getElementById('daily-yesterday');
+        yEl.classList.toggle('hidden', !y);
+        if (y) {
+            yEl.textContent = t('daily.yesterday', { words: y.best_words.join(', '), score: y.best_score });
+        }
+
+        const box = document.getElementById('daily-leaderboard');
+        box.replaceChildren();
+        if (!data.leaderboard.length) {
+            box.innerHTML = emptyStateHtml(t('daily.empty'));
+            return;
+        }
+        for (const entry of data.leaderboard) box.appendChild(this._row(entry));
+        if (data.me && !data.leaderboard.some(e => e.user_id === data.me.user_id)) {
+            const gap = document.createElement('div');
+            gap.className = 'lb-gap';
+            gap.textContent = '\u22EF';
+            box.appendChild(gap);
+            box.appendChild(this._row({ ...data.me, is_me: true }));
+        }
+    },
+
+    _row(entry) {
+        const row = document.createElement('div');
+        row.className = 'lb-row' + (entry.is_me ? ' me' : '') + (entry.rank <= 3 ? ` top-${entry.rank}` : '');
+        const rank = document.createElement('span');
+        rank.className = 'lb-rank';
+        rank.textContent = entry.rank;
+        const info = document.createElement('div');
+        info.className = 'lb-info';
+        const name = document.createElement('span');
+        name.className = 'lb-name';
+        name.textContent = entry.display_name + (entry.is_me ? ` (${t('lb.you')})` : '');
+        const sub = document.createElement('span');
+        sub.className = 'lb-sub';
+        sub.textContent = t('daily.attempts', { n: entry.attempts });
+        info.appendChild(name);
+        info.appendChild(sub);
+        const value = document.createElement('span');
+        value.className = 'lb-value';
+        value.textContent = t('common.points', { n: entry.best_score });
+        row.appendChild(rank);
+        row.appendChild(info);
+        row.appendChild(value);
+        return row;
+    },
+
+    // --- Játék közben ---
+
+    // A játékképernyő feladvány-módja: a nem releváns elemek rejtve, a banner látszik
+    onGameState(state) {
+        const puzzle = !!state.puzzle;
+        document.getElementById('game-screen').classList.toggle('puzzle-mode', puzzle);
+        const banner = document.getElementById('puzzle-banner');
+        banner.classList.toggle('hidden', !puzzle);
+        if (puzzle) {
+            document.getElementById('puzzle-banner-text').textContent = t('daily.banner', { date: state.puzzle.date });
+        }
+    },
+
+    onStarted(data) {
+        this.current = data;
+        AppState.roomName = t('daily.title');
+        setGameRoomName(AppState.roomName);
+        document.getElementById('puzzle-result-dialog').classList.add('hidden');
+        if (this._pendingSolution) {
+            const tiles = this._pendingSolution;
+            this._pendingSolution = null;
+            GameBoard.applyHint(tiles);
+        }
+    },
+
+    onResult(r) {
+        const body = document.getElementById('puzzle-result-body');
+        body.replaceChildren();
+        const add = (text, className) => {
+            const line = document.createElement('div');
+            if (className) line.className = className;
+            line.textContent = text;
+            body.appendChild(line);
+        };
+        add(t('daily.result_score', { score: r.score }), 'puzzle-score');
+        if (r.is_best) {
+            add(t('daily.found_best'), 'puzzle-best');
+        } else {
+            add(t('daily.result_best', { score: r.best_score, lost: r.best_score - r.score }));
+        }
+        if (r.recorded) {
+            add(t('daily.result_rank', { rank: r.rank, best: r.my_best, n: r.attempts }));
+        } else if (this.current && this.current.registered) {
+            add(t('daily.not_recorded'));
+        } else {
+            add(t('daily.guest_note'));
+        }
+        // A megoldás gomb nem kell, ha megtaláltad a legjobbat
+        document.getElementById('btn-puzzle-solution').classList.toggle('hidden', !!r.is_best);
+        document.getElementById('puzzle-result-dialog').classList.remove('hidden');
+        SoundManager.play(r.is_best ? 'challenge_accept' : 'tile_place');
+    },
+
+    retry() {
+        document.getElementById('puzzle-result-dialog').classList.add('hidden');
+        socket.emit('retry_daily');
+    },
+
+    confirmReveal() {
+        showConfirm(t('daily.reveal'), t('daily.reveal_confirm'), t('daily.reveal'), () => this.reveal());
+    },
+
+    reveal() {
+        document.getElementById('puzzle-result-dialog').classList.add('hidden');
+        socket.emit('reveal_daily');
+    },
+
+    // A megoldás a táblára kerül (a feladvány ranglistás eredménye ezzel lezárul)
+    onSolution(solution) {
+        showMessage(t('daily.solution', { words: solution.words.join(', '), score: solution.score }), false, 9000);
+        if (AppState.gameState && AppState.gameState.finished) {
+            this._pendingSolution = solution.tiles;   // először új próbálkozást nyitunk, utána kerül a táblára
+            socket.emit('retry_daily');
+        } else {
+            GameBoard.applyHint(solution.tiles);
+        }
+    },
+};
+
+// ===== LEVELEZŐS JÁTÉKOK =====
+// Órák / napok alatt lépő játék barátokkal: a lobby listája a folyamatban lévő játékokat mutatja
+// (akinél a sor, az elöl), a játékban a határidő látszik; a szerver értesít, ha rád kerül a sor.
+
+const AsyncGames = {
+    games: [],
+
+    init() {
+        document.getElementById('btn-async-create').addEventListener('click', () => this.create());
+        socket.on('async_your_turn', (data) => {
+            showMessage(t('async.your_turn_toast', { room: data.room_name }), false, 6000);
+            SoundManager.play('your_turn');
+            this.load();
+        });
+        socket.on('async_invited', (data) => {
+            showMessage(t('async.invited_toast', { name: data.from_name, room: data.room_name }), false, 6000);
+            this.load();
+        });
+        window.addEventListener('langchange', () => {
+            this.render(this.games);
+            this.renderFriends();
+            if (AppState.gameState) this.onGameState(AppState.gameState);
+        });
+        setInterval(() => { if (AppState.gameState) this.updateDeadline(AppState.gameState); }, 30000);
+    },
+
+    onShow() {
+        this.load();
+        Friends.load().then(() => this.renderFriends()).catch(() => this.renderFriends());
+    },
+
+    async load() {
+        if (AppState.isGuest) return;
+        try {
+            const res = await fetch('/api/async/games');
+            const data = await res.json();
+            if (!data.success) return;
+            this.games = data.games;
+            this.render(data.games);
+            this.updateBadge(data.my_turn_count);
+        } catch { /* a lobby többi része enélkül is működik */ }
+    },
+
+    updateBadge(count) {
+        const badge = document.getElementById('async-badge');
+        badge.textContent = count;
+        badge.classList.toggle('hidden', !count);
+    },
+
+    // "23 ó 40 p" / "2 n 3 ó" / lejárt
+    formatRemaining(deadline) {
+        const seconds = Math.floor(deadline - Date.now() / 1000);
+        if (seconds <= 0) return t('async.overdue');
+        const days = Math.floor(seconds / 86400);
+        const hours = Math.floor((seconds % 86400) / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        if (days) return t('async.remaining_days', { d: days, h: hours });
+        return t('async.remaining_hours', { h: hours, m: minutes });
+    },
+
+    render(games) {
+        const box = document.getElementById('async-games');
+        box.replaceChildren();
+        if (!games.length) {
+            box.innerHTML = emptyStateHtml(t('async.empty'));
+            return;
+        }
+        for (const game of games) {
+            const card = document.createElement('div');
+            card.className = 'room-card' + (game.my_turn ? ' room-card-rejoin' : '');
+            const info = document.createElement('div');
+            info.className = 'room-info';
+            const name = document.createElement('div');
+            name.className = 'room-name';
+            name.textContent = game.room_name;
+            const details = document.createElement('div');
+            details.className = 'room-details';
+            details.textContent = game.players.map(p => `${p.name} ${p.score}`).join(' · ');
+            const status = document.createElement('div');
+            status.className = 'room-details async-status' + (game.my_turn ? ' my-turn' : '');
+            status.textContent = game.my_turn
+                ? t('async.your_turn') + (game.turn_deadline ? ' · ' + this.formatRemaining(game.turn_deadline) : '')
+                : t('async.waiting_for', { name: game.current_player || '?' });
+            info.appendChild(name);
+            info.appendChild(details);
+            info.appendChild(status);
+            card.appendChild(info);
+            const btn = document.createElement('button');
+            btn.className = 'btn-join';
+            btn.textContent = t('async.open');
+            btn.addEventListener('click', () => socket.emit('open_async_game', { game_id: game.game_id }));
+            card.appendChild(btn);
+            box.appendChild(card);
+        }
+    },
+
+    // --- Új játék ---
+
+    renderFriends() {
+        const box = document.getElementById('async-friends');
+        const selected = new Set(this.selectedFriendIds());
+        box.replaceChildren();
+        if (!Friends.friendsList.length) {
+            box.innerHTML = emptyStateHtml(t('async.no_friends'));
+            return;
+        }
+        for (const friend of Friends.friendsList) {
+            const label = document.createElement('label');
+            label.className = 'friend-check';
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            input.value = friend.id;
+            input.checked = selected.has(friend.id);
+            input.addEventListener('change', () => this._limitSelection(input));
+            const text = document.createElement('span');
+            text.textContent = friend.display_name;
+            label.appendChild(input);
+            label.appendChild(text);
+            box.appendChild(label);
+        }
+    },
+
+    selectedFriendIds() {
+        return Array.from(document.querySelectorAll('#async-friends input:checked')).map(i => Number(i.value));
+    },
+
+    // Legfeljebb három barát választható (a játékban legfeljebb négyen vannak)
+    _limitSelection(changed) {
+        if (this.selectedFriendIds().length > 3) {
+            changed.checked = false;
+            showMessage(t('async.max_friends'), true);
+        }
+    },
+
+    create() {
+        const friendIds = this.selectedFriendIds();
+        if (!friendIds.length) {
+            showMessage(t('async.pick_friends'), true);
+            return;
+        }
+        const name = document.getElementById('async-name').value.trim() || t('async.name_placeholder');
+        const hours = Number(document.getElementById('async-hours').value);
+        socket.emit('create_async_game', { name, friend_ids: friendIds, turn_hours: hours });
+    },
+
+    // --- Játék közben: a határidő kijelzése ---
+
+    onGameState(state) {
+        this.updateDeadline(state);
+    },
+
+    updateDeadline(state) {
+        const el = document.getElementById('async-deadline');
+        const show = !!(state && state.async_mode && !state.finished && state.turn_deadline);
+        el.classList.toggle('hidden', !show);
+        if (show) el.textContent = t('async.deadline', { time: this.formatRemaining(state.turn_deadline) });
+    },
+};
+
+// ===== GYAKORLÁS: szókvíz és rövid szavak =====
+
+const Practice = {
+    mode: 'mixed',          // 'mixed' | '2' | '3' (a kvíz szavainak hossza)
+    quiz: null,             // {questions, index, correct, answered}
+    shortLength: 2,
+    _short: {},             // hossz → szavak (gyorsítótár)
+
+    init() {
+        document.querySelectorAll('.quiz-mode').forEach(btn => btn.addEventListener('click', () => {
+            this.mode = btn.dataset.mode;
+            document.querySelectorAll('.quiz-mode').forEach(b => b.classList.toggle('active', b === btn));
+        }));
+        document.getElementById('btn-quiz-start').addEventListener('click', () => this.startQuiz());
+        document.getElementById('btn-quiz-valid').addEventListener('click', () => this.answer(true));
+        document.getElementById('btn-quiz-invalid').addEventListener('click', () => this.answer(false));
+        document.getElementById('btn-quiz-next').addEventListener('click', () => this.next());
+        document.querySelectorAll('.short-len').forEach(btn => btn.addEventListener('click', () => {
+            this.shortLength = Number(btn.dataset.length);
+            document.querySelectorAll('.short-len').forEach(b => b.classList.toggle('active', b === btn));
+            this.loadShortWords();
+        }));
+        window.addEventListener('langchange', () => {
+            if (this.quiz) this.renderQuestion(true);
+            this.renderShortWords();
+        });
+    },
+
+    onShow() {
+        if (!this._short[this.shortLength]) this.loadShortWords();
+    },
+
+    // --- Kvíz ---
+
+    async startQuiz() {
+        const btn = document.getElementById('btn-quiz-start');
+        btn.disabled = true;
+        try {
+            const query = this.mode === 'mixed' ? '' : `&length=${this.mode}`;
+            const res = await fetch(`/api/practice/quiz?n=10${query}`);
+            const data = await res.json();
+            if (!data.success || !data.questions.length) {
+                showMessage(tServer(data.message) || t('quiz.load_error'), true);
+                return;
+            }
+            this.quiz = { questions: data.questions, index: 0, correct: 0, answered: false };
+            document.getElementById('quiz-result').classList.add('hidden');
+            document.getElementById('quiz-play').classList.remove('hidden');
+            this.renderQuestion();
+        } catch {
+            showMessage(t('quiz.load_error'), true);
+        } finally {
+            btn.disabled = false;
+        }
+    },
+
+    renderQuestion(keepFeedback = false) {
+        const quiz = this.quiz;
+        if (!quiz || quiz.index >= quiz.questions.length) return;
+        document.getElementById('quiz-progress').textContent =
+            t('quiz.progress', { n: quiz.index + 1, total: quiz.questions.length, correct: quiz.correct });
+        document.getElementById('quiz-word').textContent = quiz.questions[quiz.index];
+        if (!keepFeedback) {
+            document.getElementById('quiz-feedback').textContent = '';
+            document.getElementById('quiz-feedback').className = 'quiz-feedback';
+            document.getElementById('btn-quiz-next').classList.add('hidden');
+            this._setAnswerButtons(true);
+        }
+    },
+
+    _setAnswerButtons(enabled) {
+        document.getElementById('btn-quiz-valid').disabled = !enabled;
+        document.getElementById('btn-quiz-invalid').disabled = !enabled;
+    },
+
+    async answer(isValid) {
+        const quiz = this.quiz;
+        if (!quiz || quiz.answered) return;
+        quiz.answered = true;
+        this._setAnswerButtons(false);
+        const word = quiz.questions[quiz.index];
+        const feedback = document.getElementById('quiz-feedback');
+        try {
+            const data = await postJson('/api/practice/answer', { word, answer: isValid });
+            if (!data.success) throw new Error('answer');
+            if (data.correct) quiz.correct++;
+            feedback.className = 'quiz-feedback ' + (data.correct ? 'right' : 'wrong');
+            const verdict = data.valid
+                ? t('quiz.is_valid', { score: data.score })
+                : t('quiz.is_invalid');
+            let text = (data.correct ? t('quiz.right') : t('quiz.wrong')) + ' ' + verdict;
+            if (!data.valid && data.suggestions && data.suggestions.length) {
+                text += ' ' + t('quiz.suggestions', { words: data.suggestions.join(', ') });
+            }
+            feedback.textContent = text;
+        } catch {
+            quiz.answered = false;
+            this._setAnswerButtons(true);
+            showMessage(t('quiz.load_error'), true);
+            return;
+        }
+        document.getElementById('quiz-progress').textContent =
+            t('quiz.progress', { n: quiz.index + 1, total: quiz.questions.length, correct: quiz.correct });
+        const last = quiz.index + 1 >= quiz.questions.length;
+        const next = document.getElementById('btn-quiz-next');
+        next.textContent = last ? t('quiz.finish') : t('quiz.next');
+        next.classList.remove('hidden');
+    },
+
+    next() {
+        const quiz = this.quiz;
+        if (!quiz || !quiz.answered) return;
+        quiz.index++;
+        quiz.answered = false;
+        if (quiz.index >= quiz.questions.length) {
+            this.showResult();
+        } else {
+            this.renderQuestion();
+        }
+    },
+
+    showResult() {
+        const quiz = this.quiz;
+        document.getElementById('quiz-play').classList.add('hidden');
+        const box = document.getElementById('quiz-result');
+        box.replaceChildren();
+        const score = document.createElement('div');
+        score.className = 'quiz-result-score';
+        score.textContent = t('quiz.result', { correct: quiz.correct, total: quiz.questions.length });
+        const verdict = document.createElement('div');
+        const ratio = quiz.correct / quiz.questions.length;
+        verdict.textContent = ratio === 1 ? t('quiz.perfect') : ratio >= 0.7 ? t('quiz.good') : t('quiz.practice_more');
+        box.appendChild(score);
+        box.appendChild(verdict);
+        box.classList.remove('hidden');
+        this.quiz = null;
+    },
+
+    // --- Rövid szavak ---
+
+    async loadShortWords() {
+        const length = this.shortLength;
+        if (!this._short[length]) {
+            try {
+                const res = await fetch(`/api/practice/short-words?length=${length}`);
+                const data = await res.json();
+                if (!data.success) { showMessage(tServer(data.message) || t('quiz.load_error'), true); return; }
+                this._short[length] = data.words;
+            } catch {
+                showMessage(t('quiz.load_error'), true);
+                return;
+            }
+        }
+        this.renderShortWords();
+    },
+
+    renderShortWords() {
+        const words = this._short[this.shortLength];
+        const box = document.getElementById('short-words');
+        box.replaceChildren();
+        const count = document.getElementById('short-count');
+        if (!words) { count.textContent = ''; return; }
+        count.textContent = t('short.count', { n: words.length });
+        let initial = null;
+        let group = null;
+        for (const entry of words) {
+            const first = entry.word.startsWith('SZ') || entry.word.startsWith('CS') || entry.word.startsWith('GY')
+                || entry.word.startsWith('NY') || entry.word.startsWith('LY') || entry.word.startsWith('TY')
+                || entry.word.startsWith('ZS') ? entry.word.slice(0, 2) : entry.word[0];
+            if (first !== initial) {
+                initial = first;
+                const heading = document.createElement('div');
+                heading.className = 'short-initial';
+                heading.textContent = first;
+                group = document.createElement('div');
+                group.className = 'short-group';
+                box.appendChild(heading);
+                box.appendChild(group);
+            }
+            const chip = document.createElement('span');
+            chip.className = 'short-chip';
+            chip.textContent = entry.word;
+            const score = document.createElement('small');
+            score.textContent = entry.score;
+            chip.appendChild(score);
+            group.appendChild(chip);
+        }
+    },
+};
+
+// ===== WEB PUSH: értesítés, ha te jössz =====
+
+const Push = {
+    supported: ('serviceWorker' in navigator) && ('PushManager' in window) && ('Notification' in window),
+
+    init() {
+        const toggle = document.getElementById('push-toggle');
+        toggle.addEventListener('change', () => (toggle.checked ? this.enable() : this.disable()));
+        // A háttérbe került lapnak a szerver push értesítést küld a saját körről
+        document.addEventListener('visibilitychange', () => this.reportVisibility());
+        socket.on('connect', () => this.reportVisibility());
+        window.addEventListener('langchange', () => this.syncLanguage());
+    },
+
+    reportVisibility() {
+        if (socket.connected && document.hidden !== undefined) socket.emit('set_visibility', { hidden: document.hidden });
+    },
+
+    _key(base64) {
+        const padding = '='.repeat((4 - (base64.length % 4)) % 4);
+        const raw = atob((base64 + padding).replace(/-/g, '+').replace(/_/g, '/'));
+        return Uint8Array.from(raw, ch => ch.charCodeAt(0));
+    },
+
+    async _subscription() {
+        const registration = await navigator.serviceWorker.ready;
+        return registration.pushManager.getSubscription();
+    },
+
+    // A profil megnyitásakor: látszik-e a kapcsoló, és be van-e kapcsolva
+    async refresh() {
+        const box = document.getElementById('push-settings');
+        const hint = document.getElementById('push-hint');
+        const toggle = document.getElementById('push-toggle');
+        box.classList.add('hidden');
+        if (!this.supported || AppState.isGuest) return;
+        try {
+            const res = await fetch('/api/push/public-key');
+            const data = await res.json();
+            if (!data.success || !data.available) return;
+            this._publicKey = data.public_key;
+            const sub = await this._subscription();
+            toggle.checked = !!sub && data.subscribed && Notification.permission === 'granted';
+            if (Notification.permission === 'denied') hint.textContent = t('push.denied');
+            else if (PWA.isIosSafari() && !PWA.isStandalone()) hint.textContent = t('push.ios_hint');
+            else hint.textContent = '';
+            box.classList.remove('hidden');
+        } catch { /* az értesítés nem kritikus */ }
+    },
+
+    async enable() {
+        const toggle = document.getElementById('push-toggle');
+        try {
+            const permission = await Notification.requestPermission();
+            if (permission !== 'granted') throw new Error('denied');
+            const registration = await navigator.serviceWorker.ready;
+            const sub = await registration.pushManager.subscribe({
+                userVisibleOnly: true, applicationServerKey: this._key(this._publicKey),
+            });
+            const data = await postJson('/api/push/subscribe', { ...sub.toJSON(), lang: I18N.lang });
+            if (!data.success) throw new Error('server');
+            showMessage(t('push.enabled'));
+        } catch {
+            toggle.checked = false;
+            showMessage(Notification.permission === 'denied' ? t('push.denied') : t('push.error'), true);
+        }
+    },
+
+    async disable() {
+        try {
+            const sub = await this._subscription();
+            if (sub) {
+                await postJson('/api/push/unsubscribe', { endpoint: sub.endpoint });
+                await sub.unsubscribe();
+            }
+            showMessage(t('push.disabled'));
+        } catch {
+            showMessage(t('push.error'), true);
+        }
+    },
+
+    // Nyelvváltáskor a szerver a feliratkozás nyelvén küldi az értesítést
+    async syncLanguage() {
+        if (!this.supported || AppState.isGuest || Notification.permission !== 'granted') return;
+        try {
+            const sub = await this._subscription();
+            if (sub) await postJson('/api/push/subscribe', { ...sub.toJSON(), lang: I18N.lang });
+        } catch { /* nem kritikus */ }
+    },
+};
+
+// ===== KITÜNTETÉSEK =====
+
+const BADGE_ICONS = {
+    first_game: '🎲', first_win: '🥇', bingo: '🎯', score_100: '💯', long_word: '📏',
+    joker_play: '🃏', game_300: '🏔️', bot_slayer: '🤖', wins_10: '🏆', games_25: '🎖️',
+    daily_best: '🧩',
+};
+
+const Badges = {
+    newInGame: [],   // az éppen befejezett játékban megszerzett kitüntetések
+
+    init() {
+        socket.on('achievements_earned', (data) => this.onEarned((data && data.badges) || []));
+        socket.on('rating_update', (data) => GameOver.setRating(data));
+        socket.on('game_saved', (data) => GameOver.setSavedGame(data && data.game_id));
+        window.addEventListener('langchange', () => {
+            if (!document.getElementById('game-over-dialog').classList.contains('hidden')) this.renderGameOver();
+        });
+    },
+
+    onEarned(keys) {
+        for (const key of keys) {
+            if (!BADGE_ICONS[key]) continue;
+            this.newInGame.push(key);
+            showMessage(t('badge.earned', { name: t('badge.' + key) }), false, 5000);
+        }
+        // A játék vége ablak már nyitva lehet: frissítjük
+        if (!document.getElementById('game-over-dialog').classList.contains('hidden')) this.renderGameOver();
+    },
+
+    _card(key, owned) {
+        const card = document.createElement('div');
+        card.className = 'badge-card' + (owned ? '' : ' locked');
+        card.title = t('badge.' + key + '_desc');
+        const icon = document.createElement('span');
+        icon.className = 'badge-icon';
+        icon.textContent = BADGE_ICONS[key];
+        const text = document.createElement('div');
+        text.className = 'badge-text';
+        const name = document.createElement('strong');
+        name.textContent = t('badge.' + key);
+        const desc = document.createElement('small');
+        desc.textContent = t('badge.' + key + '_desc');
+        text.appendChild(name);
+        text.appendChild(desc);
+        card.appendChild(icon);
+        card.appendChild(text);
+        return card;
+    },
+
+    // A profilon minden kitüntetés látszik, a meg nem szerzettek halványan
+    renderProfile(owned) {
+        const grid = document.getElementById('profile-badges');
+        grid.replaceChildren();
+        const have = new Set(owned.map(b => b.badge));
+        for (const key of Object.keys(BADGE_ICONS)) grid.appendChild(this._card(key, have.has(key)));
+    },
+
+    renderGameOver() {
+        const box = document.getElementById('final-badges');
+        box.replaceChildren();
+        box.classList.toggle('hidden', !this.newInGame.length);
+        if (!this.newInGame.length) return;
+        const title = document.createElement('div');
+        title.className = 'final-badges-title';
+        title.textContent = t('badge.new_title');
+        box.appendChild(title);
+        for (const key of new Set(this.newInGame)) box.appendChild(this._card(key, true));
+    },
+};
+
 // ===== PROFILE =====
 
 const Profile = {
@@ -3042,6 +3836,7 @@ const Profile = {
         window.addEventListener('langchange', () => {
             if (this._data && !document.getElementById('profile-screen').classList.contains('hidden')) {
                 this.renderStats(this._data.stats);
+                Badges.renderProfile(this._data.badges || []);
                 this.renderHistory(this._data.history);
             }
         });
@@ -3072,7 +3867,9 @@ const Profile = {
 
             this._data = data;
             this.renderStats(data.stats);
+            Badges.renderProfile(data.badges || []);
             this.renderHistory(data.history);
+            Push.refresh();
             const nameEl = document.getElementById('profile-user-name');
             if (nameEl) nameEl.textContent = AppState.currentUser?.display_name || '';
             showScreen('profile-screen');
@@ -3091,6 +3888,7 @@ const Profile = {
             { label: t('common.win'), value: stats.games_won },
             { label: t('profile.win_rate'), value: stats.win_rate + '%' },
             { label: t('profile.avg_score'), value: stats.avg_score },
+            { label: t('profile.rating'), value: stats.rating },
         ];
         for (const card of cards) {
             const el = document.createElement('div');
@@ -3150,6 +3948,13 @@ const Profile = {
             info.appendChild(name);
             info.appendChild(score);
             info.appendChild(result);
+            if (h.rating_change !== null && h.rating_change !== undefined) {
+                const delta = document.createElement('span');
+                delta.className = 'history-rating ' + (h.rating_change >= 0 ? 'up' : 'down');
+                delta.textContent = (h.rating_change > 0 ? '+' : '') + h.rating_change;
+                delta.title = t('profile.rating');
+                info.appendChild(delta);
+            }
             info.appendChild(opponents);
             row.appendChild(info);
 
@@ -3158,6 +3963,12 @@ const Profile = {
             btn.textContent = t('replay.title');
             btn.addEventListener('click', () => Replay.load(h.game_id));
             row.appendChild(btn);
+
+            const shareBtn = document.createElement('button');
+            shareBtn.className = 'small-btn secondary';
+            shareBtn.textContent = t('replay.share');
+            shareBtn.addEventListener('click', () => Replay.share(h.game_id));
+            row.appendChild(shareBtn);
 
             container.appendChild(row);
         }
@@ -3168,22 +3979,40 @@ const Profile = {
 
 const Replay = {
     moves: [],
+    players: [],
+    gameId: null,
     currentIdx: -1,
     _returnTo: null,
+    analysis: null,        // a kész elemzés ({moves, players}) vagy null
+    _analysisByMove: null, // lépésszám → elemzési bejegyzés
+    _analysisTimer: null,
+    showBest: false,       // a legjobb lépés mutatása a játszott helyett
 
     init() {
         document.getElementById('btn-replay-back').addEventListener('click', () => {
-            showScreen(this._returnTo || 'profile-screen');
+            showScreen(this._returnTo || (AppState.displayName ? 'profile-screen' : 'auth-screen'));
             this._returnTo = null;
+        });
+        document.getElementById('btn-replay-share').addEventListener('click', () => {
+            if (this.gameId) this.share(this.gameId);
+        });
+        document.getElementById('btn-replay-analysis').addEventListener('click', () => this.runAnalysis());
+        document.getElementById('btn-replay-best').addEventListener('click', () => {
+            this.showBest = !this.showBest;
+            this.renderMove();
         });
         document.getElementById('btn-replay-prev').addEventListener('click', () => this.prev());
         document.getElementById('btn-replay-next').addEventListener('click', () => this.next());
         window.addEventListener('langchange', () => {
-            if (!document.getElementById('replay-screen').classList.contains('hidden')) this.renderMove();
+            if (!document.getElementById('replay-screen').classList.contains('hidden')) {
+                this.renderMove();
+                this.renderPlayers();
+                this.renderAnalysisSummary();
+            }
         });
     },
 
-    async load(gameId) {
+    async load(gameId, options = {}) {
         try {
             const resp = await fetch(`/api/game/${gameId}/moves`);
             const data = await resp.json();
@@ -3191,16 +4020,198 @@ const Replay = {
                 showMessage(tServer(data.message) || t('replay.load_error'), true);
                 return;
             }
-
-            const current = document.querySelector('.screen:not(.hidden)');
-            if (current && current.id !== 'replay-screen') this._returnTo = current.id;
-            this.moves = data.moves;
-            this.currentIdx = -1;
-            this.buildBoard();
-            this.renderMove();
-            showScreen('replay-screen');
+            this._open(data, gameId);
+            if (options.analysis && data.finished) this.runAnalysis();
         } catch {
             showMessage(t('replay.load_error'), true);
+        }
+    },
+
+    // Megosztott visszajátszás megnyitása a linkből (bejelentkezés nélkül is)
+    async loadShared(token) {
+        try {
+            const resp = await fetch(`/api/replay/${encodeURIComponent(token)}`);
+            const data = await resp.json();
+            if (!data.success) {
+                showMessage(tServer(data.message) || t('replay.load_error'), true);
+                return;
+            }
+            this._open(data, null);
+        } catch {
+            showMessage(t('replay.load_error'), true);
+        }
+    },
+
+    // A /?replay=TOKEN link kezelése, ha a látogató nincs bejelentkezve
+    openSharedLink() {
+        let token = null;
+        try { token = new URLSearchParams(location.search).get('replay'); } catch { return; }
+        if (!token) return;
+        try { history.replaceState(null, '', location.pathname); } catch { /* ignore */ }
+        this.loadShared(token);
+    },
+
+    _open(data, gameId) {
+        const current = document.querySelector('.screen:not(.hidden)');
+        if (current && current.id !== 'replay-screen') this._returnTo = current.id;
+        this._resetAnalysis();
+        this.gameId = gameId;
+        this.moves = data.moves;
+        this.players = data.players || [];
+        this.currentIdx = -1;
+        this.buildBoard();
+        this.renderMove();
+        this.renderPlayers();
+        document.getElementById('btn-replay-share').classList.toggle('hidden', !gameId);
+        // Elemezni csak a saját, befejezett játékot lehet
+        document.getElementById('replay-analysis').classList.toggle('hidden', !(gameId && data.finished));
+        showScreen('replay-screen');
+    },
+
+    // --- Elemzés ---
+
+    _resetAnalysis() {
+        clearTimeout(this._analysisTimer);
+        this._analysisTimer = null;
+        this.analysis = null;
+        this._analysisByMove = null;
+        this.showBest = false;
+        document.getElementById('btn-replay-analysis').classList.remove('hidden');
+        document.getElementById('analysis-status').classList.add('hidden');
+        document.getElementById('analysis-body').classList.add('hidden');
+        document.getElementById('analysis-move').textContent = '';
+        document.getElementById('analysis-summary').replaceChildren();
+    },
+
+    _setStatus(text) {
+        const el = document.getElementById('analysis-status');
+        el.textContent = text;
+        el.classList.toggle('hidden', !text);
+    },
+
+    async runAnalysis() {
+        const gameId = this.gameId;
+        if (!gameId) return;
+        clearTimeout(this._analysisTimer);
+        document.getElementById('btn-replay-analysis').classList.add('hidden');
+        try {
+            const resp = await fetch(`/api/game/${gameId}/analysis`);
+            const data = await resp.json();
+            if (gameId !== this.gameId) return;   // közben másik játékot nyitottak meg
+            if (!data.success) {
+                this._setStatus(tServer(data.message) || t('analysis.load_error'));
+                document.getElementById('btn-replay-analysis').classList.remove('hidden');
+                return;
+            }
+            if (data.status === 'running') {
+                this._setStatus(t('analysis.running', { done: data.done || 0, total: data.total || 0 }));
+                this._analysisTimer = setTimeout(() => this.runAnalysis(), 2000);
+            } else if (data.status === 'ready') {
+                this._setStatus('');
+                this._setAnalysis(data);
+            } else if (data.status === 'unavailable') {
+                this._setStatus(t('analysis.unavailable'));
+            } else {
+                this._setStatus(t('analysis.load_error'));
+                document.getElementById('btn-replay-analysis').classList.remove('hidden');
+            }
+        } catch {
+            this._setStatus(t('analysis.load_error'));
+            document.getElementById('btn-replay-analysis').classList.remove('hidden');
+        }
+    },
+
+    _setAnalysis(data) {
+        this.analysis = data;
+        this._analysisByMove = new Map((data.moves || []).map(e => [e.n, e]));
+        document.getElementById('analysis-body').classList.remove('hidden');
+        this.renderAnalysisSummary();
+        this.renderMove();
+    },
+
+    // Játékosonkénti összesítés: hatékonyság, kint maradt pontok, legnagyobb kihagyott lehetőség
+    renderAnalysisSummary() {
+        const box = document.getElementById('analysis-summary');
+        box.replaceChildren();
+        if (!this.analysis) return;
+        for (const p of this.analysis.players || []) {
+            const card = document.createElement('div');
+            card.className = 'analysis-player';
+            const head = document.createElement('strong');
+            head.textContent = `${p.player} — ${p.efficiency}%`;
+            const line = document.createElement('div');
+            line.textContent = t('analysis.summary_line', {
+                missed: p.missed, optimal: p.optimal, turns: p.turns,
+            });
+            card.appendChild(head);
+            card.appendChild(line);
+            if (p.biggest_miss) {
+                const miss = document.createElement('small');
+                miss.textContent = t('analysis.biggest_miss', {
+                    n: p.biggest_miss.n, words: p.biggest_miss.best_words.join(', '),
+                    score: p.biggest_miss.best_score, lost: p.biggest_miss.lost,
+                });
+                card.appendChild(miss);
+            }
+            box.appendChild(card);
+        }
+    },
+
+    // A kijelölt lépés elemzése: a legjobb lehetséges lépés és a kint maradt pont
+    _currentAnalysis() {
+        if (!this._analysisByMove || this.currentIdx < 0) return null;
+        return this._analysisByMove.get(this.moves[this.currentIdx].move_number) || null;
+    },
+
+    renderAnalysisMove() {
+        const el = document.getElementById('analysis-move');
+        const bestBtn = document.getElementById('btn-replay-best');
+        const entry = this._currentAnalysis();
+        if (!entry) {
+            el.textContent = '';
+            bestBtn.disabled = true;
+            this.showBest = false;
+        } else if (entry.lost === 0) {
+            el.textContent = t('analysis.optimal');
+            el.classList.remove('missed');
+            bestBtn.disabled = true;
+            this.showBest = false;
+        } else {
+            el.classList.add('missed');
+            el.textContent = entry.best_words.length
+                ? t('analysis.best', { words: entry.best_words.join(', '), score: entry.best_score, lost: entry.lost })
+                : t('analysis.no_move');
+            bestBtn.disabled = !entry.best_tiles.length;
+            if (!entry.best_tiles.length) this.showBest = false;
+        }
+        bestBtn.textContent = this.showBest ? t('analysis.hide_best') : t('analysis.show_best');
+    },
+
+    // A végeredmény a visszajátszás fölött (holtversenynél több győztes is lehet)
+    renderPlayers() {
+        const box = document.getElementById('replay-players');
+        box.replaceChildren();
+        for (const p of this.players) {
+            const item = document.createElement('span');
+            item.className = 'replay-player' + (p.is_winner ? ' winner' : '');
+            item.textContent = `${p.is_winner ? '🏆 ' : ''}${p.player_name} · ${t('common.points', { n: p.final_score })}`;
+            box.appendChild(item);
+        }
+    },
+
+    // Megosztható link készítése a saját befejezett játékhoz
+    async share(gameId) {
+        try {
+            const resp = await fetch(`/api/game/${gameId}/share`, { method: 'POST' });
+            const data = await resp.json();
+            if (!data.success) {
+                showMessage(tServer(data.message) || t('replay.share_error'), true);
+                return;
+            }
+            const url = `${location.origin}/?replay=${data.token}`;
+            await shareOrCopy(url, t('app.title'), t('replay.share_text'), t('replay.link_copied'));
+        } catch {
+            showMessage(t('replay.share_error'), true);
         }
     },
 
@@ -3239,6 +4250,7 @@ const Replay = {
         if (this.currentIdx < 0) {
             info.textContent = t('replay.start');
             this._renderSnapshot(null);
+            this.renderAnalysisMove();
             return;
         }
 
@@ -3266,27 +4278,42 @@ const Replay = {
         }
 
         info.textContent = text;
+        this.renderAnalysisMove();
+        const entry = this._currentAnalysis();
+        if (this.showBest && entry && entry.best_tiles.length) {
+            // A lépés előtti tábla + a legjobb lépés halvány zsetonokkal
+            const before = this.currentIdx > 0 ? this.moves[this.currentIdx - 1].board_snapshot_json : null;
+            this._renderSnapshot(before ? JSON.parse(before) : null, new Set(), entry.best_tiles);
+            return;
+        }
         const snapshot = move.board_snapshot_json ? JSON.parse(move.board_snapshot_json) : null;
         // Az éppen lerakott betűk kiemelve
         const highlight = new Set((details.tiles || []).map(tile => `${tile.row},${tile.col}`));
         this._renderSnapshot(snapshot, highlight);
     },
 
-    _renderSnapshot(boardData, highlight = new Set()) {
+    _renderSnapshot(boardData, highlight = new Set(), suggest = []) {
         const board = document.getElementById('replay-board');
         const cells = board.querySelectorAll('.cell');
+        const suggested = new Map(suggest.map(tile => [`${tile.row},${tile.col}`, tile]));
 
         cells.forEach(cell => {
             const r = parseInt(cell.dataset.row);
             const c = parseInt(cell.dataset.col);
             const key = `${r},${c}`;
 
-            cell.classList.remove('has-tile', 'long-letter', 'last-move');
+            cell.classList.remove('has-tile', 'long-letter', 'last-move', 'analysis-suggest');
 
             if (boardData && boardData[r] && boardData[r][c]) {
                 const tile = boardData[r][c];
                 cell.classList.add('has-tile');
                 if (highlight.has(key)) cell.classList.add('last-move');
+                if (tile.letter.length > 1) cell.classList.add('long-letter');
+                const value = tile.is_blank ? 0 : (TILE_VALUES[tile.letter] || 0);
+                cell.innerHTML = `${escapeHtml(tile.letter)}<span class="tile-value">${value}</span>`;
+            } else if (suggested.has(key)) {
+                const tile = suggested.get(key);
+                cell.classList.add('has-tile', 'analysis-suggest');
                 if (tile.letter.length > 1) cell.classList.add('long-letter');
                 const value = tile.is_blank ? 0 : (TILE_VALUES[tile.letter] || 0);
                 cell.innerHTML = `${escapeHtml(tile.letter)}<span class="tile-value">${value}</span>`;
@@ -3936,7 +4963,7 @@ const Dialogs = {
 // ===== RANGLISTA =====
 
 const Leaderboard = {
-    metric: 'wins',
+    metric: 'rating',
     _data: null,
 
     init() {
@@ -3970,6 +4997,7 @@ const Leaderboard = {
 
     _value(entry, metric) {
         switch (metric) {
+            case 'rating': return `${entry.rating}`;
             case 'win_rate': return `${entry.win_rate}%`;
             case 'avg_score': return `${entry.avg_score}`;
             case 'best_game': return `${entry.best_score}`;
@@ -4277,6 +5305,11 @@ ChallengeUI.init();
 Chat.init();
 ExitGame.init();
 Profile.init();
+Badges.init();
+Daily.init();
+Practice.init();
+AsyncGames.init();
+Push.init();
 Replay.init();
 GameOver.init();
 Reconnection.init();

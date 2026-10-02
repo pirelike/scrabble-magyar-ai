@@ -393,3 +393,72 @@ class TestStrengthOrdering:
             a, b = self._final_scores([2, 9], seed)
             weak, strong = weak + a, strong + b
         assert strong > weak * 2
+
+
+class TestInflectedVocabulary:
+    """A robot szókincse a tőszavak mellett a gyakori ragozott alakokat is tartalmazza."""
+
+    @pytest.fixture(scope='class')
+    def vocab(self):
+        return ai_player.load_vocabulary()
+
+    @pytest.fixture(scope='class')
+    def stems_only(self):
+        return ai_player.load_vocabulary(inflect=False)
+
+    def test_common_inflected_forms_are_present(self, vocab, stems_only):
+        # a tővégi a/e nyúlása is (alma → almában, almához)
+        for word in ('ALMÁT', 'ALMÁK', 'ALMÁBAN', 'ALMÁHOZ', 'SZÉKEK', 'ASZTALNAK', 'HÁZBAN', 'KÖNYVET'):
+            assert word in vocab, word
+            assert word not in stems_only, word
+        assert 'ALMA' in vocab and 'SZÉK' in vocab   # a tőszavak megmaradnak
+
+    def test_all_forms_are_valid_in_the_game_dictionary(self, vocab, stems_only):
+        import dictionary
+        extra = sorted(set(vocab.words) - set(stems_only.words))
+        assert len(extra) > 100_000
+        step = max(1, len(extra) // 5000)
+        sample = set(extra[::step])
+        assert dictionary.filter_valid(sample) == sample
+
+    def test_only_whitelisted_short_forms_are_generated(self, vocab, stems_only):
+        extra = set(vocab.words) - set(stems_only.words)
+        assert max(len(w) for w in extra) <= ai_player.INFLECT_MAX_FORM
+        assert all(w == w.upper() for w in extra)
+
+    def test_size_stays_bounded(self, vocab):
+        assert 250_000 < len(vocab) < 500_000
+
+    def test_membership_and_prefix_use_the_sorted_list(self, vocab):
+        assert 'ALMÁKBAN' not in vocab         # két végződés egymásra: nincs felvéve
+        assert vocab.has_prefix('ALMÁ')
+        assert not vocab.has_prefix('ALMÁÁ')
+        assert vocab.word_set.__contains__('ALMA')
+        assert 'QWXZ' not in vocab.word_set
+
+    def test_robot_can_play_an_inflected_word(self, vocab, stems_only):
+        """Ha a legjobb lépés ragozott alak, a robot lerakja, és a játék szótára is elfogadja."""
+        rack = list('ALMÁKTX')
+        with_forms = {m.words[0] for m in generate_moves(Board(), rack, vocab=vocab, allow_blanks=False)}
+        without = {m.words[0] for m in generate_moves(Board(), rack, vocab=stems_only, allow_blanks=False)}
+        assert 'ALMÁK' in with_forms and 'ALMÁK' not in without
+
+    def test_search_stays_fast_with_the_larger_vocabulary(self, vocab):
+        import time
+        board = _board_with('ALMA')
+        started = time.monotonic()
+        generate_moves(board, list('KÖRTEZS'), vocab=vocab, seconds=5)
+        assert time.monotonic() - started < 2.0
+
+
+class TestVocabularyLetters:
+    def test_digraph_words_with_y_are_kept(self):
+        vocab = ai_player.load_vocabulary()
+        for word in ('KÖNYV', 'MEGGY', 'KÖNYVET'):
+            assert word in vocab, word
+
+    def test_words_without_tiles_are_excluded(self):
+        from tiles import tokenize_word
+        vocab = ai_player.load_vocabulary()
+        assert 'ADYAS' not in vocab                      # d+y: nincs "dy" zseton
+        assert all(tokenize_word(w) is not None for w in vocab.words)

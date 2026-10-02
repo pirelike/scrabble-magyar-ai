@@ -807,6 +807,23 @@ class TestLogoutEvent:
         assert not server.state.is_user_online(first)
 
 
+class TestLeaverGetsNoGameState:
+    def test_player_who_left_an_active_game_is_not_pulled_back(self):
+        # A kilépett (lecsatlakozottként megtartott) játékos a lobbyban van: ha továbbra is kapná a
+        # játékállapotot, a kliense minden lépésnél visszaugrana a játékképernyőre
+        owner, _ = _registered('owner@example.com', 'Owner')
+        second, third = _guest('Második'), _guest('Harmadik')
+        _start_room(owner, [second, third])
+        third.emit('leave_room')
+        assert 'room_left' in _names(third.get_received())
+        import server
+        game = next(iter(server.state.rooms.values())).game
+        current = game.current_player().name
+        {'Owner': owner, 'Második': second}[current].emit('pass_turn')
+        assert 'game_state' not in _names(third.get_received())
+        assert 'game_state' in _names(owner.get_received())
+
+
 class TestFinishedGameSavedOnce:
     def test_stats_are_not_double_counted(self):
         import auth

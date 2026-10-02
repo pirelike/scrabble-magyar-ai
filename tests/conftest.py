@@ -1,6 +1,10 @@
 """Közös pytest fixture-ök az összes teszthez."""
 import pytest
 
+# A szerver modul az elején gevent monkey patch-et végez: minden másnál (ssl, requests, pywebpush...)
+# előbb kell betölteni, különben a patch "későn" érkezik.
+import server  # noqa: F401
+
 
 @pytest.fixture(autouse=True)
 def temp_db(monkeypatch, tmp_path):
