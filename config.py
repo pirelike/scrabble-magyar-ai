@@ -26,4 +26,5 @@ AUTH_RATE_LIMITS = {
     'leaderboard': (30, 60),     # 30 kérés / 1 perc
     'dictionary': (60, 60),      # 60 kérés / 1 perc
     'replay': (60, 60),          # 60 kérés / 1 perc (megosztott visszajátszás)
+    'analysis': (30, 60),        # 30 kérés / 1 perc (játékelemzés lekérdezése)
 }

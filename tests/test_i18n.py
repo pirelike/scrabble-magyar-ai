@@ -305,7 +305,7 @@ class TestClientTranslator:
     new Function('module', 'exports', 'window', 'document', 'localStorage', 'CustomEvent', code)(
         m, m.exports, global.window, global.document, global.localStorage, global.CustomEvent);
     const { I18N, t, tServer } = m.exports;
-    const cases = JSON.parse(process.argv[3]);
+    const cases = JSON.parse(fs.readFileSync(0, 'utf8'));
     const out = cases.map((c) => {
         if (c.op === 't') return t(c.key, c.params);
         if (c.op === 'server') return tServer(c.msg);
@@ -318,8 +318,8 @@ class TestClientTranslator:
 
     def _run(self, lang, cases):
         result = subprocess.run(
-            ['node', '-e', self.HARNESS, ROOT, lang, json.dumps(cases)],
-            capture_output=True, text=True, timeout=30,
+            ['node', '-e', self.HARNESS, ROOT, lang],
+            input=json.dumps(cases), capture_output=True, text=True, timeout=30,
         )
         assert result.returncode == 0, result.stderr
         return json.loads(result.stdout.strip().splitlines()[-1])
@@ -387,7 +387,7 @@ class TestClientTranslator:
         params = {name: 'X' for name in ('n', 'max', 'owner', 'name', 'names', 'players', 'words', 'score',
                                          'player', 'room', 'word', 'total', 'bag', 'hands',
                                          'vowels', 'consonants', 'blanks', 'played', 'won', 'rate',
-                                         'rating', 'change')}
+                                         'rating', 'change', 'done', 'lost', 'missed', 'optimal', 'turns')}
         for key in keys:
             cases.append({'op': 't', 'key': key, 'params': params})
         for lang in ('hu', 'en'):

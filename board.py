@@ -65,6 +65,18 @@ class Board:
             return self.cells[row][col] is not None
         return False
 
+    @classmethod
+    def from_dict(cls, rows):
+        """A `to_dict` által készített pillanatképből építi vissza a táblát."""
+        board = cls()
+        for r in range(min(BOARD_SIZE, len(rows))):
+            for c in range(min(BOARD_SIZE, len(rows[r]))):
+                cell = rows[r][c]
+                if cell is not None:
+                    board.cells[r][c] = (cell['letter'], bool(cell['is_blank']))
+                    board.is_empty = False
+        return board
+
     def to_dict(self):
         """Szerializálja a táblát JSON-kompatibilis formátumba."""
         result = []

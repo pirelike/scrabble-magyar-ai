@@ -124,6 +124,14 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_game_players_user_id ON game_players(user_id);
         CREATE INDEX IF NOT EXISTS idx_game_moves_game_id ON game_moves(game_id);
 
+        CREATE TABLE IF NOT EXISTS game_analysis (
+            game_id INTEGER PRIMARY KEY,
+            version INTEGER NOT NULL,
+            result_json TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (game_id) REFERENCES saved_games(id) ON DELETE CASCADE
+        );
+
         CREATE TABLE IF NOT EXISTS achievements (
             user_id INTEGER NOT NULL,
             badge TEXT NOT NULL,
@@ -733,6 +741,24 @@ def get_game_results(game_id):
         ).fetchall()
     return [{'player_name': r['player_name'], 'final_score': r['final_score'],
              'is_winner': bool(r['is_winner'])} for r in rows]
+
+
+def get_game_analysis(game_id):
+    """A gyorsítótárazott játékelemzés: {'version', 'result_json'} vagy None."""
+    with _db() as conn:
+        row = conn.execute('SELECT version, result_json FROM game_analysis WHERE game_id = ?',
+                           (game_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def save_game_analysis(game_id, version, result_json):
+    with _db() as conn:
+        conn.execute(
+            'INSERT INTO game_analysis (game_id, version, result_json) VALUES (?, ?, ?) '
+            'ON CONFLICT(game_id) DO UPDATE SET version = excluded.version, '
+            "result_json = excluded.result_json, created_at = datetime('now')",
+            (game_id, version, result_json)
+        )
 
 
 def grant_achievements(user_id, badges, game_id=None):

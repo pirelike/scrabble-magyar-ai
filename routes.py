@@ -1,10 +1,13 @@
+import json
 import os
 import re
+import time
 
 from flask import (
     Blueprint, render_template, request, jsonify, make_response, current_app, send_from_directory,
 )
 
+import analysis
 import dictionary
 from config import SMTP_CONFIGURED
 from tiles import tokenize_word, word_base_score, TILE_VALUES
@@ -16,7 +19,7 @@ from auth import (
     is_email_verified, clear_email_verification,
     get_game_moves, get_user_game_history, get_game_by_id,
     get_or_create_share_token, get_game_by_share_token, get_game_results,
-    get_user_achievements,
+    get_user_achievements, get_game_analysis, save_game_analysis,
     get_user_active_games, abandon_game_by_id, is_user_in_game,
     get_friends, get_pending_requests, get_sent_requests, search_users,
 )
@@ -622,6 +625,67 @@ def game_moves(game_id):
         'players': get_game_results(game_id),
         'finished': game_row['status'] == 'finished',
     })
+
+
+# Futó elemzések: {game_id: {'done', 'total'}} vagy {'error': True, 'at': idő} hiba után
+_analysis_jobs = {}
+_ANALYSIS_RETRY_AFTER = 30  # mp: hibás elemzés újrapróbálásáig
+
+
+def _run_analysis(game_id, moves):
+    """Háttérfeladat: elemzi a játékot, és elmenti az eredményt."""
+    job = _analysis_jobs[game_id]
+
+    def progress(done, total):
+        job['done'], job['total'] = done, total
+
+    try:
+        result = analysis.analyze_game(
+            moves, yield_fn=(lambda: _socketio.sleep(0)) if _socketio else None, progress=progress)
+        save_game_analysis(game_id, analysis.ANALYSIS_VERSION, json.dumps(result, ensure_ascii=False))
+        _analysis_jobs.pop(game_id, None)
+    except Exception as e:  # az elemzés hibája ne dobjon ki a háttérből
+        print(f"[analysis] Hiba az elemzésnél (game #{game_id}): {e}")
+        _analysis_jobs[game_id] = {'error': True, 'at': time.time()}
+
+
+@game_bp.route('/api/game/<int:game_id>/analysis', methods=['GET'])
+def game_analysis(game_id):
+    """A befejezett játék elemzése: lépésenként a legjobb lehetséges lépés és a kint maradt pont.
+
+    A számítás háttérben fut; amíg tart, `status: 'running'` (a kliens időnként újrakérdezi)."""
+    user = validate_session(request.cookies.get('session_token'))
+    if not user:
+        return jsonify({'success': False, 'message': 'Bejelentkezés szükséges.'}), 401
+    if not _rate_limiter.check_ip(_get_client_ip(), 'analysis'):
+        return jsonify({'success': False, 'message': 'Túl sok kérés. Próbáld újra később.'}), 429
+    game_row = get_game_by_id(game_id)
+    if not game_row:
+        return jsonify({'success': False, 'message': 'Játék nem található.'}), 404
+    if not is_user_in_game(game_id, user['id']):
+        return jsonify({'success': False, 'message': 'Nincs jogosultságod a játék megtekintéséhez.'}), 403
+    if game_row['status'] != 'finished':
+        return jsonify({'success': False, 'message': 'Csak befejezett játék elemezhető.'}), 400
+
+    cached = get_game_analysis(game_id)
+    if cached and cached['version'] == analysis.ANALYSIS_VERSION:
+        return jsonify({'success': True, 'status': 'ready', **json.loads(cached['result_json'])})
+
+    job = _analysis_jobs.get(game_id)
+    if job and not job.get('error'):
+        return jsonify({'success': True, 'status': 'running',
+                        'done': job.get('done', 0), 'total': job.get('total', 0)})
+    if job and time.time() - job['at'] < _ANALYSIS_RETRY_AFTER:
+        return jsonify({'success': True, 'status': 'error'})
+
+    moves = get_game_moves(game_id)
+    turns = analysis.analyzable_turns(moves)
+    if not turns:
+        # Régi játék: a lépésnapló nem őrizte meg a kezeket
+        return jsonify({'success': True, 'status': 'unavailable'})
+    _analysis_jobs[game_id] = {'done': 0, 'total': len(turns)}
+    _socketio.start_background_task(_run_analysis, game_id, moves)
+    return jsonify({'success': True, 'status': 'running', 'done': 0, 'total': len(turns)})
 
 
 @game_bp.route('/api/game/<int:game_id>/abandon', methods=['POST'])

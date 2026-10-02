@@ -561,6 +561,7 @@ def _save_game_to_db(room_id):
             room.result_saved = True
             _award_achievements(game, players_data, db_id)
             _announce_rating_changes(game, players_data, db_id)
+            _announce_saved_game(game, players_data, db_id)
             socketio.emit('rooms_list', state.get_rooms_list())
             socketio.emit('live_games', state.get_live_games())
         else:
@@ -610,6 +611,14 @@ def _award_achievements(game, players_data, db_id):
                 socketio.emit('achievements_earned', {'badges': new}, room=player.id)
     except Exception as e:  # a kitüntetés hibája ne akadályozza a mentést
         print(f"[achievements] Hiba a kitüntetések rögzítésénél: {e}")
+
+
+def _announce_saved_game(game, players_data, db_id):
+    """A regisztrált játékosoknak elküldi a befejezett játék azonosítóját (visszajátszás, elemzés)."""
+    name_to_user = {pd['player_name']: pd['user_id'] for pd in players_data if pd.get('user_id')}
+    for player in game.players:
+        if not player.is_bot and player.name in name_to_user:
+            socketio.emit('game_saved', {'game_id': db_id}, room=player.id)
 
 
 def _announce_rating_changes(game, players_data, db_id):

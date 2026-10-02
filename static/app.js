@@ -2855,8 +2855,17 @@ const BoardZoom = {
 
 const GameOver = {
     _rating: null,
+    _savedGameId: null,   // a befejezett játék adatbázis-azonosítója (elemzéshez, visszajátszáshoz)
+
+    setSavedGame(gameId) {
+        this._savedGameId = gameId || null;
+        document.getElementById('btn-final-analysis').classList.toggle('hidden', !this._savedGameId);
+    },
 
     init() {
+        document.getElementById('btn-final-analysis').addEventListener('click', () => {
+            if (this._savedGameId) Replay.load(this._savedGameId, { analysis: true });
+        });
         document.getElementById('btn-back-lobby').addEventListener('click', () => this.backToLobby());
         window.addEventListener('langchange', () => {
             if (!document.getElementById('game-over-dialog').classList.contains('hidden')) this.render();
@@ -2931,6 +2940,7 @@ const GameOver = {
     backToLobby() {
         document.getElementById('game-over-dialog').classList.add('hidden');
         this._rating = null;
+        this.setSavedGame(null);
         const spectating = AppState.isSpectator;
         AppState.reset();
         ChallengeUI.stopCountdown(); TurnTimerUI._stop();
@@ -3100,6 +3110,7 @@ const Badges = {
     init() {
         socket.on('achievements_earned', (data) => this.onEarned((data && data.badges) || []));
         socket.on('rating_update', (data) => GameOver.setRating(data));
+        socket.on('game_saved', (data) => GameOver.setSavedGame(data && data.game_id));
         window.addEventListener('langchange', () => {
             if (!document.getElementById('game-over-dialog').classList.contains('hidden')) this.renderGameOver();
         });
@@ -3311,6 +3322,10 @@ const Replay = {
     gameId: null,
     currentIdx: -1,
     _returnTo: null,
+    analysis: null,        // a kész elemzés ({moves, players}) vagy null
+    _analysisByMove: null, // lépésszám → elemzési bejegyzés
+    _analysisTimer: null,
+    showBest: false,       // a legjobb lépés mutatása a játszott helyett
 
     init() {
         document.getElementById('btn-replay-back').addEventListener('click', () => {
@@ -3320,17 +3335,23 @@ const Replay = {
         document.getElementById('btn-replay-share').addEventListener('click', () => {
             if (this.gameId) this.share(this.gameId);
         });
+        document.getElementById('btn-replay-analysis').addEventListener('click', () => this.runAnalysis());
+        document.getElementById('btn-replay-best').addEventListener('click', () => {
+            this.showBest = !this.showBest;
+            this.renderMove();
+        });
         document.getElementById('btn-replay-prev').addEventListener('click', () => this.prev());
         document.getElementById('btn-replay-next').addEventListener('click', () => this.next());
         window.addEventListener('langchange', () => {
             if (!document.getElementById('replay-screen').classList.contains('hidden')) {
                 this.renderMove();
                 this.renderPlayers();
+                this.renderAnalysisSummary();
             }
         });
     },
 
-    async load(gameId) {
+    async load(gameId, options = {}) {
         try {
             const resp = await fetch(`/api/game/${gameId}/moves`);
             const data = await resp.json();
@@ -3339,6 +3360,7 @@ const Replay = {
                 return;
             }
             this._open(data, gameId);
+            if (options.analysis && data.finished) this.runAnalysis();
         } catch {
             showMessage(t('replay.load_error'), true);
         }
@@ -3371,6 +3393,7 @@ const Replay = {
     _open(data, gameId) {
         const current = document.querySelector('.screen:not(.hidden)');
         if (current && current.id !== 'replay-screen') this._returnTo = current.id;
+        this._resetAnalysis();
         this.gameId = gameId;
         this.moves = data.moves;
         this.players = data.players || [];
@@ -3379,7 +3402,128 @@ const Replay = {
         this.renderMove();
         this.renderPlayers();
         document.getElementById('btn-replay-share').classList.toggle('hidden', !gameId);
+        // Elemezni csak a saját, befejezett játékot lehet
+        document.getElementById('replay-analysis').classList.toggle('hidden', !(gameId && data.finished));
         showScreen('replay-screen');
+    },
+
+    // --- Elemzés ---
+
+    _resetAnalysis() {
+        clearTimeout(this._analysisTimer);
+        this._analysisTimer = null;
+        this.analysis = null;
+        this._analysisByMove = null;
+        this.showBest = false;
+        document.getElementById('btn-replay-analysis').classList.remove('hidden');
+        document.getElementById('analysis-status').classList.add('hidden');
+        document.getElementById('analysis-body').classList.add('hidden');
+        document.getElementById('analysis-move').textContent = '';
+        document.getElementById('analysis-summary').replaceChildren();
+    },
+
+    _setStatus(text) {
+        const el = document.getElementById('analysis-status');
+        el.textContent = text;
+        el.classList.toggle('hidden', !text);
+    },
+
+    async runAnalysis() {
+        const gameId = this.gameId;
+        if (!gameId) return;
+        clearTimeout(this._analysisTimer);
+        document.getElementById('btn-replay-analysis').classList.add('hidden');
+        try {
+            const resp = await fetch(`/api/game/${gameId}/analysis`);
+            const data = await resp.json();
+            if (gameId !== this.gameId) return;   // közben másik játékot nyitottak meg
+            if (!data.success) {
+                this._setStatus(tServer(data.message) || t('analysis.load_error'));
+                document.getElementById('btn-replay-analysis').classList.remove('hidden');
+                return;
+            }
+            if (data.status === 'running') {
+                this._setStatus(t('analysis.running', { done: data.done || 0, total: data.total || 0 }));
+                this._analysisTimer = setTimeout(() => this.runAnalysis(), 2000);
+            } else if (data.status === 'ready') {
+                this._setStatus('');
+                this._setAnalysis(data);
+            } else if (data.status === 'unavailable') {
+                this._setStatus(t('analysis.unavailable'));
+            } else {
+                this._setStatus(t('analysis.load_error'));
+                document.getElementById('btn-replay-analysis').classList.remove('hidden');
+            }
+        } catch {
+            this._setStatus(t('analysis.load_error'));
+            document.getElementById('btn-replay-analysis').classList.remove('hidden');
+        }
+    },
+
+    _setAnalysis(data) {
+        this.analysis = data;
+        this._analysisByMove = new Map((data.moves || []).map(e => [e.n, e]));
+        document.getElementById('analysis-body').classList.remove('hidden');
+        this.renderAnalysisSummary();
+        this.renderMove();
+    },
+
+    // Játékosonkénti összesítés: hatékonyság, kint maradt pontok, legnagyobb kihagyott lehetőség
+    renderAnalysisSummary() {
+        const box = document.getElementById('analysis-summary');
+        box.replaceChildren();
+        if (!this.analysis) return;
+        for (const p of this.analysis.players || []) {
+            const card = document.createElement('div');
+            card.className = 'analysis-player';
+            const head = document.createElement('strong');
+            head.textContent = `${p.player} — ${p.efficiency}%`;
+            const line = document.createElement('div');
+            line.textContent = t('analysis.summary_line', {
+                missed: p.missed, optimal: p.optimal, turns: p.turns,
+            });
+            card.appendChild(head);
+            card.appendChild(line);
+            if (p.biggest_miss) {
+                const miss = document.createElement('small');
+                miss.textContent = t('analysis.biggest_miss', {
+                    n: p.biggest_miss.n, words: p.biggest_miss.best_words.join(', '),
+                    score: p.biggest_miss.best_score, lost: p.biggest_miss.lost,
+                });
+                card.appendChild(miss);
+            }
+            box.appendChild(card);
+        }
+    },
+
+    // A kijelölt lépés elemzése: a legjobb lehetséges lépés és a kint maradt pont
+    _currentAnalysis() {
+        if (!this._analysisByMove || this.currentIdx < 0) return null;
+        return this._analysisByMove.get(this.moves[this.currentIdx].move_number) || null;
+    },
+
+    renderAnalysisMove() {
+        const el = document.getElementById('analysis-move');
+        const bestBtn = document.getElementById('btn-replay-best');
+        const entry = this._currentAnalysis();
+        if (!entry) {
+            el.textContent = '';
+            bestBtn.disabled = true;
+            this.showBest = false;
+        } else if (entry.lost === 0) {
+            el.textContent = t('analysis.optimal');
+            el.classList.remove('missed');
+            bestBtn.disabled = true;
+            this.showBest = false;
+        } else {
+            el.classList.add('missed');
+            el.textContent = entry.best_words.length
+                ? t('analysis.best', { words: entry.best_words.join(', '), score: entry.best_score, lost: entry.lost })
+                : t('analysis.no_move');
+            bestBtn.disabled = !entry.best_tiles.length;
+            if (!entry.best_tiles.length) this.showBest = false;
+        }
+        bestBtn.textContent = this.showBest ? t('analysis.hide_best') : t('analysis.show_best');
     },
 
     // A végeredmény a visszajátszás fölött (holtversenynél több győztes is lehet)
@@ -3445,6 +3589,7 @@ const Replay = {
         if (this.currentIdx < 0) {
             info.textContent = t('replay.start');
             this._renderSnapshot(null);
+            this.renderAnalysisMove();
             return;
         }
 
@@ -3472,27 +3617,42 @@ const Replay = {
         }
 
         info.textContent = text;
+        this.renderAnalysisMove();
+        const entry = this._currentAnalysis();
+        if (this.showBest && entry && entry.best_tiles.length) {
+            // A lépés előtti tábla + a legjobb lépés halvány zsetonokkal
+            const before = this.currentIdx > 0 ? this.moves[this.currentIdx - 1].board_snapshot_json : null;
+            this._renderSnapshot(before ? JSON.parse(before) : null, new Set(), entry.best_tiles);
+            return;
+        }
         const snapshot = move.board_snapshot_json ? JSON.parse(move.board_snapshot_json) : null;
         // Az éppen lerakott betűk kiemelve
         const highlight = new Set((details.tiles || []).map(tile => `${tile.row},${tile.col}`));
         this._renderSnapshot(snapshot, highlight);
     },
 
-    _renderSnapshot(boardData, highlight = new Set()) {
+    _renderSnapshot(boardData, highlight = new Set(), suggest = []) {
         const board = document.getElementById('replay-board');
         const cells = board.querySelectorAll('.cell');
+        const suggested = new Map(suggest.map(tile => [`${tile.row},${tile.col}`, tile]));
 
         cells.forEach(cell => {
             const r = parseInt(cell.dataset.row);
             const c = parseInt(cell.dataset.col);
             const key = `${r},${c}`;
 
-            cell.classList.remove('has-tile', 'long-letter', 'last-move');
+            cell.classList.remove('has-tile', 'long-letter', 'last-move', 'analysis-suggest');
 
             if (boardData && boardData[r] && boardData[r][c]) {
                 const tile = boardData[r][c];
                 cell.classList.add('has-tile');
                 if (highlight.has(key)) cell.classList.add('last-move');
+                if (tile.letter.length > 1) cell.classList.add('long-letter');
+                const value = tile.is_blank ? 0 : (TILE_VALUES[tile.letter] || 0);
+                cell.innerHTML = `${escapeHtml(tile.letter)}<span class="tile-value">${value}</span>`;
+            } else if (suggested.has(key)) {
+                const tile = suggested.get(key);
+                cell.classList.add('has-tile', 'analysis-suggest');
                 if (tile.letter.length > 1) cell.classList.add('long-letter');
                 const value = tile.is_blank ? 0 : (TILE_VALUES[tile.letter] || 0);
                 cell.innerHTML = `${escapeHtml(tile.letter)}<span class="tile-value">${value}</span>`;

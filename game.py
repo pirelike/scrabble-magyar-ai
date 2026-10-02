@@ -238,6 +238,7 @@ class Game:
     def _finalize_placement(self, player, tiles_placed, total_score, word_strs,
                             formed_words=None):
         """Véglegesíti a lerakást: tábla, pont, húzás, kör."""
+        rack = list(player.hand)  # a lépés előtti kéz (elemzéshez)
         self.board.apply_placement(tiles_placed)
         self.rejected_placements.clear()
         player.score += total_score
@@ -249,7 +250,7 @@ class Game:
                               type='place', player=player.name, words=list(word_strs),
                               score=total_score)
         self._record_move(player.name, 'place', tiles_placed=tiles_placed,
-                          formed_words=formed_words, score=total_score)
+                          formed_words=formed_words, score=total_score, rack=rack)
 
         if len(player.hand) == 0 and self.bag.is_empty():
             self._end_game(player)
@@ -360,6 +361,7 @@ class Game:
         player = self.players[pc.player_idx]
         self.pending_challenge = None
 
+        rack = list(player.hand) + list(pc.removed_from_hand)  # a lépés előtti kéz (elemzéshez)
         self.board.apply_placement(pc.tiles_placed)
         self.rejected_placements.clear()
         player.score += pc.score
@@ -371,7 +373,7 @@ class Game:
                               type='place', player=player.name, words=list(pc.word_strs),
                               score=pc.score)
         self._record_move(player.name, 'challenge_accept', tiles_placed=pc.tiles_placed,
-                          formed_words=pc.formed_words, score=pc.score)
+                          formed_words=pc.formed_words, score=pc.score, rack=rack)
 
         if len(player.hand) == 0 and self.bag.is_empty():
             self._end_game(player)
@@ -541,6 +543,7 @@ class Game:
             if idx < 0 or idx >= len(player.hand):
                 return False, "Érvénytelen zseton index."
 
+        rack = list(player.hand)  # a csere előtti kéz (elemzéshez)
         sorted_desc = sorted(tile_indices, reverse=True)
         tiles_to_exchange = [player.hand[i] for i in sorted_desc]
         for i in sorted_desc:
@@ -552,7 +555,7 @@ class Game:
 
         self._set_last_action(f"{player.name} cserélt {len(tiles_to_exchange)} zsetont",
                               type='exchange', player=player.name, count=len(tiles_to_exchange))
-        self._record_move(player.name, 'exchange')
+        self._record_move(player.name, 'exchange', rack=rack)
         if not self._register_scoreless_turn():
             self._next_turn()
 
@@ -570,7 +573,7 @@ class Game:
             return False, "Nem te következel."
 
         self._set_last_action(f"{player.name} passzolt", type='pass', player=player.name)
-        self._record_move(player.name, 'pass')
+        self._record_move(player.name, 'pass', rack=list(player.hand))
         if not self._register_scoreless_turn():
             self._next_turn()
 
@@ -627,9 +630,11 @@ class Game:
         return self.board.to_dict()
 
     def _record_move(self, player_name, action_type, tiles_placed=None,
-                     formed_words=None, score=0):
-        """Lépés rögzítése a move_log-ba."""
+                     formed_words=None, score=0, rack=None):
+        """Lépés rögzítése a move_log-ba. `rack`: a játékos keze a lépés előtt ('' = joker)."""
         details = {}
+        if rack is not None:
+            details['rack'] = list(rack)
         if tiles_placed:
             details['tiles'] = [
                 {'row': r, 'col': c, 'letter': l, 'is_blank': b}

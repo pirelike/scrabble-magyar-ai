@@ -545,9 +545,10 @@ def choose_action(board, rack, difficulty, bag_remaining, rng=None, vocab=None, 
     return {'action': 'pass'}
 
 
-def best_moves(board, rack, count=3, vocab=None, yield_fn=None):
-    """A `count` legjobb (szótár szerint érvényes) lépés tippként, pontszám szerint rendezve."""
+def best_moves(board, rack, count=3, vocab=None, yield_fn=None, seconds=None):
+    """A `count` legjobb (szótár szerint érvényes) lépés tippként, pontszám szerint rendezve.
+    seconds: a keresés időkerete (alapértelmezés: a tipp időkerete)."""
     moves = generate_moves(board, rack, vocab=vocab, allow_blanks=True,
-                           seconds=_HINT_TIME_BUDGET, yield_fn=yield_fn)
+                           seconds=seconds or _HINT_TIME_BUDGET, yield_fn=yield_fn)
     moves.sort(key=lambda m: -m.score)
     return _first_valid(moves, wanted=count)
