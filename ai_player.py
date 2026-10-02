@@ -52,7 +52,8 @@ _HINT_TIME_BUDGET = 3.5
 #           Gauss-zajjal (0 = mindig a legjobb);
 #   pass_p — esély, hogy a robot "nem talál" lépést, és passzol / cserél.
 # Mért átlagos pontszám körönként (bot–bot önjáték, a passzok is számítanak, ragozott alakokkal a
-# szókincsben): 4,3 · 6,1 · 7,5 · 10,3 · 13,0 · 16,1 · 19,3 · 23,2 · 25,3 · 28,0 (`LEVEL_STRENGTH`).
+# szókincsben, a furcsa alakok nélkül): 4,3 · 6,1 · 7,4 · 10,1 · 12,7 · 15,7 · 18,4 · 21,2 · 24,6 · 27,0
+# (`LEVEL_STRENGTH`).
 # Újramérés: `python tools/bot_arena.py ladder`; utána a `LEVEL_STRENGTH` értékeit is frissíteni kell.
 _PROFILES = {
     1: {'mu': 2, 'pass_p': 0.15},
@@ -72,13 +73,13 @@ _TARGET_CV = 0.5  # a célpontszám relatív szórása
 # átlagok (fent) között lineárisan interpolálunk, a tört fokozatot a két szomszédos fokozat
 # véletlenszerű keverése valósítja meg (pl. 5,3 → 70%-ban 5., 30%-ban 6. fokozat).
 ADAPTIVE = 'auto'
-LEVEL_STRENGTH = (4.3, 6.1, 7.5, 10.3, 13.0, 16.1, 19.3, 23.2, 25.3, 28.0)  # pont/kör fokozatonként
+LEVEL_STRENGTH = (4.3, 6.1, 7.4, 10.1, 12.7, 15.7, 18.4, 21.2, 24.6, 27.0)  # pont/kör fokozatonként
 ADAPT_WINDOW = 6          # az ember utolsó ennyi köre számít
 ADAPT_START_LEVEL = 5.0   # induló fokozat, amíg nincs adat (kevés adatnál efelé húz)
 
 # Ragozott alakok a szókincsben: szótő + egy végződés a hunspell szabályaival. A teljes szabályrendszer
 # több tízmillió alakot adna, ezért csak a leggyakoribb esetragokat, a birtokos és az igei végződéseket
-# vesszük fel, a rövidebb (legfeljebb INFLECT_MAX_STEM betűs) szótövekhez: ~250 000 alak, ~35 MB.
+# vesszük fel, a rövidebb (legfeljebb INFLECT_MAX_STEM betűs) szótövekhez: ~225 000 alak, ~35 MB.
 _INFLECT_ADDS = frozenset(
     # többes szám, tárgyrag (a magánhangzó-nyúlásos alakokkal) és esetragok
     'k ak ek ok ök ák ék t at et ot öt át ét ban ben ba be ból ből ra re ról ről on en ön hoz hez höz '
@@ -220,11 +221,16 @@ def load_vocabulary(path=_DIC_PATH, inflect=True):
             # A magánhangzó nélküli bejegyzések rövidítések (kkv, tb, kg): a robot nem rak le ilyet
             if _STEM_RE.match(entry) and _HAS_VOWEL_RE.search(entry) and _placeable(entry):
                 stems.add(entry.upper())
-    words = set(stems)
-    checker = dictionary.get_checker() if inflect else None
+    checker = dictionary.get_checker()
     if checker is not None:
+        # a csak toldalékkal álló, a rövidítés- és idegen írásmódú szócikkek (VU, COS, MADAME) nélkül
+        stems = {s for s in stems if checker.has_stem(s.lower())}
+    words = set(stems)
+    if checker is not None and inflect:
         short = [s.lower() for s in stems if len(s) <= INFLECT_MAX_STEM]
-        forms = checker.inflected_forms(short, _INFLECT_ADDS, INFLECT_MAX_FORM)
+        # A kockázatos alakokat (KEDVESEM, SZOMSZÉDÉK, FELESÉGÜL) a robot akkor sem rakja le, ha a
+        # szótár elfogadja őket: így a lépései (és a napi feladvány táblája) természetes szavakból állnak
+        forms = checker.inflected_forms(short, _INFLECT_ADDS, INFLECT_MAX_FORM, risky=False)
         words.update(f.upper() for f in forms
                      if _STEM_RE.match(f) and _HAS_VOWEL_RE.search(f) and _placeable(f))
     return Vocabulary(words)
