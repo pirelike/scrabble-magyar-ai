@@ -44,6 +44,14 @@ Open http://localhost:5000 in your browser.
 - **Hang effektek** — betű lerakás, szavazás, kör értesítő, chat, játék kezdés/vége; hangerő-szabályozó és kategóriánkénti ki/be kapcsolók (Web Audio API, nincs külső fájl)
 - **Stabil újracsatlakozás** — hálózati hiba vagy manuális kilépés után is visszacsatlakozhatnak a játékosok az aktív játékba (120 mp grace period, token alapú)
 - **Pinch-to-zoom** — mobilon a tábla nagyítható/kicsinyíthető csípő mozdulattal
+- **Robot ellenfelek (AI)** — egyedül is játszható 1–3 számítógépes ellenfél ellen, három nehézségi szinttel (könnyű / közepes / nehéz); a robotok a hunspell szótár tőszavaiból építenek, a keresztszavakat a teljes szótárral ellenőrzik. Robotos játék a ranglistába nem számít. Egyedül játszva **tipp** kérhető (a három legjobb lépés)
+- **Megfigyelő mód** — folyamatban lévő nyilvános játék megfigyelése játékos nélkül (lobby „Élő játékok”, privát játék kóddal); a megfigyelő nem lát kezeket, nem lép és nem chatel
+- **Ranglista** — győzelmek, nyerési arány, átlagpont és legjobb játék szerint (csak regisztrált játékosok, robot nélküli, befejezett játékokból)
+- **Szótár-böngésző** — bárhonnan megnyitható szó-ellenőrző: érvényes-e a szó, hány pontot ér prémium nélkül, zsetonokra bontva, javaslatokkal elgépelés esetén
+- **Animációk** — betű lerakás, ellenfél lépésének becsúszása, pontszám felugró, kör váltás jelzése; húzás közben a foglalt mezők pirossal jelölve (`prefers-reduced-motion` esetén kikapcsolva)
+- **PWA** — telepíthető alkalmazás (manifest, service worker, ikonok); kapcsolat nélkül is elindul a felület, és érthető üzenetet mutat
+- **Többnyelvű felület** — magyar és angol (automatikus nyelvfelismerés, kézi váltás a felső sávban); a szótár magyar marad, a szerver üzeneteit a kliens fordítja
+- **Kényelmi funkciók** — élő pontszám-előnézet lerakás közben · zsetonszámláló („mi van még a zsákban?”) · betűtartó keverés / rendezés + gyorsbillentyűk · meghívó link (`/?join=KÓD`) megosztással · lépéstörténet, az utolsó lépés kiemelése a táblán és „legjobb lépés” a játék végén
 
 ---
 
@@ -242,16 +250,17 @@ export SMTP_FROM=yourscrabble@gmail.com
 ## Projekt struktúra / Project Structure
 
 ```
-server.py          — Flask + Socket.IO szerver, lobby/szoba kezelés, Socket.IO event handlerek
-game.py            — Játéklogika (Game osztály), körök, pontozás, challenge rendszer, kör időlimit
-player.py          — Player osztály (id, név, kéz, pontszám, disconnected állapot)
+server.py          — Flask + Socket.IO szerver, lobby/szoba kezelés, Socket.IO event handlerek, robotlépések
+game.py            — Játéklogika (Game osztály), körök, pontozás, challenge rendszer, kör időlimit, lépéstörténet, előnézet
+player.py          — Player osztály (id, név, kéz, pontszám, disconnected állapot, robot jelző)
+ai_player.py       — Robot ellenfél: szókincs (hunspell tőszavak), lépésgenerátor, nehézségi szintek, tippek
 board.py           — 15×15 tábla, premium mezők, szóelhelyezés validáció és pontozás
 dictionary.py      — Magyar szótár-ellenőrzés (pyenchant / hunspell)
-tiles.py           — Magyar betűkészlet (100 zseton), TileBag osztály
+tiles.py           — Magyar betűkészlet (100 zseton), TileBag osztály, szó → zsetonok felbontás
 challenge.py       — Challenge (megtámadás) logika, szavazási állapotgép
-room.py            — Room osztály (szoba állapot, owner, chat, timer kezelés)
-state.py           — ServerState singleton (szobák, játékosok, tokenek, reconnect tracking)
-routes.py          — Flask blueprint-ek: auth route-ok, game route-ok, index
+room.py            — Room osztály (szoba állapot, owner, chat, timer kezelés, megfigyelők)
+state.py           — ServerState singleton (szobák, játékosok, tokenek, reconnect tracking, megfigyelők)
+routes.py          — Flask blueprint-ek: auth, game, publikus API (ranglista, szótár), index, PWA végpontok
 config.py          — Konfigurációs konstansok (SMTP, auth, DB, rate limit)
 auth.py            — SQLite DB, regisztráció, login, session, jelszó hash, játék mentés
 email_service.py   — Email verifikációs kód küldés (SMTP / konzol fallback)
@@ -261,10 +270,14 @@ tunnel.py          — Cloudflare tunnel subprocess kezelés
 dict/              — Beágyazott hu_HU hunspell szótár fájlok
 templates/
   index.html       — Egyoldalas UI (auth, lobby, várakozó szoba, játék, profil, replay)
+  sw.js            — Service worker (Jinja sablon: a verzió a kliens fájlok módosítási idejéből jön)
 static/
-  app.js           — Kliens logika, drag & drop, pinch-to-zoom, Socket.IO, auth, téma, hang
-  style.css        — Stílusok, sötét/világos téma (Slate+Gold paletta), reszponzív layout
-tests/             — Tesztek (pytest, 500 teszt)
+  app.js           — Kliens logika, drag & drop, pinch-to-zoom, Socket.IO, auth, téma, hang, megfigyelés, ranglista, szótár
+  i18n.js          — Fordító (t(), data-i18n attribútumok, szerverüzenet-fordítás)
+  i18n-data.js     — Fordítások (hu / en) — szigorú JSON, a tesztek is ezt olvassák
+  style.css        — Stílusok, sötét/világos téma (Slate+Gold paletta), reszponzív layout, animációk
+  manifest.webmanifest, offline.html, icons/ — PWA: manifest, kapcsolat nélküli oldal, ikonok
+tests/             — Tesztek (pytest, 760 teszt)
 ```
 
 ---
@@ -277,6 +290,54 @@ A játék kiemelt figyelmet fordít a multiplayer sessionök stabilitására:
 - **Bármikori visszatérés**: Az érintett játékosok bármikor visszakapcsolódhatnak az aktív játékba az újracsatlakozási tokenjük segítségével.
 - **Automatikus mentés**: Ha a szoba tulajdonosa (lobby leader) végleg lecsatlakozik (120 mp grace period lejár), a rendszer automatikusan menti a játékállást, mielőtt feloszlatná a szobát, így semmi nem vész el.
 - **Konzisztens mentések**: A manuális mentések minden játékost megőriznek, így a játék később pontosan ugyanabban a felállásban folytatható.
+
+---
+
+## Robot ellenfelek / Robots
+
+Új szoba létrehozásakor 1–3 robot ellenfél kérhető (a robotok is férőhelyet foglalnak). Egyedül, robotok ellen is játszhatsz.
+
+| Szint | Viselkedés |
+|---|---|
+| Könnyű | rövid szavak (max. 4 zseton), a gyengébb lépések közül választ, jokert nem használ |
+| Közepes | a legjobb lépések felső harmadából választ véletlenszerűen |
+| Nehéz | a pontszám + a kézben maradó zsetonok értékelése alapján a legjobb lépést adja, jokert is használ |
+
+- A robotok szókincse a beágyazott hunspell szótár **tőszavai** (kb. 68 000 szó); a keresztszavakat és a kiválasztott lépés szavait a teljes szótár ellenőrzi, így ragozott szavakhoz is kapcsolódnak.
+- Megtámadás módban a robotok **nem szavaznak**: ha a lerakónak nincs emberi ellenfele, a szótár dönt; a robot lerakására az emberek szavaznak.
+- Egyedül (robotok ellen) játszva a **Tipp** gomb a három legjobb lépést mutatja; az „Elhelyez” a táblára teszi, a lerakást te hagyod jóvá.
+- A robotos játékok a profil statisztikájában szerepelnek, de a **ranglistában nem**.
+- Emberi néző vagy játékos nélkül a robotok nem játszanak egymás ellen.
+
+## Megfigyelő mód / Spectating
+
+- A lobby **Élő játékok** listájában minden nyilvános, folyamatban lévő játék megfigyelhető; privát játék a 6 jegyű kóddal (**Megfigyelés** gomb a kódmező mellett, vagy `/?spectate=KÓD` link).
+- A megfigyelő látja a táblát, a pontokat, a lépéstörténetet és a chatet, de **kezeket nem**, nem léphet és nem chatelhet. A játékosok látják a megfigyelők számát.
+- Szobánként legfeljebb 30 megfigyelő lehet. Ha a szoba megszűnik, a megfigyelők visszakerülnek a lobbyba.
+
+## Ranglista / Leaderboard
+
+Lobby → **Ranglista**: győzelmek, nyerési arány (min. 3 játék), átlagpont (min. 3 játék) és legjobb játék szerint. Csak regisztrált játékosok szerepelnek, csak befejezett, **robot nélküli** játékokból. A saját helyezésed akkor is látszik, ha nem vagy a top 50-ben.
+
+## Kényelmi funkciók / Quality of life
+
+| Funkció | Leírás |
+|---|---|
+| Élő előnézet | lerakás közben a szerver véglegesítés nélkül kiszámolja a szavakat és a pontszámot (hibaüzenettel, ha érvénytelen) |
+| Zsetonszámláló | *Zsetonok* gomb: mely betűk lehetnek még a zsákban / az ellenfelek kezében |
+| Betűtartó | *Keverés*, *Rendez*; a sorrend az új húzások után is megmarad |
+| Meghívó link | a várakozó szobában a *Meghívó link* gomb megosztja / másolja a `/?join=KÓD` címet; megnyitva belépés után automatikusan csatlakozik |
+| Lépéstörténet | *Lépések* lista a panelen; az utolsó lépés betűi kiemelve a táblán és a visszajátszásban; a játék végén a legjobb lépés |
+
+**Gyorsbillentyűk** (játék közben, nyitott ablak nélkül): `Enter` lerak · `Esc` visszavon · `Backspace` az utolsó lerakott betű vissza · `S` keverés · `R` rendezés.
+
+## Nyelvek / Languages
+
+A felület **magyar** és **angol** nyelvű. Az első indításkor a böngésző nyelve dönt, a felső sávban (belépő képernyőn lebegő gombként) váltható; a választás a `localStorage`-ban (`scrabble-lang`) marad meg. Új nyelv felvételéhez a `static/i18n-data.js`-be kell felvenni a nyelvi blokkot (a tesztek ellenőrzik a kulcsok és helyőrzők teljességét), és a `static/i18n.js` `SUPPORTED` listájába a nyelvkódot. A szótár és a szóellenőrzés mindig magyar.
+
+## Telepíthető alkalmazás (PWA)
+
+Támogatott böngészőben a lobby felső sávjában megjelenik a **Telepítés** gomb (iOS Safari: *Megosztás → Főképernyőhöz adás*). A service worker (`/sw.js`) az alkalmazás vázát gyorsítótárazza (HTML, CSS, JS, ikonok), a játék forgalmát (`/socket.io/`, `/api/`) soha. Kapcsolat nélkül a gyorsítótárazott felület indul, a kapcsolati sáv jelzi a hibát. A gyorsítótár verziója a kliens fájlok módosítási idejéből számolódik, így új kiadásnál magától frissül. A service worker csak HTTPS-en (a Cloudflare tunnelen) vagy `localhost`-on működik.
 
 ---
 
@@ -309,11 +370,18 @@ A játék kiemelt figyelmet fordít a multiplayer sessionök stabilitására:
 | `tests/test_dictionary.py` | 23 | Szótár-ellenőrzés |
 | `tests/test_email_service.py` | 4 | Email küldés |
 | `tests/test_room.py` | 12 | Room osztály |
-| `tests/test_friends.py` | 23 | Barát CRUD, kérések, felhasználókeresés, szobameghívó, online státusz |
+| `tests/test_friends.py` | 27 | Barát CRUD, kérések, felhasználókeresés, szobameghívó, online státusz |
 | `tests/test_timer_and_replay.py` | 27 | Körszámláló UI, kör időlimit, replay perzisztencia |
 | `tests/test_regressions.py` | 70 | Kódátvizsgálás során talált hibák regressziós tesztjei |
+| `tests/test_ai_player.py` | 39 | Robot: szókincs, lépésgenerátor, nehézségi szintek, tipp |
+| `tests/test_bots.py` | 65 | Robotok a játékmodellben és a szerveren, lépéstörténet, előnézet, tipp |
+| `tests/test_spectator.py` | 30 | Megfigyelő mód, élő játékok listája |
+| `tests/test_public_api.py` | 50 | Ranglista (DB + route), szótár-ellenőrző API, PWA végpontok |
+| `tests/test_tiles_dictionary.py` | 30 | Zseton-felbontás, tömeges szótár-ellenőrzés, javaslatok |
+| `tests/test_i18n.py` | 27 | Fordítások teljessége (kulcsok, helyőrzők, szerverüzenetek), a böngészős fordító futtatása node-ban |
+| `tests/test_frontend_consistency.py` | 19 | Kliens ↔ szerver összhang: konstansok, elem-azonosítók, Socket.IO események, JS szintaxis |
 
-**Összesen: 500 teszt**
+**Összesen: 760 teszt** (a node-ot igénylő tesztek node nélkül kimaradnak)
 
 ---
 
@@ -382,15 +450,15 @@ Ha nem telepítetted, használd a `--no-tunnel` kapcsolót a helyi futtatáshoz.
 - [x] Játék mentés / visszatöltés — manuális mentés, lobby-first restore flow
 - [x] Visszajátszás — befejezett játék lépéseinek visszanézése
 - [x] Időlimit a körökre — opcionális időzítő, lejáratkor automatikus passz
-- [ ] AI ellenfél — egyjátékos mód számítógépes ellenfél(ek)kel
+- [x] AI ellenfél — egyjátékos mód számítógépes ellenfél(ek)kel, három nehézségi szint, tipp
 
 ### Közösségi funkciók
 - [x] Chat — játék közbeni üzenetküldés a szobában
 - [x] Privát szobák — 6-jegyű kóddal csatlakozás, lobby-ban nem listázott szobák
 - [x] Játékos profil oldal — statisztikák, játékelőzmények, visszajátszás
 - [x] Barátlista / meghívó rendszer — barátnak jelölés, online státusz, szobameghívó
-- [ ] Spectator mód
-- [ ] Ranglista / leaderboard
+- [x] Spectator mód — folyamatban lévő játék megfigyelése játékos nélkül
+- [x] Ranglista / leaderboard — győzelmek, nyerési arány, átlagpont, legjobb játék
 
 ### Hálózat
 - [x] Újracsatlakozás (grace period) — 120 mp-es ablak a visszacsatlakozásra játék közben
@@ -400,7 +468,9 @@ Ha nem telepítetted, használd a `--no-tunnel` kapcsolót a helyi futtatáshoz.
 - [x] Sötét / világos téma váltás — Slate+Gold paletta, auto-detektálás, localStorage mentés
 - [x] Hang effektek — Web Audio API, 8 szintetizált hang, hangerő csúszka, kategóriánkénti kapcsolók
 - [x] Szótár-böngésző (Challenge fázis) — szavazásnál kattintható szavak keresése
-- [ ] Animációk (betű lerakás, pontszám, kör váltás)
-- [ ] Szótár-böngésző (kereső/validáló)
-- [ ] PWA támogatás (offline, telepíthető)
-- [ ] Többnyelvű felület
+- [x] Animációk (betű lerakás, pontszám, kör váltás)
+- [x] Drag & drop vizuális visszajelzés — foglalt mezők jelölése húzás közben
+- [x] Szótár-böngésző (kereső/validáló)
+- [x] PWA támogatás (offline, telepíthető)
+- [x] Többnyelvű felület (magyar, angol)
+- [x] Kényelmi funkciók — élő pontszám-előnézet, zsetonszámláló, betűtartó keverés/rendezés + gyorsbillentyűk, meghívó link, lépéstörténet + utolsó lépés kiemelése
