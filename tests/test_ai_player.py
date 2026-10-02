@@ -449,3 +449,16 @@ class TestInflectedVocabulary:
         started = time.monotonic()
         generate_moves(board, list('KÖRTEZS'), vocab=vocab, seconds=5)
         assert time.monotonic() - started < 2.0
+
+
+class TestVocabularyLetters:
+    def test_digraph_words_with_y_are_kept(self):
+        vocab = ai_player.load_vocabulary()
+        for word in ('KÖNYV', 'MEGGY', 'KÖNYVET'):
+            assert word in vocab, word
+
+    def test_words_without_tiles_are_excluded(self):
+        from tiles import tokenize_word
+        vocab = ai_player.load_vocabulary()
+        assert 'ADYAS' not in vocab                      # d+y: nincs "dy" zseton
+        assert all(tokenize_word(w) is not None for w in vocab.words)

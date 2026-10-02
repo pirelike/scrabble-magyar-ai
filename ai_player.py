@@ -23,7 +23,7 @@ from collections import Counter
 from board import Board, BOARD_SIZE, CENTER
 import dictionary
 from dictionary import filter_valid
-from tiles import LETTERS, TILE_VALUES, VOWELS
+from tiles import LETTERS, TILE_VALUES, VOWELS, tokenize_word
 
 HAND_SIZE = 7
 BONUS_ALL_TILES = 50
@@ -91,8 +91,7 @@ INFLECT_MAX_STEM = 6
 INFLECT_MAX_FORM = 12
 
 _DIC_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dict', 'hu_HU.dic')
-# Csak a magyar ábécé betűi: a q, w, x, y betűkhöz nincs zseton (idegen szavak, pl. adyas), így azok úgysem rakhatók ki
-_STEM_RE = re.compile(r'^[aábcdeéfghiíjklmnoóöőprstuúüűvz]{2,15}$')
+_STEM_RE = re.compile(r'^[a-záéíóöőúüű]{2,15}$')
 _HAS_VOWEL_RE = re.compile(r'[aáeéiíoóöőuúüű]')
 
 
@@ -204,6 +203,12 @@ class Vocabulary:
 _vocabulary = None
 
 
+def _placeable(word):
+    """Kirakható-e a szó zsetonokkal? (Az idegen szavak q / w / x / y betűihez, pl. 'adyas', nincs zseton;
+    a gy, ly, ny, ty kétjegyű betűk persze megvannak.)"""
+    return tokenize_word(word) is not None
+
+
 def load_vocabulary(path=_DIC_PATH, inflect=True):
     """A hunspell .dic fájl tőszavaiból (és azok gyakori ragozott alakjaiból, ha `inflect`) építi a
     szókincset — csak kisbetűs, a táblán kirakható szavak."""
@@ -213,14 +218,15 @@ def load_vocabulary(path=_DIC_PATH, inflect=True):
         for line in fh:
             entry = line.strip().split('\t')[0].split('/')[0]
             # A magánhangzó nélküli bejegyzések rövidítések (kkv, tb, kg): a robot nem rak le ilyet
-            if _STEM_RE.match(entry) and _HAS_VOWEL_RE.search(entry):
+            if _STEM_RE.match(entry) and _HAS_VOWEL_RE.search(entry) and _placeable(entry):
                 stems.add(entry.upper())
     words = set(stems)
     checker = dictionary.get_checker() if inflect else None
     if checker is not None:
         short = [s.lower() for s in stems if len(s) <= INFLECT_MAX_STEM]
         forms = checker.inflected_forms(short, _INFLECT_ADDS, INFLECT_MAX_FORM)
-        words.update(f.upper() for f in forms if _STEM_RE.match(f) and _HAS_VOWEL_RE.search(f))
+        words.update(f.upper() for f in forms
+                     if _STEM_RE.match(f) and _HAS_VOWEL_RE.search(f) and _placeable(f))
     return Vocabulary(words)
 
 
