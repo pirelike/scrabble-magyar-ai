@@ -482,6 +482,28 @@ class Game:
                               vote='reject')
         return True, 'vote_recorded', f"{voter.name} elutasította."
 
+    def withdraw_pending(self, player_id):
+        """A lerakó visszavonja a még el nem döntött (szavazásra váró) lerakását.
+
+        Csak addig lehet, amíg senki sem szavazott; a betűk visszakerülnek a kezébe, és újra ő
+        következik. Nem számít körnek (a pont nélküli körök számlálója sem változik).
+        Visszatér: (success, message)
+        """
+        if not self.pending_challenge:
+            return False, "Nincs függő lerakás."
+        pc = self.pending_challenge
+        player = self.players[pc.player_idx]
+        if player.id != player_id:
+            return False, "Csak a lerakó vonhatja vissza a lerakását."
+        if pc.votes:
+            return False, "Már szavaztak, a lerakás már nem vonható vissza."
+
+        self.pending_challenge = None
+        player.hand.extend(pc.removed_from_hand)
+        self._set_last_action(f"{player.name} visszavonta a lerakását.",
+                              type='withdrawn', player=player.name, words=list(pc.word_strs))
+        return True, "Lerakás visszavonva."
+
     def accept_pending(self):
         """Függő lerakás elfogadása (timeout).
         Visszatér: (success, result, message)

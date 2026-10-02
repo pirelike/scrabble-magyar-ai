@@ -56,6 +56,7 @@ _SOCKET_RATE_LIMITS = {
     'get_rooms': (10, 5),
     'accept_words': (5, 10),
     'reject_words': (5, 10),
+    'withdraw_words': (5, 10),
     'send_chat': (10, 10),
     'rejoin_room': (5, 10),
     'save_game': (3, 30),
@@ -1609,6 +1610,24 @@ def handle_reject_words():
     success, result, msg = game.reject_pending_by_player(sid)
     if success:
         _handle_challenge_result(room_id, room, game, result, msg)
+    else:
+        emit('action_result', {'success': False, 'message': msg})
+
+
+@socketio.on('withdraw_words')
+def handle_withdraw_words():
+    """A lerakó visszavonja a szavazásra váró lerakását (amíg senki sem szavazott)."""
+    sid = request.sid
+    room_id, room, game = _get_room_context(sid, 'withdraw_words')
+    if not room:
+        return
+
+    success, msg = game.withdraw_pending(sid)
+    if success:
+        room.invalidate_challenge_timer()
+        _start_turn_timer(room_id)
+        emit('action_result', {'success': True, 'message': msg, 'own_turn': True})
+        _emit_all_states(game, room_id)
     else:
         emit('action_result', {'success': False, 'message': msg})
 

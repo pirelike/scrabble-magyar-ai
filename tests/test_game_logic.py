@@ -1850,3 +1850,71 @@ class TestDrawsAndScorelessTurns:
         g.reject_pending_by_player('p2')
         assert g.finished is True
         assert sorted(placer.hand) == ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+
+
+class TestWithdrawPendingPlacement:
+    """A lerakó visszavonhatja a szavazásra váró lerakását, amíg senki sem szavazott."""
+
+    @staticmethod
+    def _pending(players=2):
+        from game import Game
+        g = Game('test', challenge_mode=True)
+        for i in range(1, players + 1):
+            g.add_player(f'p{i}', f'P{i}')
+        g.start()
+        placer = g.current_player()
+        placer.hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        with patch('board.check_words', return_value=(True, [])):
+            ok, _msg, _score = g.place_tiles(placer.id, [(7, 6, 'A', False), (7, 7, 'B', False)])
+        assert ok and g.pending_challenge
+        return g, placer
+
+    def test_withdraw_returns_tiles_and_keeps_the_turn(self):
+        g, placer = self._pending()
+        assert sorted(placer.hand) == ['C', 'D', 'E', 'F', 'G']
+        success, msg = g.withdraw_pending(placer.id)
+        assert success is True
+        assert g.pending_challenge is None
+        assert sorted(placer.hand) == ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        assert g.current_player() is placer
+        assert g.board.is_empty
+        assert g.last_action_info['type'] == 'withdrawn'
+
+    def test_withdraw_is_not_a_scoreless_turn_and_not_logged(self):
+        g, placer = self._pending()
+        g.scoreless_turns = 3
+        g.withdraw_pending(placer.id)
+        assert g.scoreless_turns == 3
+        assert g.move_log == []
+
+    def test_only_the_placer_can_withdraw(self):
+        g, placer = self._pending()
+        other = next(p for p in g.players if p is not placer)
+        success, msg = g.withdraw_pending(other.id)
+        assert success is False and 'lerakó' in msg
+        assert g.pending_challenge is not None
+
+    def test_no_withdraw_after_a_vote(self):
+        g, placer = self._pending(players=3)
+        voter = next(p for p in g.players if p is not placer)
+        g.accept_pending_by_player(voter.id)
+        success, msg = g.withdraw_pending(placer.id)
+        assert success is False and 'szavaztak' in msg
+        assert g.pending_challenge is not None
+
+    def test_withdraw_without_pending_placement(self):
+        from game import Game
+        g = Game('test', challenge_mode=True)
+        g.add_player('p1', 'A')
+        g.add_player('p2', 'B')
+        g.start()
+        success, msg = g.withdraw_pending('p1')
+        assert success is False and 'Nincs' in msg
+
+    def test_placer_can_play_again_after_withdrawing(self):
+        g, placer = self._pending()
+        g.withdraw_pending(placer.id)
+        with patch('board.check_words', return_value=(True, [])):
+            ok, _msg, _score = g.place_tiles(placer.id, [(7, 6, 'C', False), (7, 7, 'D', False)])
+        assert ok is True
+        assert g.pending_challenge is not None

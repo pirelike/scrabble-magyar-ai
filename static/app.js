@@ -1909,6 +1909,7 @@ const GameBoard = {
             case 'vote': return t(info.vote === 'accept' ? 'last.vote_accept' : 'last.vote_reject', { player: info.player });
             case 'game_over': return t('last.game_over', { player: info.player, score: info.score });
             case 'game_over_draw': return t('last.game_over_draw', { players: (info.players || []).join(', '), score: info.score });
+            case 'withdrawn': return t('last.withdrawn', { player: info.player });
             case 'save_revert': return t('last.save_revert', { player: info.player });
             default: return tServer(gs.last_action) || '';
         }
@@ -2309,11 +2310,22 @@ const Hint = {
 };
 
 // ===== GYORSBILLENTYŰK =====
-// Enter: lerak · Esc: visszavon · S: keverés · R: rendezés · Backspace: az utolsó lerakott betű visszavétele
+// Enter: lerak · Esc: visszavon · S: keverés · R: rendezés · Backspace / Ctrl+Z: az utolsó lerakott betű visszavétele
 
 const Shortcuts = {
     init() {
         document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
+                const tag = e.target && e.target.tagName;
+                if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+                if (!document.getElementById('game-screen').classList.contains('hidden')
+                        && !AppState.isSpectator && BoardState.placedTiles.length) {
+                    e.preventDefault();
+                    BoardState.placedTiles.pop();
+                    GameBoard.afterPlacementChange();
+                }
+                return;
+            }
             if (e.ctrlKey || e.metaKey || e.altKey) return;
             if (document.getElementById('game-screen').classList.contains('hidden')) return;
             const target = e.target;
@@ -2520,8 +2532,9 @@ const ChallengeUI = {
 
         // Buttons — csak állapotváltozáskor építjük újra: a másodpercenkénti újrarajzolás
         // elnyelhette a kattintást és visszakapcsolta a már letiltott gombokat
+        const canWithdraw = isMyPlacement && !Object.keys(pc.votes || {}).length;
         const sig = (AppState.isSpectator ? 'spectator:' : '') + I18N.lang + ':' +
-            (isMyPlacement ? 'placer' : (myVote ? `voted:${myVote}` : 'vote'));
+            (isMyPlacement ? (canWithdraw ? 'placer' : 'placer-voted') : (myVote ? `voted:${myVote}` : 'vote'));
         if (this._buttonsSig !== sig) {
             this._buttonsSig = sig;
             buttonsEl.innerHTML = '';
@@ -2529,6 +2542,7 @@ const ChallengeUI = {
                 this._addWaitText(buttonsEl, t('challenge.spectator'));
             } else if (isMyPlacement) {
                 this._addWaitText(buttonsEl, t('challenge.voting'));
+                if (!Object.keys(pc.votes || {}).length) this._renderWithdrawButton(buttonsEl);
             } else if (myVote) {
                 this._addWaitText(buttonsEl, myVote === 'accept' ? t('challenge.you_accepted') : t('challenge.you_rejected'));
             } else {
@@ -2593,6 +2607,18 @@ const ChallengeUI = {
         el.className = 'challenge-wait';
         el.textContent = text;
         container.appendChild(el);
+    },
+
+    // A lerakó visszavonhatja a lerakását, amíg senki sem szavazott
+    _renderWithdrawButton(buttonsEl) {
+        const btn = document.createElement('button');
+        btn.className = 'secondary';
+        btn.textContent = t('challenge.withdraw');
+        btn.addEventListener('click', () => {
+            btn.disabled = true;
+            socket.emit('withdraw_words');
+        });
+        buttonsEl.appendChild(btn);
     },
 
     _renderVoteButtons(buttonsEl) {

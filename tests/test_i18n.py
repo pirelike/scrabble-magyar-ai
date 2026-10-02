@@ -104,7 +104,7 @@ class TestKeyUsage:
         for prefix in ('dl', 'tl', 'dw', 'tw'):
             assert f'board.{prefix}_long' in data['en'] and f'board.{prefix}_short' in data['en']
         for kind in ('exchange', 'pass', 'rejected', 'skip', 'vote_accept', 'vote_reject',
-                     'game_over', 'game_over_draw', 'save_revert', 'place', 'pending'):
+                     'game_over', 'game_over_draw', 'save_revert', 'place', 'pending', 'withdrawn'):
             assert f'last.{kind}' in data['en']
 
     def test_no_unused_keys(self, data, app_js, index_html):
@@ -248,6 +248,7 @@ _NOT_SHOWN = {
     '7 elfogadta.',
     '7 elutasította.',
     '7 lerakása a mentés miatt visszavonva.',
+    '7 visszavonta a lerakását.',
 }
 
 

@@ -467,6 +467,56 @@ class TestChallengeMode:
         assert action_events[0]['args'][0]['success'] is False
 
 
+    def test_withdraw_words_over_socket(self, app, socketio_app, registered_client):
+        from unittest.mock import patch
+        import server
+
+        registered_client.emit('create_room', {
+            'name': 'WithdrawRoom', 'max_players': 2, 'challenge_mode': True
+        })
+        code = next(r for r in registered_client.get_received()
+                    if r['name'] == 'room_code')['args'][0]['code']
+        c2 = socketio_app.test_client(app)
+        c2.emit('set_name', {'name': 'P2', 'is_guest': True, 'user_id': None})
+        c2.get_received()
+        c2.emit('join_room', {'code': code})
+        c2.get_received()
+        registered_client.emit('start_game')
+        registered_client.get_received(); c2.get_received()
+
+        game = next(iter(server.rooms.values())).game
+        placer = game.current_player()
+        placer.hand = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        with patch('board.check_words', return_value=(True, [])):
+            registered_client.emit('place_tiles', {'tiles': [
+                {'row': 7, 'col': 6, 'letter': 'A', 'is_blank': False},
+                {'row': 7, 'col': 7, 'letter': 'B', 'is_blank': False},
+            ]})
+        registered_client.get_received(); c2.get_received()
+        assert game.pending_challenge is not None
+
+        # Nem a lerakó nem vonhatja vissza
+        c2.emit('withdraw_words')
+        result = next(r for r in c2.get_received() if r['name'] == 'action_result')
+        assert result['args'][0]['success'] is False
+        assert game.pending_challenge is not None
+
+        registered_client.emit('withdraw_words')
+        result = next(r for r in registered_client.get_received() if r['name'] == 'action_result')
+        assert result['args'][0]['success'] is True
+        assert result['args'][0]['own_turn'] is True
+        assert game.pending_challenge is None
+        assert sorted(placer.hand) == ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        states = [r for r in c2.get_received() if r['name'] == 'game_state']
+        assert states and states[-1]['args'][0]['pending_challenge'] is None
+
+        # A visszavont lerakásra már nem lehet szavazni
+        c2.emit('accept_words')
+        result = next(r for r in c2.get_received() if r['name'] == 'action_result')
+        assert result['args'][0]['success'] is False
+        c2.disconnect()
+
+
 class TestPrivateRoom:
     def test_create_private_room(self, registered_client):
         registered_client.emit('create_room', {
