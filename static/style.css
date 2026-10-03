@@ -4723,6 +4723,7 @@ button.answer-btn.is-picked { opacity: 1; border-color: currentColor; }
 }
 
 .hunt-line .hunt-slot,
+.hunt-line .htile,
 .hunt-rack .htile {
     width: var(--ht);
     height: var(--ht);
