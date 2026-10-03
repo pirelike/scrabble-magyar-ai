@@ -594,35 +594,43 @@ def push_unsubscribe():
     return jsonify({'success': True})
 
 
-@public_bp.route('/api/practice/quiz', methods=['GET'])
-def practice_quiz():
-    """„Melyik szó érvényes?” kvíz: a kérdések (szavak) listája, a válaszokat nem tartalmazza."""
+def _practice_guard():
+    """Közös ellenőrzés a gyakorló végpontokhoz: rate limit + szótár. Hibaválasz, vagy None."""
     if not _rate_limiter.check_ip(_get_client_ip(), 'practice'):
         return jsonify({'success': False, 'message': 'Túl sok kérés. Próbáld újra később.'}), 429
+    if not dictionary.is_available():
+        return jsonify({'success': False, 'message': 'A szótár nem érhető el.'}), 503
+    return None
+
+
+@public_bp.route('/api/practice/quiz', methods=['GET'])
+def practice_quiz():
+    """„Melyik szó érvényes?” kvíz: a kérdések (szavak) és zsetonjaik, a válaszokat nem tartalmazza."""
+    mode = request.args.get('mode', 'mixed')
+    if mode not in practice.QUIZ_MODES:
+        return jsonify({'success': False, 'message': 'Érvénytelen kvízmód.'}), 400
+    blocked = _practice_guard()
+    if blocked:
+        return blocked
     try:
         count = int(request.args.get('n', practice.QUESTION_COUNT))
     except ValueError:
         count = practice.QUESTION_COUNT
-    length_text = request.args.get('length', '')
-    if length_text not in ('', '2', '3'):
-        return jsonify({'success': False, 'message': 'Érvénytelen szóhossz.'}), 400
-    if not dictionary.is_available():
-        return jsonify({'success': False, 'message': 'A szótár nem érhető el.'}), 503
-    questions = practice.make_quiz(count, int(length_text) if length_text else None)
-    return jsonify({'success': True, 'questions': questions})
+    questions = practice.make_quiz(count, mode)
+    return jsonify({'success': True, 'mode': mode, 'questions': questions,
+                    'tiles': [tokenize_word(q) for q in questions]})
 
 
 @public_bp.route('/api/practice/answer', methods=['POST'])
 def practice_answer():
     """Egy kvíz-válasz kiértékelése: érvényes-e a szó, helyes volt-e a tipp, pontérték, javaslatok."""
-    if not _rate_limiter.check_ip(_get_client_ip(), 'practice'):
-        return jsonify({'success': False, 'message': 'Túl sok kérés. Próbáld újra később.'}), 429
     data = request.get_json(silent=True) or {}
     word = data.get('word')
     if not isinstance(word, str) or not isinstance(data.get('answer'), bool):
         return jsonify({'success': False, 'message': 'Érvénytelen kérés.'}), 400
-    if not dictionary.is_available():
-        return jsonify({'success': False, 'message': 'A szótár nem érhető el.'}), 503
+    blocked = _practice_guard()
+    if blocked:
+        return blocked
     result = practice.check_answer(word, data['answer'])
     if result is None:
         return jsonify({'success': False, 'message': 'Érvénytelen szó.'}), 400
@@ -632,17 +640,43 @@ def practice_answer():
 @public_bp.route('/api/practice/short-words', methods=['GET'])
 def practice_short_words():
     """Az összes érvényes 2 vagy 3 zsetonos szó pontértékkel (a tanuláshoz)."""
-    if not _rate_limiter.check_ip(_get_client_ip(), 'practice'):
-        return jsonify({'success': False, 'message': 'Túl sok kérés. Próbáld újra később.'}), 429
     try:
         length = int(request.args.get('length', 2))
     except ValueError:
         length = 0
     if length not in practice.SHORT_LENGTHS:
         return jsonify({'success': False, 'message': 'Érvénytelen szóhossz.'}), 400
-    if not dictionary.is_available():
-        return jsonify({'success': False, 'message': 'A szótár nem érhető el.'}), 503
+    blocked = _practice_guard()
+    if blocked:
+        return blocked
     return jsonify({'success': True, 'length': length, 'words': practice.short_words(length)})
+
+
+@public_bp.route('/api/practice/rack', methods=['GET'])
+def practice_rack():
+    """Betűvadászat / bingó-edző: egy 7 zsetonos kéz és az összes kirakható szó pontértékkel."""
+    kind = request.args.get('kind', 'hunt')
+    if kind not in practice.RACK_KINDS:
+        return jsonify({'success': False, 'message': 'Érvénytelen gyakorlás.'}), 400
+    blocked = _practice_guard()
+    if blocked:
+        return blocked
+    return jsonify({'success': True, **practice.make_rack(kind)})
+
+
+@public_bp.route('/api/practice/rack-word', methods=['POST'])
+def practice_rack_word():
+    """Egy beírt szó bírálata a kézhez: kirakható-e és érvényes-e (a listán nem szereplő szavakhoz)."""
+    data = request.get_json(silent=True) or {}
+    rack, word = data.get('rack'), data.get('word')
+    valid_rack = (isinstance(rack, list) and 1 <= len(rack) <= practice.RACK_SIZE
+                  and all(isinstance(t, str) and t in practice.LETTERS for t in rack))
+    if not valid_rack or not isinstance(word, str):
+        return jsonify({'success': False, 'message': 'Érvénytelen kérés.'}), 400
+    blocked = _practice_guard()
+    if blocked:
+        return blocked
+    return jsonify({'success': True, **practice.check_rack_word(rack, word)})
 
 
 _MAX_DICT_WORDS = 8

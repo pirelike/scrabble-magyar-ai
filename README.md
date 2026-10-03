@@ -49,7 +49,7 @@ Open http://localhost:5000 in your browser.
 - **Megfigyelő mód** — folyamatban lévő nyilvános játék megfigyelése játékos nélkül (lobby „Élő játékok”, privát játék kóddal); a megfigyelő nem lát kezeket, nem lép és nem chatel
 - **Ranglista** — **értékszám (ELO)**, győzelmek, nyerési arány, átlagpont és legjobb játék szerint (csak regisztrált játékosok, robot nélküli, befejezett játékokból)
 - **Napi feladvány** — naponta egy közös táblaállás és betűkészlet mindenkinek: keresd meg a legtöbb pontot érő lépést; napi ranglista, tegnapi megoldás
-- **Gyakorlás** — „Melyik szó érvényes?” kvíz és a két-, háromzsetonos szavak teljes listája
+- **Gyakorlás** — szókvíz (hosszú–rövid csapdákkal), betűvadász, bingó-edző, a tévesztett szavak újragyakorlása („Hibáim”), szólisták keresővel; napi sorozat és statisztika
 - **Levelezős játék** — barátokkal órák vagy napok alatt lépkedve (24 óra – 7 nap lépésenként); a játék közben bezárhatod az alkalmazást, és értesítést kapsz, ha rád kerül a sor
 - **Értesítések (Web Push)** — a profilban bekapcsolható „Te jössz!” értesítés a telefonodra / böngésződbe
 - **Játékelemzés** — a játék végén lépésenként a legjobb lehetséges lépés és a kint maradt pont, játékosonkénti hatékonysággal
@@ -252,7 +252,7 @@ analysis.py        — Játékelemzés (legjobb lépés / kint maradt pont lép�
 async_games.py     — Levelezős játék felállítása, lista
 daily.py           — Napi feladvány előállítása és eredmény-rögzítés
 elo.py             — ELO értékszám
-practice.py        — Szókvíz, rövid szavak listája
+practice.py        — Szókvíz, betűvadász / bingó-edző, rövid szavak listája
 push_service.py    — Web Push (VAPID, feliratkozások, küldés)
 board.py           — 15×15 tábla, premium mezők, szóelhelyezés validáció és pontozás
 dictionary.py      — Magyar szótár-ellenőrzés (beágyazott), tömeges ellenőrzés, javaslatok
@@ -278,7 +278,7 @@ static/
   i18n-data.js     — Fordítások (hu / en) — szigorú JSON, a tesztek is ezt olvassák
   style.css        — Stílusok, sötét/világos téma (Slate+Gold paletta), reszponzív layout, animációk
   manifest.webmanifest, offline.html, icons/ — PWA: manifest, kapcsolat nélküli oldal, ikonok
-tests/             — Tesztek (pytest, 1322 teszt)
+tests/             — Tesztek (pytest, 1360 teszt)
 ```
 
 ---
@@ -331,13 +331,16 @@ Lobby → **Ranglista**: **értékszám (ELO**, min. 3 értékelt játék), győ
 
 Lobby → **Gyakorlás**:
 - **Napi feladvány**: naponta (magyar idő szerint) egy közös táblaállás és betűkészlet; a cél a legtöbb pontot érő lépés. Próbálkozhatsz többször (a legjobb számít, holtversenynél a kevesebb próbálkozás és a korábbi idő), az élő előnézet segít. A *Megoldás* gomb megmutatja a legjobb lépést, de utána már nem kerülhetsz a napi ranglistára. Vendégként is játszhatsz, de csak regisztrált játékos kerül a ranglistára. A tegnapi megoldás is látszik.
-- **Szókvíz**: tíz kérdés, hogy a szó érvényes-e (vegyes szavak, vagy csak két-, háromzsetonosak); hibás válasznál javaslatokat kapsz.
-- **Rövid szavak**: az összes érvényes két- és háromzsetonos szó pontértékkel, kezdőbetű szerint csoportosítva.
+- **Szókvíz**: 10 vagy 20 kérdés, hogy a szó érvényes-e. Módok: vegyes szavak, csak két- vagy háromzsetonosak, vagy **hosszú–rövid csapdák** (a↔á, o↔ó, ö↔ő, u↔ú…: az érvénytelen szó egy érvényes szó egyetlen magánhangzójának hosszúságcseréjével készül). A szót játékbeli zsetonokkal látod; a válasz után megtudod, miért (pontérték, javaslatok), a végén listázza a tévesztéseket. Billentyűzettel: ← nem érvényes, → érvényes, Enter következő.
+- **Betűvadász**: hét zsetonból építs minél több érvényes szót (koppintással vagy gépeléssel; a pont a zsetonok értéke, mind a hét zseton +50). Időkorlát nélkül, 60 mp-cel vagy 2 perccel; tipp, bónusz szavak (érvényesek, de nem szerepeltek a listánkon), a végén a kimaradt szavak és az eredményed a lehetséges pontokhoz képest.
+- **Bingó-edző**: a hét zsetonodból biztosan kirakható egy hét zsetonos szó – találd meg! Tipp (a szó kezdőbetűi), feladás után megmutatja a megoldást; a bingók sorozata számolódik.
+- **Hibáim**: a kvízben eltévesztett szavak (az eszközön tárolva); egy szó akkor kerül ki a pakliból, ha kétszer egymás után helyesen válaszolsz rá.
+- **Szólisták**: az összes érvényes két- és háromzsetonos szó pontértékkel – keresővel, kezdőbetű-szűrővel és ABC / pont rendezéssel –, valamint a 100 zseton értéke és darabszáma.
 
 ## Levelezős játék / Correspondence games
 
 Lobby → **Levelezős**: barátaiddal (1–3 fő) órák vagy napok alatt lépkedhettek.
-- Új játéknál megadod a barátokat és a gondolkodási időt (24 / 48 / 72 óra vagy 7 nap lépésenként). A játék azonnal elindul; a barátok a saját Levelezős fülükön látják, és értesítést kapnak.
+- Új játéknál (a „Új játék” gombra megnyíló alsó lapon) megadod a barátokat és a gondolkodási időt (24 óra / 48 óra / 3 nap / 7 nap lépésenként). A játék azonnal elindul; a barátok a saját Levelezős fülükön látják, és értesítést kapnak.
 - A listában az elöl áll, ahol te jössz; a fül jelvénye mutatja, hány játékban vagy soron. A játékból bármikor kiléphetsz, a játék megmarad (a szerver minden lépést elment, újraindítás után is folytatható).
 - Ha a határidőig nem lépsz, **automatikusan passzolsz**; három egymás utáni lejárt határidő után a játékot feladottnak tekintjük. A *Játék feladása* gombbal te is feladhatod: a játék véget ér, és nem lehetsz a győztes.
 - Értesítés: Web Push (a profilban kapcsolható), és az alkalmazáson belül is felugró üzenet.
@@ -415,11 +418,12 @@ Támogatott böngészőben a lobby felső sávjában megjelenik a **Telepítés*
 | `tests/test_replay_share.py` | 11 | Megosztható visszajátszás |
 | `tests/test_analysis.py` | 25 | Játékelemzés |
 | `tests/test_daily.py` | 50 | Napi feladvány és ranglistája |
-| `tests/test_practice.py` | 24 | Szókvíz, rövid szavak |
+| `tests/test_practice.py` | 47 | Szókvíz, betűvadász / bingó, rövid szavak |
+| `tests/test_practice_client.py` | 15 | A gyakorló felület kliensoldali logikája (node) |
 | `tests/test_push.py` | 44 | Web Push |
 | `tests/test_async_games.py` | 56 | Levelezős játék |
 
-**Összesen: 1322 teszt** (a node-ot igénylő tesztek node nélkül kimaradnak)
+**Összesen: 1360 teszt** (a node-ot igénylő tesztek node nélkül kimaradnak)
 
 ---
 

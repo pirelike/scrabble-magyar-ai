@@ -68,6 +68,21 @@
         <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></symbol>
         <symbol id="i-robot" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="3"/><path d="M12 8V4"/><circle cx="12" cy="3" r="1"/><circle cx="8.5" cy="14" r="1.2"/><circle cx="15.5" cy="14" r="1.2"/></symbol>
         <symbol id="i-undo" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></symbol>
+        <symbol id="i-check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></symbol>
+        <symbol id="i-check-circle" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></symbol>
+        <symbol id="i-x-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></symbol>
+        <symbol id="i-chevron" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></symbol>
+        <symbol id="i-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></symbol>
+        <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+        <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></symbol>
+        <symbol id="i-list" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></symbol>
+        <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></symbol>
+        <symbol id="i-mail" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></symbol>
+        <symbol id="i-backspace" viewBox="0 0 24 24"><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></symbol>
+        <symbol id="i-zap" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></symbol>
+        <symbol id="i-repeat" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></symbol>
+        <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></symbol>
+        <symbol id="i-users" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
     </svg>
 
     <div id="connection-banner" class="connection-banner hidden" role="status" aria-live="polite"></div>
@@ -151,7 +166,10 @@
         <!-- Felső sáv -->
         <header class="app-topbar app-topbar-lobby">
             <div class="topbar-left">
-                <h1 class="topbar-title" data-i18n="app.title">Magyar Scrabble</h1>
+                <h1 class="topbar-title">
+                    <span class="title-full" data-i18n="app.title">Magyar Scrabble</span>
+                    <span class="title-short" data-i18n="app.title_short">Scrabble</span>
+                </h1>
             </div>
             <!-- Központi navigáció -->
             <nav class="lobby-nav segmented" id="lobby-nav" aria-label="Lobby" data-i18n-aria="lobby.nav_label">
@@ -422,104 +440,307 @@
 
             <!-- TAB: Levelezős játékok (órák / napok alatt lépnek) -->
             <div class="lobby-tab-panel" id="lobby-panel-async">
-                <section class="lobby-section">
-                    <div class="section-header">
-                        <h2 class="section-title" data-i18n="async.title">Levelezős játékaim</h2>
-                    </div>
-                    <p class="form-hint" data-i18n="async.intro">Barátaiddal órák vagy napok alatt lépkedtek: a játék közben bezárhatod az alkalmazást, és értesítést kapsz, ha rád kerül a sor.</p>
-                    <div id="async-games" class="rooms-list">
-                        <div class="empty-state">
-                            <p class="empty-msg" data-i18n="async.empty">Még nincs folyamatban lévő levelezős játékod.</p>
+                <section class="lobby-section async-section">
+                    <div class="section-header section-header-row">
+                        <div class="section-header-text">
+                            <h2 class="section-title" data-i18n="async.title">Levelezős játékaim</h2>
+                            <p class="section-sub" id="async-summary"></p>
                         </div>
+                        <button id="btn-async-new" class="small-btn" type="button">
+                            <svg class="icon"><use href="#i-plus"/></svg>
+                            <span data-i18n="async.new_short">Új játék</span>
+                        </button>
                     </div>
+                    <div id="async-games" class="async-list"></div>
                 </section>
-                <section class="lobby-section">
-                    <div class="section-header">
-                        <h2 class="section-title" data-i18n="async.new">Új levelezős játék</h2>
-                    </div>
-                    <div class="create-room-form">
-                        <div class="form-group">
-                            <label for="async-name" class="form-label" data-i18n="create.room_name">Szoba neve</label>
-                            <input type="text" id="async-name" class="form-input" maxlength="30" placeholder="Levelezős játék" data-i18n-placeholder="async.name_placeholder">
-                        </div>
-                        <div class="form-group">
-                            <label for="async-hours" class="form-label" data-i18n="async.hours_label">Gondolkodási idő lépésenként</label>
-                            <select id="async-hours" class="form-select">
-                                <option value="24" data-i18n="async.hours_24">24 óra</option>
-                                <option value="48" selected data-i18n="async.hours_48">48 óra</option>
-                                <option value="72" data-i18n="async.hours_72">72 óra</option>
-                                <option value="168" data-i18n="async.hours_168">7 nap</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <span class="form-label" data-i18n="async.friends_label">Játékosok (1–3 barát)</span>
-                            <div id="async-friends" class="friend-check-list"></div>
-                        </div>
-                        <button id="btn-async-create" type="button" data-i18n="async.create">Játék indítása</button>
-                    </div>
-                </section>
+                <p class="form-hint async-footnote" data-i18n="async.intro">Barátaiddal órák vagy napok alatt lépkedtek: a játék közben bezárhatod az alkalmazást, és értesítést kapsz, ha rád kerül a sor.</p>
             </div>
 
-            <!-- TAB: Gyakorlás (napi feladvány, szókvíz, rövid szavak) -->
+            <!-- TAB: Gyakorlás (főoldal + al-nézetek: kvíz, betűvadász, bingó, szólisták, napi ranglista) -->
             <div class="lobby-tab-panel" id="lobby-panel-practice">
-                <section class="lobby-section" id="daily-section">
-                    <div class="section-header">
-                        <h2 class="section-title" data-i18n="daily.title">Napi feladvány</h2>
-                    </div>
-                    <p class="form-hint" data-i18n="daily.intro">Naponta egy közös táblaállás és betűkészlet mindenkinek: keresd meg a legtöbb pontot érő lépést!</p>
-                    <div class="daily-card">
+
+                <!-- Főoldal -->
+                <div class="practice-view active" id="practice-hub" data-view="hub">
+                    <section class="practice-hero">
+                        <h2 class="section-title" data-i18n="practice.title">Gyakorlás</h2>
+                        <p class="section-sub" data-i18n="practice.subtitle">Rövid feladatok, amelyek a játékban is megtérülnek.</p>
+                        <div class="practice-stats" id="practice-stats">
+                            <div class="practice-stat">
+                                <span class="practice-stat-value" id="pstat-streak">0</span>
+                                <span class="practice-stat-label" data-i18n="practice.stat_streak">napos sorozat</span>
+                            </div>
+                            <div class="practice-stat">
+                                <span class="practice-stat-value" id="pstat-today">0</span>
+                                <span class="practice-stat-label" data-i18n="practice.stat_today">mai gyakorlat</span>
+                            </div>
+                            <div class="practice-stat">
+                                <span class="practice-stat-value" id="pstat-accuracy">–</span>
+                                <span class="practice-stat-label" data-i18n="practice.stat_accuracy">kvíz-pontosság</span>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Napi feladvány -->
+                    <section class="daily-feature" id="daily-section">
+                        <div class="daily-feature-head">
+                            <span class="practice-icon tone-gold"><svg class="icon"><use href="#i-calendar"/></svg></span>
+                            <div class="daily-feature-text">
+                                <h3 class="practice-item-title" data-i18n="daily.title">Napi feladvány</h3>
+                                <p class="practice-item-desc" data-i18n="daily.intro_short">Mindenkinek ugyanaz a tábla és betűkészlet: keresd meg a legtöbb pontot érő lépést!</p>
+                            </div>
+                        </div>
                         <div id="daily-status" class="daily-status"></div>
-                        <button id="btn-daily-start" type="button" data-i18n="daily.start">Feladvány megnyitása</button>
-                    </div>
-                    <p id="daily-yesterday" class="form-hint hidden"></p>
-                    <h3 class="panel-heading" data-i18n="daily.leaderboard">Mai ranglista</h3>
-                    <div id="daily-leaderboard" class="leaderboard-list">
-                        <div class="empty-state">
-                            <p class="empty-msg" data-i18n="daily.empty">Még senki nem küldött be megoldást ma.</p>
+                        <div class="daily-feature-actions">
+                            <button id="btn-daily-start" type="button" data-i18n="daily.start">Feladvány megnyitása</button>
+                            <button id="btn-daily-board" class="secondary" type="button" data-i18n="lobby.tab_leaderboard">Ranglista</button>
                         </div>
-                    </div>
-                </section>
+                    </section>
 
-                <!-- Szókvíz: melyik szó érvényes? -->
-                <section class="lobby-section" id="quiz-section">
-                    <div class="section-header">
-                        <h2 class="section-title" data-i18n="quiz.title">Szókvíz</h2>
+                    <h3 class="practice-group-title" data-i18n="practice.modes">Gyakorló módok</h3>
+                    <div class="practice-menu">
+                        <button class="practice-item" type="button" data-practice-open="quiz">
+                            <span class="practice-icon tone-blue"><svg class="icon"><use href="#i-help"/></svg></span>
+                            <span class="practice-item-body">
+                                <span class="practice-item-title" data-i18n="quiz.title">Szókvíz</span>
+                                <span class="practice-item-desc" data-i18n="quiz.desc">Érvényes vagy sem? Döntsd el másodpercek alatt.</span>
+                                <span class="practice-item-meta" id="pmeta-quiz"></span>
+                            </span>
+                            <svg class="icon chevron"><use href="#i-chevron"/></svg>
+                        </button>
+                        <button class="practice-item" type="button" data-practice-open="hunt">
+                            <span class="practice-icon tone-orange"><svg class="icon"><use href="#i-shuffle"/></svg></span>
+                            <span class="practice-item-body">
+                                <span class="practice-item-title" data-i18n="hunt.title">Betűvadász</span>
+                                <span class="practice-item-desc" data-i18n="hunt.desc">Építs minél több szót a hét zsetonodból.</span>
+                                <span class="practice-item-meta" id="pmeta-hunt"></span>
+                            </span>
+                            <svg class="icon chevron"><use href="#i-chevron"/></svg>
+                        </button>
+                        <button class="practice-item" type="button" data-practice-open="bingo">
+                            <span class="practice-icon tone-purple"><svg class="icon"><use href="#i-target"/></svg></span>
+                            <span class="practice-item-body">
+                                <span class="practice-item-title" data-i18n="bingo.title">Bingó-edző</span>
+                                <span class="practice-item-desc" data-i18n="bingo.desc">Találd meg azt az egy szót, amely mind a hét zsetont felhasználja.</span>
+                                <span class="practice-item-meta" id="pmeta-bingo"></span>
+                            </span>
+                            <svg class="icon chevron"><use href="#i-chevron"/></svg>
+                        </button>
+                        <button class="practice-item" type="button" data-practice-open="mistakes" id="practice-mistakes-item">
+                            <span class="practice-icon tone-red"><svg class="icon"><use href="#i-repeat"/></svg></span>
+                            <span class="practice-item-body">
+                                <span class="practice-item-title" data-i18n="mistakes.title">Hibáim</span>
+                                <span class="practice-item-desc" data-i18n="mistakes.desc">Újra a szavak, amelyeket a kvízben eltévesztettél.</span>
+                                <span class="practice-item-meta" id="pmeta-mistakes"></span>
+                            </span>
+                            <svg class="icon chevron"><use href="#i-chevron"/></svg>
+                        </button>
+                        <button class="practice-item" type="button" data-practice-open="lists">
+                            <span class="practice-icon tone-green"><svg class="icon"><use href="#i-list"/></svg></span>
+                            <span class="practice-item-body">
+                                <span class="practice-item-title" data-i18n="lists.title">Szólisták</span>
+                                <span class="practice-item-desc" data-i18n="lists.desc">A két- és háromzsetonos szavak, és a zsetonok értéke.</span>
+                            </span>
+                            <svg class="icon chevron"><use href="#i-chevron"/></svg>
+                        </button>
                     </div>
-                    <p class="form-hint" data-i18n="quiz.intro">Melyik szó érvényes a játékban? Tíz kérdés, a szótár dönt.</p>
-                    <div class="segmented" id="quiz-modes" role="tablist" aria-label="Szóhossz" data-i18n-aria="quiz.modes_label">
-                        <button class="segment quiz-mode active" data-mode="mixed" type="button" data-i18n="quiz.mode_mixed">Vegyes szavak</button>
-                        <button class="segment quiz-mode" data-mode="2" type="button" data-i18n="quiz.mode_2">Kétzsetonos</button>
-                        <button class="segment quiz-mode" data-mode="3" type="button" data-i18n="quiz.mode_3">Háromzsetonos</button>
+                </div>
+
+                <!-- Szókvíz -->
+                <div class="practice-view" id="practice-quiz" data-view="quiz">
+                    <div class="pview-header">
+                        <button class="pview-back" type="button" data-practice-back aria-label="Vissza" data-i18n-title="common.back">
+                            <svg class="icon"><use href="#i-back"/></svg>
+                            <span data-i18n="practice.title">Gyakorlás</span>
+                        </button>
+                        <h2 class="pview-title" id="quiz-heading" data-i18n="quiz.title">Szókvíz</h2>
+                        <span class="pview-spacer"></span>
                     </div>
-                    <div class="quiz-start-row">
-                        <button id="btn-quiz-start" type="button" data-i18n="quiz.start">Kvíz indítása</button>
-                    </div>
-                    <div id="quiz-play" class="quiz-play hidden">
-                        <div id="quiz-progress" class="quiz-progress"></div>
-                        <div id="quiz-word" class="quiz-word"></div>
+
+                    <!-- Beállítás -->
+                    <section class="pview-card" id="quiz-setup">
+                        <p class="form-hint" data-i18n="quiz.intro">Mutatunk egy szót: a szótár szerint érvényes a játékban, vagy nem? A hibás válaszoknál megtudod, miért.</p>
+                        <span class="form-label" id="quiz-mode-label" data-i18n="quiz.mode_label">Mit gyakorolsz?</span>
+                        <div class="choice-grid" id="quiz-modes" role="radiogroup" aria-labelledby="quiz-mode-label">
+                            <button class="choice active" type="button" role="radio" data-mode="mixed">
+                                <span class="choice-title" data-i18n="quiz.mode_mixed">Vegyes szavak</span>
+                                <span class="choice-sub" data-i18n="quiz.mode_mixed_sub">3–9 zsetonos, ragozott alakokkal</span>
+                            </button>
+                            <button class="choice" type="button" role="radio" data-mode="tricky">
+                                <span class="choice-title" data-i18n="quiz.mode_tricky">Hosszú–rövid csapdák</span>
+                                <span class="choice-sub" data-i18n="quiz.mode_tricky_sub">a↔á, o↔ó, ö↔ő, u↔ú…</span>
+                            </button>
+                            <button class="choice" type="button" role="radio" data-mode="2">
+                                <span class="choice-title" data-i18n="quiz.mode_2">Kétzsetonos</span>
+                                <span class="choice-sub" data-i18n="quiz.mode_2_sub">a legfontosabb rövid szavak</span>
+                            </button>
+                            <button class="choice" type="button" role="radio" data-mode="3">
+                                <span class="choice-title" data-i18n="quiz.mode_3">Háromzsetonos</span>
+                                <span class="choice-sub" data-i18n="quiz.mode_3_sub">a zsúfolt tábla fegyverei</span>
+                            </button>
+                        </div>
+                        <span class="form-label" id="quiz-count-label" data-i18n="quiz.count_label">Kérdések száma</span>
+                        <div class="segmented" id="quiz-counts" role="radiogroup" aria-labelledby="quiz-count-label">
+                            <button class="segment active" type="button" role="radio" data-count="10">10</button>
+                            <button class="segment" type="button" role="radio" data-count="20">20</button>
+                        </div>
+                        <button id="btn-quiz-start" class="btn-block" type="button" data-i18n="quiz.start">Kvíz indítása</button>
+                    </section>
+
+                    <!-- Játék -->
+                    <section class="pview-card quiz-play hidden" id="quiz-play">
+                        <div class="quiz-top">
+                            <div class="quiz-bar" aria-hidden="true"><span id="quiz-bar-fill"></span></div>
+                            <div class="quiz-meta">
+                                <span id="quiz-progress"></span>
+                                <span class="quiz-streak" id="quiz-streak"><svg class="icon"><use href="#i-zap"/></svg><b id="quiz-streak-count">0</b></span>
+                            </div>
+                        </div>
+                        <div id="quiz-word" class="word-tiles" aria-live="polite"></div>
                         <div class="quiz-buttons">
-                            <button id="btn-quiz-valid" class="btn-accept" type="button" data-i18n="quiz.valid">Érvényes</button>
-                            <button id="btn-quiz-invalid" class="btn-challenge" type="button" data-i18n="quiz.invalid">Nem érvényes</button>
+                            <button id="btn-quiz-invalid" class="answer-btn answer-no" type="button">
+                                <svg class="icon"><use href="#i-x-circle"/></svg>
+                                <span data-i18n="quiz.invalid">Nem érvényes</span>
+                                <kbd>←</kbd>
+                            </button>
+                            <button id="btn-quiz-valid" class="answer-btn answer-yes" type="button">
+                                <svg class="icon"><use href="#i-check-circle"/></svg>
+                                <span data-i18n="quiz.valid">Érvényes</span>
+                                <kbd>→</kbd>
+                            </button>
                         </div>
-                        <div id="quiz-feedback" class="quiz-feedback" aria-live="polite"></div>
-                        <button id="btn-quiz-next" class="secondary hidden" type="button" data-i18n="quiz.next">Következő</button>
-                    </div>
-                    <div id="quiz-result" class="quiz-result hidden"></div>
-                </section>
+                        <div id="quiz-feedback" class="quiz-feedback hidden" aria-live="polite"></div>
+                        <button id="btn-quiz-next" class="btn-block hidden" type="button" data-i18n="quiz.next">Következő</button>
+                    </section>
 
-                <!-- Rövid szavak -->
-                <section class="lobby-section" id="shortwords-section">
-                    <div class="section-header">
-                        <h2 class="section-title" data-i18n="short.title">Rövid szavak</h2>
+                    <!-- Eredmény -->
+                    <section class="pview-card quiz-result hidden" id="quiz-result"></section>
+                </div>
+
+                <!-- Betűvadász és bingó-edző (közös nézet) -->
+                <div class="practice-view" id="practice-hunt" data-view="hunt">
+                    <div class="pview-header">
+                        <button class="pview-back" type="button" data-practice-back aria-label="Vissza" data-i18n-title="common.back">
+                            <svg class="icon"><use href="#i-back"/></svg>
+                            <span data-i18n="practice.title">Gyakorlás</span>
+                        </button>
+                        <h2 class="pview-title" id="hunt-heading"></h2>
+                        <span class="pview-spacer"></span>
                     </div>
-                    <p class="form-hint" data-i18n="short.intro">A két- és háromzsetonos szavak a Scrabble legfontosabb fegyverei: ezekkel zsúfolt táblán is lehet pontot szerezni.</p>
-                    <div class="segmented" id="short-lengths" role="tablist" aria-label="Szóhossz" data-i18n-aria="quiz.modes_label">
-                        <button class="segment short-len active" data-length="2" type="button" data-i18n="quiz.mode_2">Kétzsetonos</button>
-                        <button class="segment short-len" data-length="3" type="button" data-i18n="quiz.mode_3">Háromzsetonos</button>
+
+                    <!-- Beállítás -->
+                    <section class="pview-card" id="hunt-setup">
+                        <p class="form-hint" id="hunt-intro"></p>
+                        <div id="hunt-timer-group">
+                            <span class="form-label" id="hunt-timer-label" data-i18n="hunt.timer_label">Időkorlát</span>
+                            <div class="segmented" id="hunt-timers" role="radiogroup" aria-labelledby="hunt-timer-label">
+                                <button class="segment active" type="button" role="radio" data-seconds="0" data-i18n="hunt.timer_none">Nincs</button>
+                                <button class="segment" type="button" role="radio" data-seconds="60" data-i18n="hunt.timer_60">60 mp</button>
+                                <button class="segment" type="button" role="radio" data-seconds="120" data-i18n="hunt.timer_120">2 perc</button>
+                            </div>
+                        </div>
+                        <div class="hunt-record" id="hunt-record"></div>
+                        <button id="btn-hunt-start" class="btn-block" type="button" data-i18n="hunt.start">Indítás</button>
+                    </section>
+
+                    <!-- Játék -->
+                    <section class="pview-card hunt-play hidden" id="hunt-play">
+                        <div class="hunt-stats">
+                            <div class="hunt-stat"><span class="hunt-stat-value" id="hunt-score">0</span><span class="hunt-stat-label" data-i18n="hunt.score">pont</span></div>
+                            <div class="hunt-stat"><span class="hunt-stat-value" id="hunt-found">0/0</span><span class="hunt-stat-label" data-i18n="hunt.found">szó</span></div>
+                            <div class="hunt-stat" id="hunt-clock-box"><span class="hunt-stat-value" id="hunt-clock">0:00</span><span class="hunt-stat-label" data-i18n="hunt.time">idő</span></div>
+                            <div class="hunt-stat hidden" id="hunt-streak-box"><span class="hunt-stat-value" id="hunt-streak">0</span><span class="hunt-stat-label" data-i18n="bingo.streak">sorozat</span></div>
+                        </div>
+                        <div class="hunt-line" id="hunt-line" aria-label="Szó" data-i18n-aria="hunt.word_aria"></div>
+                        <div class="hunt-msg" id="hunt-msg" aria-live="polite"></div>
+                        <div class="hunt-rack" id="hunt-rack"></div>
+                        <div class="hunt-actions">
+                            <button id="btn-hunt-clear" class="secondary" type="button" aria-label="Törlés" data-i18n-title="hunt.clear">
+                                <svg class="icon"><use href="#i-backspace"/></svg>
+                            </button>
+                            <button id="btn-hunt-shuffle" class="secondary" type="button" aria-label="Keverés" data-i18n-title="hunt.shuffle">
+                                <svg class="icon"><use href="#i-shuffle"/></svg>
+                            </button>
+                            <button id="btn-hunt-submit" type="button">
+                                <svg class="icon"><use href="#i-check"/></svg>
+                                <span data-i18n="hunt.submit">Beküld</span>
+                            </button>
+                        </div>
+                        <div class="hunt-tools">
+                            <button id="btn-hunt-hint" class="tinted small-btn" type="button">
+                                <svg class="icon"><use href="#i-bulb"/></svg>
+                                <span data-i18n="hunt.hint">Tipp</span>
+                            </button>
+                            <button id="btn-hunt-finish" class="secondary small-btn" type="button" data-i18n="hunt.finish">Befejezés</button>
+                        </div>
+                        <div id="hunt-hint" class="hunt-hint hidden"></div>
+                        <div class="hunt-progress" id="hunt-progress"></div>
+                        <div class="hunt-words" id="hunt-words"></div>
+                    </section>
+
+                    <!-- Eredmény -->
+                    <section class="pview-card hunt-result hidden" id="hunt-result"></section>
+                </div>
+
+                <!-- Szólisták -->
+                <div class="practice-view" id="practice-lists" data-view="lists">
+                    <div class="pview-header">
+                        <button class="pview-back" type="button" data-practice-back aria-label="Vissza" data-i18n-title="common.back">
+                            <svg class="icon"><use href="#i-back"/></svg>
+                            <span data-i18n="practice.title">Gyakorlás</span>
+                        </button>
+                        <h2 class="pview-title" data-i18n="lists.title">Szólisták</h2>
+                        <span class="pview-spacer"></span>
                     </div>
-                    <p class="form-hint" id="short-count"></p>
-                    <div id="short-words" class="short-words"></div>
-                </section>
+                    <section class="pview-card">
+                        <div class="segmented" id="list-kinds" role="tablist" aria-label="Lista" data-i18n-aria="lists.kind_label">
+                            <button class="segment active" type="button" role="tab" data-kind="2" data-i18n="lists.kind_2">2 zseton</button>
+                            <button class="segment" type="button" role="tab" data-kind="3" data-i18n="lists.kind_3">3 zseton</button>
+                            <button class="segment" type="button" role="tab" data-kind="tiles" data-i18n="lists.kind_tiles">Zsetonok</button>
+                        </div>
+
+                        <div id="list-words-panel">
+                            <p class="form-hint" id="list-intro"></p>
+                            <div class="search-field">
+                                <svg class="icon"><use href="#i-search"/></svg>
+                                <input type="search" id="list-search" placeholder="Keresés (pl. SZ, ÖN…)" data-i18n-placeholder="lists.search" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" maxlength="6">
+                            </div>
+                            <div class="chip-row" id="list-letters" role="group" aria-label="Kezdőbetű" data-i18n-aria="lists.letter_label"></div>
+                            <div class="list-toolbar">
+                                <span class="list-count" id="list-count"></span>
+                                <div class="segmented segmented-small" id="list-sorts" role="radiogroup" aria-label="Rendezés" data-i18n-aria="lists.sort_label">
+                                    <button class="segment active" type="button" role="radio" data-sort="abc" data-i18n="lists.sort_abc">ABC</button>
+                                    <button class="segment" type="button" role="radio" data-sort="score" data-i18n="lists.sort_score">Pont</button>
+                                </div>
+                            </div>
+                            <div class="list-words" id="list-words"></div>
+                        </div>
+
+                        <div id="list-tiles-panel" class="hidden">
+                            <p class="form-hint" id="tiles-intro"></p>
+                            <div id="tiles-table" class="tiles-table"></div>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- Napi ranglista -->
+                <div class="practice-view" id="practice-daily" data-view="daily">
+                    <div class="pview-header">
+                        <button class="pview-back" type="button" data-practice-back aria-label="Vissza" data-i18n-title="common.back">
+                            <svg class="icon"><use href="#i-back"/></svg>
+                            <span data-i18n="practice.title">Gyakorlás</span>
+                        </button>
+                        <h2 class="pview-title" data-i18n="daily.leaderboard">Mai ranglista</h2>
+                        <span class="pview-spacer"></span>
+                    </div>
+                    <section class="pview-card">
+                        <p id="daily-yesterday" class="form-hint hidden"></p>
+                        <div id="daily-leaderboard" class="leaderboard-list">
+                            <div class="empty-state">
+                                <p class="empty-msg" data-i18n="daily.empty">Még senki nem küldött be megoldást ma.</p>
+                            </div>
+                        </div>
+                    </section>
+                </div>
             </div>
 
             <!-- TAB 5: Ranglista -->
@@ -969,6 +1190,42 @@
                 </label>
             </div>
             <div id="sound-toggles" class="sound-toggles"></div>
+        </div>
+    </div>
+
+    <!-- Új levelezős játék (alsó lap telefonon) -->
+    <div id="async-new-dialog" class="dialog dialog-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="async-new-title">
+        <div class="dialog-content async-new-content">
+            <div class="sound-settings-header">
+                <h3 id="async-new-title" data-i18n="async.new">Új levelezős játék</h3>
+                <button id="btn-close-async-new" class="topbar-btn" type="button" aria-label="Bezárás" data-i18n-title="common.close">
+                    <svg class="icon"><use href="#i-close"/></svg>
+                </button>
+            </div>
+            <div class="sheet-body">
+                <div class="form-group">
+                    <label for="async-name" class="form-label" data-i18n="create.room_name">Szoba neve</label>
+                    <input type="text" id="async-name" class="form-input" maxlength="30" placeholder="Levelezős játék" data-i18n-placeholder="async.name_placeholder" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <span class="form-label" id="async-hours-label" data-i18n="async.hours_label">Gondolkodási idő lépésenként</span>
+                    <div class="segmented" id="async-hours" role="radiogroup" aria-labelledby="async-hours-label">
+                        <button class="segment" type="button" role="radio" data-hours="24" data-i18n="async.hours_24">24 ó</button>
+                        <button class="segment active" type="button" role="radio" data-hours="48" data-i18n="async.hours_48">48 ó</button>
+                        <button class="segment" type="button" role="radio" data-hours="72" data-i18n="async.hours_72">3 nap</button>
+                        <button class="segment" type="button" role="radio" data-hours="168" data-i18n="async.hours_168">7 nap</button>
+                    </div>
+                    <p class="form-hint form-hint-tight" data-i18n="async.hours_hint">Ha a határidőig nem lépsz, a kör kimarad; három kimaradt kör után a játék feladásnak számít.</p>
+                </div>
+                <div class="form-group">
+                    <div class="form-label-row">
+                        <span class="form-label" data-i18n="async.friends_label">Játékosok (1–3 barát)</span>
+                        <span class="form-label-meta" id="async-friends-count">0/3</span>
+                    </div>
+                    <div id="async-friends" class="pick-list"></div>
+                </div>
+            </div>
+            <button id="btn-async-create" class="btn-block" type="button" data-i18n="async.create" disabled>Játék indítása</button>
         </div>
     </div>
 

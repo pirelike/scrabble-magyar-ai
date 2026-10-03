@@ -40,7 +40,8 @@ def _ui_keys(translations):
 
 
 # Dinamikusan összerakott kulcscsaládok (a kódban `t('előtag.' + ...)` formában szerepelnek)
-_DYNAMIC_PREFIXES = ('ai.', 'history.', 'dict.reason_', 'sound.cat_', 'board.', 'last.vote_', 'badge.')
+_DYNAMIC_PREFIXES = ('ai.', 'history.', 'dict.reason_', 'sound.cat_', 'board.', 'last.vote_', 'badge.',
+                     'hunt.reason_', 'hunt.rank_')
 
 
 class TestDataFile:
@@ -71,7 +72,7 @@ class TestDataFile:
         # a nyelvfüggetlen szavak kivételével az angol szöveg nem lehet magyar másolat
         same = [k for k in _ui_keys(data['hu']) if data['hu'][k] == data['en'][k]]
         allowed = {'game.chat', 'game.offline', 'history.vs', 'sound.max', 'create.ai_1',
-                   'room.badge_bots_one', 'create.limit_none'}
+                   'room.badge_bots_one', 'create.limit_none', 'quiz.progress'}
         assert not [k for k in same if k not in allowed and len(data['hu'][k]) > 12], same
 
     def test_file_is_loadable_by_the_browser(self):
@@ -99,6 +100,10 @@ class TestKeyUsage:
             assert f'history.{kind}' in data['en']
         for reason in ('not_in_dictionary', 'invalid_chars', 'too_long', 'too_short'):
             assert f'dict.reason_{reason}' in data['en']
+        for reason in ('too_short', 'invalid_chars', 'not_in_rack', 'not_a_word'):   # practice.check_rack_word
+            assert f'hunt.reason_{reason}' in data['en'] and f'hunt.reason_{reason}' in data['hu']
+        for rank in ('master', 'advanced', 'solid', 'beginner'):
+            assert f'hunt.rank_{rank}' in data['en'] and f'hunt.rank_{rank}' in data['hu']
         for cat in ('tile_place', 'vote', 'challenge_result', 'your_turn', 'chat', 'game_events'):
             assert f'sound.cat_{cat}' in data['en'] and f'sound.cat_{cat}_desc' in data['en']
         for prefix in ('dl', 'tl', 'dw', 'tw'):
@@ -389,7 +394,8 @@ class TestClientTranslator:
                                          'player', 'room', 'word', 'total', 'bag', 'hands',
                                          'vowels', 'consonants', 'blanks', 'played', 'won', 'rate',
                                          'rating', 'change', 'done', 'lost', 'missed', 'optimal', 'turns',
-                                         'rank', 'best', 'date', 'correct', 'd', 'h', 'm', 'time', 'room')}
+                                         'rank', 'best', 'date', 'correct', 'd', 'h', 'm', 'time', 'room',
+                                         'letters', 'len', 'got', 'tiles', 'pct', 'solved', 'streak')}
         for key in keys:
             cases.append({'op': 't', 'key': key, 'params': params})
         for lang in ('hu', 'en'):

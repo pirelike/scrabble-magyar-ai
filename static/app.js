@@ -714,6 +714,7 @@ const Lobby = {
         document.querySelectorAll('.lobby-nav-tab').forEach(t => t.classList.remove('active'));
         const activeTab = document.querySelector(`.lobby-nav-tab[data-lobby-tab="${tabId}"]`);
         if (activeTab) activeTab.classList.add('active');
+        LobbyNav.reveal(activeTab);
 
         // Update panels
         document.querySelectorAll('.lobby-tab-panel').forEach(p => p.classList.remove('active'));
@@ -3316,15 +3317,136 @@ const Daily = {
     },
 };
 
+// ===== KÖZÖS SEGÉDEK (levelezős és gyakorló nézetek) =====
+
+// DOM elem egy sorban: makeEl('div', 'osztály', 'szöveg')
+function makeEl(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined && text !== null) node.textContent = text;
+    return node;
+}
+
+function makeIcon(name) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'icon');
+    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', '#i-' + name);
+    svg.appendChild(use);
+    return svg;
+}
+
+const AVATAR_COLORS = ['#0a84ff', '#30b0c7', '#34c759', '#ff9f0a', '#ff6b4a', '#ff375f', '#bf5af2', '#7d7aff'];
+
+// Kerek monogram a névből (a szín a névből képzett, tehát mindig ugyanaz)
+function makeAvatar(name, online) {
+    const av = makeEl('span', 'avatar', Array.from(name || '?')[0] || '?');
+    let hash = 2166136261;                       // FNV-1a: a hasonló nevek is eltérő színt kapnak
+    for (const ch of name || '') hash = Math.imul(hash ^ ch.codePointAt(0), 16777619) >>> 0;
+    av.style.setProperty('--av', AVATAR_COLORS[hash % AVATAR_COLORS.length]);
+    if (online !== undefined) av.appendChild(makeEl('span', 'status-dot' + (online ? ' online' : '')));
+    return av;
+}
+
+function shuffled(list) {
+    const copy = list.slice();
+    for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+}
+
+function formatClock(totalSeconds) {
+    const s = Math.max(0, Math.round(totalSeconds));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+// A magyar ábécé sorrendje (a kétjegyű betűk külön betűk): a szólisták rendezéséhez
+const HU_ALPHABET = ['A', 'Á', 'B', 'C', 'CS', 'D', 'E', 'É', 'F', 'G', 'GY', 'H', 'I', 'Í', 'J', 'K', 'L', 'LY',
+    'M', 'N', 'NY', 'O', 'Ó', 'Ö', 'Ő', 'P', 'R', 'S', 'SZ', 'T', 'TY', 'U', 'Ú', 'Ü', 'Ű', 'V', 'Z', 'ZS'];
+const HU_ORDER = Object.fromEntries(HU_ALPHABET.map((letter, i) => [letter, i]));
+
+// Szó zsetonokra bontása (a szerver `tokenize_word`-jének mása: a kétjegyű betű egy zseton; a kevesebb
+// zsetont használó felbontás nyer, egyenlőségnél a több pontot érő — pl. KÉSZSÉG = K É S ZS É G)
+function tokenizeWord(word) {
+    const upper = word.toUpperCase();
+    const n = upper.length;
+    const best = new Array(n + 1).fill(null);       // best[i]: a upper[:i] legjobb felbontása
+    best[0] = { count: 0, negScore: 0, parts: [] };
+    for (let i = 0; i < n; i++) {
+        if (!best[i]) continue;
+        for (const size of [1, 2]) {
+            const piece = upper.slice(i, i + size);
+            if (piece.length !== size || !(piece in TILE_VALUES)) continue;
+            const candidate = {
+                count: best[i].count + 1,
+                negScore: best[i].negScore - TILE_VALUES[piece],
+                parts: best[i].parts.concat(piece),
+            };
+            const current = best[i + size];
+            if (!current || candidate.count < current.count
+                || (candidate.count === current.count && candidate.negScore < current.negScore)) {
+                best[i + size] = candidate;
+            }
+        }
+    }
+    return best[n] ? best[n].parts : null;
+}
+
+function compareWords(a, b) {
+    const ta = tokenizeWord(a) || [a];
+    const tb = tokenizeWord(b) || [b];
+    for (let i = 0; i < Math.min(ta.length, tb.length); i++) {
+        if (ta[i] !== tb[i]) return (HU_ORDER[ta[i]] ?? 99) - (HU_ORDER[tb[i]] ?? 99);
+    }
+    return ta.length - tb.length;
+}
+
+// Szó megjelenítése játékbeli zsetonokkal: <div class="word-tiles"> .qtile * n
+function fillWordTiles(box, tiles, state) {
+    box.replaceChildren();
+    box.style.setProperty('--n', Math.max(tiles.length, 3));
+    box.classList.toggle('is-right', state === 'right');
+    box.classList.toggle('is-wrong', state === 'wrong');
+    tiles.forEach((tile, i) => {
+        const node = makeEl('span', 'qtile', tile);
+        node.style.setProperty('--i', i);
+        node.appendChild(makeEl('small', null, TILE_VALUES[tile] ?? 0));
+        box.appendChild(node);
+    });
+}
+
+function wordChip(word, score, extraClass) {
+    const chip = makeEl('span', 'word-chip' + (extraClass ? ' ' + extraClass : ''), word);
+    if (score !== undefined && score !== null) chip.appendChild(makeEl('small', null, score));
+    return chip;
+}
+
+function localDateKey(date = new Date()) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+
 // ===== LEVELEZŐS JÁTÉKOK =====
 // Órák / napok alatt lépő játék barátokkal: a lobby listája a folyamatban lévő játékokat mutatja
 // (akinél a sor, az elöl), a játékban a határidő látszik; a szerver értesít, ha rád kerül a sor.
+// Új játékot alsó lapon (telefonon) lehet indítani: név, gondolkodási idő, 1–3 barát.
 
 const AsyncGames = {
     games: [],
+    hours: 48,
+    selected: new Set(),
+    MAX_FRIENDS: 3,
 
     init() {
+        document.getElementById('btn-async-new').addEventListener('click', () => this.openNew());
+        document.getElementById('btn-close-async-new').addEventListener('click', () => this.closeNew());
         document.getElementById('btn-async-create').addEventListener('click', () => this.create());
+        document.querySelectorAll('#async-hours .segment').forEach(btn => btn.addEventListener('click', () => {
+            this.hours = Number(btn.dataset.hours);
+            this._syncHours();
+        }));
         socket.on('async_your_turn', (data) => {
             showMessage(t('async.your_turn_toast', { room: data.room_name }), false, 6000);
             SoundManager.play('your_turn');
@@ -3339,12 +3461,15 @@ const AsyncGames = {
             this.renderFriends();
             if (AppState.gameState) this.onGameState(AppState.gameState);
         });
-        setInterval(() => { if (AppState.gameState) this.updateDeadline(AppState.gameState); }, 30000);
+        setInterval(() => {
+            if (AppState.gameState) this.updateDeadline(AppState.gameState);
+            if (document.getElementById('lobby-panel-async').classList.contains('active')) this.render(this.games);
+        }, 30000);
     },
 
     onShow() {
         this.load();
-        Friends.load().then(() => this.renderFriends()).catch(() => this.renderFriends());
+        this.render(this.games);
     },
 
     async load() {
@@ -3376,78 +3501,134 @@ const AsyncGames = {
         return t('async.remaining_hours', { h: hours, m: minutes });
     },
 
+    // --- Lista ---
+
     render(games) {
         const box = document.getElementById('async-games');
         box.replaceChildren();
+        const my = games.filter(g => g.my_turn).length;
+        document.getElementById('async-summary').textContent = !games.length ? '' :
+            t('async.summary', { n: games.length }) + (my ? ' · ' + t('async.summary_my', { n: my }) : '');
         if (!games.length) {
-            box.innerHTML = emptyStateHtml(t('async.empty'));
+            box.appendChild(this._emptyState());
             return;
         }
-        for (const game of games) {
-            const card = document.createElement('div');
-            card.className = 'room-card' + (game.my_turn ? ' room-card-rejoin' : '');
-            const info = document.createElement('div');
-            info.className = 'room-info';
-            const name = document.createElement('div');
-            name.className = 'room-name';
-            name.textContent = game.room_name;
-            const details = document.createElement('div');
-            details.className = 'room-details';
-            details.textContent = game.players.map(p => `${p.name} ${p.score}`).join(' · ');
-            const status = document.createElement('div');
-            status.className = 'room-details async-status' + (game.my_turn ? ' my-turn' : '');
-            status.textContent = game.my_turn
-                ? t('async.your_turn') + (game.turn_deadline ? ' · ' + this.formatRemaining(game.turn_deadline) : '')
-                : t('async.waiting_for', { name: game.current_player || '?' });
-            info.appendChild(name);
-            info.appendChild(details);
-            info.appendChild(status);
-            card.appendChild(info);
-            const btn = document.createElement('button');
-            btn.className = 'btn-join';
-            btn.textContent = t('async.open');
-            btn.addEventListener('click', () => socket.emit('open_async_game', { game_id: game.game_id }));
-            card.appendChild(btn);
-            box.appendChild(card);
-        }
+        for (const game of games) box.appendChild(this._card(game));
     },
 
-    // --- Új játék ---
+    _emptyState() {
+        const empty = makeEl('div', 'async-empty');
+        const icon = makeEl('div', 'async-empty-icon');
+        icon.appendChild(makeIcon('mail'));
+        const cta = makeEl('button', null, t('async.start_first'));
+        cta.type = 'button';
+        cta.addEventListener('click', () => this.openNew());
+        empty.append(icon, makeEl('h3', null, t('async.empty_title')), makeEl('p', null, t('async.empty')), cta);
+        return empty;
+    },
+
+    _card(game) {
+        const card = makeEl('button', 'async-card' + (game.my_turn ? ' is-my-turn' : ''));
+        card.type = 'button';
+        card.appendChild(makeAvatar(game.current_player || '?'));
+
+        const main = makeEl('div', 'async-card-main');
+        main.appendChild(makeEl('div', 'async-card-title', game.room_name));
+        main.appendChild(makeEl('div', 'async-card-scores', game.players.map(p => `${p.name} ${p.score}`).join(' · ')));
+
+        const status = makeEl('div', 'async-card-status');
+        status.appendChild(makeEl('span', 'async-pill',
+            game.my_turn ? t('async.your_turn') : t('async.waiting_for', { name: game.current_player || '?' })));
+        const total = (game.turn_hours || 0) * 3600;
+        const remaining = game.turn_deadline ? game.turn_deadline - Date.now() / 1000 : null;
+        const urgent = game.my_turn && remaining !== null && (remaining < 6 * 3600 || (total && remaining < total * 0.15));
+        if (remaining !== null) {
+            status.appendChild(makeEl('span', 'async-time' + (urgent || remaining <= 0 ? ' is-urgent' : ''),
+                remaining > 0 ? t('async.time_left', { time: this.formatRemaining(game.turn_deadline) }) : t('async.overdue')));
+        }
+        main.appendChild(status);
+        if (remaining !== null && total) {
+            const bar = makeEl('div', 'async-progress' + (urgent ? ' is-urgent' : ''));
+            const fill = makeEl('span');
+            fill.style.width = `${Math.max(0, Math.min(1, remaining / total)) * 100}%`;
+            bar.appendChild(fill);
+            main.appendChild(bar);
+        }
+        card.appendChild(main);
+        card.appendChild(makeIcon('chevron')).classList.add('chevron');
+        card.addEventListener('click', () => socket.emit('open_async_game', { game_id: game.game_id }));
+        return card;
+    },
+
+    // --- Új játék (alsó lap) ---
+
+    openNew() {
+        this.selected.clear();
+        this._syncHours();
+        this.renderFriends();
+        document.getElementById('async-new-dialog').classList.remove('hidden');
+        Friends.load().then(() => this.renderFriends()).catch(() => this.renderFriends());
+    },
+
+    closeNew() {
+        document.getElementById('async-new-dialog').classList.add('hidden');
+    },
+
+    _syncHours() {
+        document.querySelectorAll('#async-hours .segment').forEach(btn => {
+            const active = Number(btn.dataset.hours) === this.hours;
+            btn.classList.toggle('active', active);
+            btn.setAttribute('aria-checked', active ? 'true' : 'false');
+        });
+    },
 
     renderFriends() {
         const box = document.getElementById('async-friends');
-        const selected = new Set(this.selectedFriendIds());
         box.replaceChildren();
-        if (!Friends.friendsList.length) {
-            box.innerHTML = emptyStateHtml(t('async.no_friends'));
-            return;
+        const friends = Friends.friendsList;
+        // Már nem létező barát ne maradjon kijelölve
+        for (const id of Array.from(this.selected)) if (!friends.some(f => f.id === id)) this.selected.delete(id);
+        if (!friends.length) {
+            const empty = makeEl('div', 'pick-empty', t('async.no_friends'));
+            const go = makeEl('button', 'link-btn', t('async.open_friends'));
+            go.type = 'button';
+            go.addEventListener('click', () => { this.closeNew(); Lobby.switchTab('friends'); });
+            empty.appendChild(document.createElement('br'));
+            empty.appendChild(go);
+            box.appendChild(empty);
         }
-        for (const friend of Friends.friendsList) {
-            const label = document.createElement('label');
-            label.className = 'friend-check';
-            const input = document.createElement('input');
+        const full = this.selected.size >= this.MAX_FRIENDS;
+        for (const friend of friends) {
+            const picked = this.selected.has(friend.id);
+            const row = makeEl('label', 'pick-row' + (picked ? ' is-selected' : '') + (full && !picked ? ' is-locked' : ''));
+            const input = makeEl('input', 'sr-only');
             input.type = 'checkbox';
-            input.value = friend.id;
-            input.checked = selected.has(friend.id);
-            input.addEventListener('change', () => this._limitSelection(input));
-            const text = document.createElement('span');
-            text.textContent = friend.display_name;
-            label.appendChild(input);
-            label.appendChild(text);
-            box.appendChild(label);
+            input.checked = picked;
+            input.disabled = full && !picked;
+            input.addEventListener('change', () => this._toggle(friend.id, input.checked));
+            const check = makeEl('span', 'pick-check');
+            check.setAttribute('aria-hidden', 'true');
+            check.appendChild(makeIcon('check'));
+            row.append(input, makeAvatar(friend.display_name, !!friend.online),
+                makeEl('span', 'pick-name', friend.display_name), check);
+            box.appendChild(row);
         }
+        document.getElementById('async-friends-count').textContent = `${this.selected.size}/${this.MAX_FRIENDS}`;
+        document.getElementById('btn-async-create').disabled = this.selected.size === 0;
+    },
+
+    _toggle(id, on) {
+        if (on) {
+            if (this.selected.size >= this.MAX_FRIENDS) { showMessage(t('async.max_friends'), true); return; }
+            this.selected.add(id);
+        } else {
+            this.selected.delete(id);
+        }
+        this.renderFriends();
     },
 
     selectedFriendIds() {
-        return Array.from(document.querySelectorAll('#async-friends input:checked')).map(i => Number(i.value));
-    },
-
-    // Legfeljebb három barát választható (a játékban legfeljebb négyen vannak)
-    _limitSelection(changed) {
-        if (this.selectedFriendIds().length > 3) {
-            changed.checked = false;
-            showMessage(t('async.max_friends'), true);
-        }
+        return Array.from(this.selected);
     },
 
     create() {
@@ -3457,8 +3638,9 @@ const AsyncGames = {
             return;
         }
         const name = document.getElementById('async-name').value.trim() || t('async.name_placeholder');
-        const hours = Number(document.getElementById('async-hours').value);
-        socket.emit('create_async_game', { name, friend_ids: friendIds, turn_hours: hours });
+        socket.emit('create_async_game', { name, friend_ids: friendIds, turn_hours: this.hours });
+        this.closeNew();
+        document.getElementById('async-name').value = '';
     },
 
     // --- Játék közben: a határidő kijelzése ---
@@ -3475,57 +3657,283 @@ const AsyncGames = {
     },
 };
 
-// ===== GYAKORLÁS: szókvíz és rövid szavak =====
+
+// ===== GYAKORLÁS: tároló (az eszközön, localStorage) =====
+// Statisztika, sorozat és a „Hibáim” pakli. Vendégnek is működik; mindez csak a készüléken él.
+
+const PracticeStore = {
+    KEY: 'scrabble-practice',
+    MAX_MISSED: 200,
+    _data: null,
+
+    _fresh() {
+        return {
+            v: 1,
+            days: [],                                   // a gyakorlással töltött napok (YYYY-MM-DD)
+            today: { date: '', n: 0 },                  // a mai befejezett gyakorlatok száma
+            quiz: { questions: 0, correct: 0, best_streak: 0 },
+            hunt: { sessions: 0, best: {} },            // legjobb pontszám időkorlátonként
+            bingo: { attempts: 0, solved: 0, streak: 0, best_streak: 0 },
+            missed: {},                                 // SZÓ → {tiles, valid, ok}
+        };
+    },
+
+    get() {
+        if (!this._data) {
+            let stored = null;
+            try { stored = JSON.parse(localStorage.getItem(this.KEY)); } catch { /* sérült / tiltott tároló */ }
+            this._data = Object.assign(this._fresh(), stored && typeof stored === 'object' ? stored : {});
+        }
+        return this._data;
+    },
+
+    save() {
+        try { localStorage.setItem(this.KEY, JSON.stringify(this._data)); } catch { /* tiltott tároló */ }
+    },
+
+    // Egy gyakorlat (kvíz, vadászat, bingó-kéz) befejeződött: napi számláló + sorozat
+    touch() {
+        const data = this.get();
+        const today = localDateKey();
+        if (data.today.date !== today) data.today = { date: today, n: 0 };
+        data.today.n++;
+        if (!data.days.includes(today)) data.days.push(today);
+        data.days = data.days.slice(-120);
+        this.save();
+    },
+
+    todayCount() {
+        const data = this.get();
+        return data.today.date === localDateKey() ? data.today.n : 0;
+    },
+
+    // Egymást követő napok száma (a ma még üres nap nem szakítja meg a tegnapig tartó sorozatot)
+    streak() {
+        const days = new Set(this.get().days);
+        const cursor = new Date();
+        if (!days.has(localDateKey(cursor))) cursor.setDate(cursor.getDate() - 1);
+        let n = 0;
+        while (days.has(localDateKey(cursor))) { n++; cursor.setDate(cursor.getDate() - 1); }
+        return n;
+    },
+
+    accuracy() {
+        const quiz = this.get().quiz;
+        return quiz.questions ? Math.round(100 * quiz.correct / quiz.questions) : null;
+    },
+
+    // Kvíz-válasz rögzítése: tévesztés → a pakliba; a pakliból a kétszer egymás után helyes válasz töröl
+    recordAnswer(word, tiles, valid, correct) {
+        const data = this.get();
+        data.quiz.questions++;
+        if (correct) data.quiz.correct++;
+        const entry = data.missed[word];
+        if (!correct) {
+            delete data.missed[word];                   // a végére kerül (a legrégebbit vágjuk le)
+            data.missed[word] = { tiles, valid, ok: 0 };
+            const keys = Object.keys(data.missed);
+            if (keys.length > this.MAX_MISSED) delete data.missed[keys[0]];
+        } else if (entry && ++entry.ok >= 2) {
+            delete data.missed[word];
+        }
+        this.save();
+    },
+
+    missedWords() {
+        return Object.entries(this.get().missed).map(([word, e]) => ({ word, tiles: e.tiles || tokenizeWord(word) || [] }));
+    },
+};
+
+
+// ===== GYAKORLÁS =====
+// Főoldal (napi feladvány + módok) és al-nézetek: szókvíz, betűvadász, bingó-edző, szólisták.
+// A szerver állapotmentes: a kvíz-választ és a kézhez beírt szavakat a játék szótárával bírálja el.
 
 const Practice = {
-    mode: 'mixed',          // 'mixed' | '2' | '3' (a kvíz szavainak hossza)
-    quiz: null,             // {questions, index, correct, answered}
-    shortLength: 2,
-    _short: {},             // hossz → szavak (gyorsítótár)
+    view: 'hub',
+    quiz: null,             // futó kvíz
+    quizMode: 'mixed',
+    quizCount: 10,
+    lastFeedback: null,
+    hunt: null,             // futó betűvadász / bingó
+    huntKind: 'hunt',
+    huntSeconds: 0,
+    lists: { kind: '2', sort: 'abc', letter: '', query: '', data: {} },
 
     init() {
-        document.querySelectorAll('.quiz-mode').forEach(btn => btn.addEventListener('click', () => {
-            this.mode = btn.dataset.mode;
-            document.querySelectorAll('.quiz-mode').forEach(b => b.classList.toggle('active', b === btn));
-        }));
-        document.getElementById('btn-quiz-start').addEventListener('click', () => this.startQuiz());
+        document.querySelectorAll('[data-practice-open]').forEach(btn =>
+            btn.addEventListener('click', () => this.open(btn.dataset.practiceOpen)));
+        document.querySelectorAll('[data-practice-back]').forEach(btn =>
+            btn.addEventListener('click', () => this.back()));
+        document.getElementById('btn-daily-board').addEventListener('click', () => this.open('daily'));
+
+        // Kvíz
+        this._radioGroup('#quiz-modes .choice', 'mode', (v) => { this.quizMode = v; });
+        this._radioGroup('#quiz-counts .segment', 'count', (v) => { this.quizCount = Number(v); });
+        document.getElementById('btn-quiz-start').addEventListener('click', () => this.startQuiz(this.quizMode));
         document.getElementById('btn-quiz-valid').addEventListener('click', () => this.answer(true));
         document.getElementById('btn-quiz-invalid').addEventListener('click', () => this.answer(false));
         document.getElementById('btn-quiz-next').addEventListener('click', () => this.next());
-        document.querySelectorAll('.short-len').forEach(btn => btn.addEventListener('click', () => {
-            this.shortLength = Number(btn.dataset.length);
-            document.querySelectorAll('.short-len').forEach(b => b.classList.toggle('active', b === btn));
-            this.loadShortWords();
-        }));
-        window.addEventListener('langchange', () => {
-            if (this.quiz) this.renderQuestion(true);
-            this.renderShortWords();
+
+        // Betűvadász / bingó
+        this._radioGroup('#hunt-timers .segment', 'seconds', (v) => { this.huntSeconds = Number(v); this.renderHuntRecord(); });
+        document.getElementById('btn-hunt-start').addEventListener('click', () => this.startHunt());
+        document.getElementById('btn-hunt-clear').addEventListener('click', () => this.huntClear());
+        document.getElementById('btn-hunt-shuffle').addEventListener('click', () => this.huntShuffle());
+        document.getElementById('btn-hunt-submit').addEventListener('click', () => this.huntSubmit());
+        document.getElementById('btn-hunt-hint').addEventListener('click', () => this.huntHint());
+        document.getElementById('btn-hunt-finish').addEventListener('click', () => this.huntFinish());
+
+        // Szólisták
+        this._radioGroup('#list-kinds .segment', 'kind', (v) => { this.lists.kind = v; this.lists.letter = ''; this.openList(); });
+        this._radioGroup('#list-sorts .segment', 'sort', (v) => { this.lists.sort = v; this.renderList(); });
+        document.getElementById('list-search').addEventListener('input', (e) => {
+            this.lists.query = e.target.value.trim().toUpperCase();
+            this.renderList();
         });
+
+        document.addEventListener('keydown', (e) => this._onKey(e));
+        window.addEventListener('langchange', () => this.onLangChange());
+    },
+
+    // Kiválasztható gombcsoport: a data-<attr> értéke adja a választást
+    _radioGroup(selector, attr, onChange) {
+        const buttons = document.querySelectorAll(selector);
+        buttons.forEach(btn => btn.addEventListener('click', () => {
+            buttons.forEach(b => {
+                const on = b === btn;
+                b.classList.toggle('active', on);
+                b.setAttribute(b.getAttribute('role') === 'tab' ? 'aria-selected' : 'aria-checked', on ? 'true' : 'false');
+            });
+            onChange(btn.dataset[attr]);
+        }));
+    },
+
+    onLangChange() {
+        this.renderHub();
+        const quiz = this.quiz;
+        if (quiz && quiz.finished) {
+            this.renderQuizResult();
+        } else if (quiz && quiz.index < quiz.questions.length) {
+            this.renderQuestion(true);
+            if (this.lastFeedback) {
+                this.renderFeedback(this.lastFeedback);
+                document.getElementById('btn-quiz-next').textContent = this._nextLabel();
+            }
+        }
+        if (this.hunt && !this.hunt.finished) this.renderHunt();
+        else if (this.hunt && this.hunt.kind === 'hunt') this.renderHuntResult();
+        else if (this.hunt) this.renderBingoResult();
+        document.getElementById('hunt-heading').textContent = t(this.huntKind === 'bingo' ? 'bingo.title' : 'hunt.title');
+        this.renderHuntSetup();
+        if (this.lists.data[this.lists.kind] || this.lists.kind === 'tiles') this.openList();
     },
 
     onShow() {
-        if (!this._short[this.shortLength]) this.loadShortWords();
+        this.renderHub();
     },
 
-    // --- Kvíz ---
+    // --- Navigáció ---
 
-    async startQuiz() {
+    _setView(name) {
+        this.view = name;
+        document.querySelectorAll('.practice-view').forEach(v => v.classList.toggle('active', v.dataset.view === name));
+        window.scrollTo({ top: 0 });
+    },
+
+    open(what) {
+        if (what === 'quiz') {
+            this._stopHunt();
+            this.quiz = null;
+            this.showQuizBlock('setup');
+            this._setView('quiz');
+        } else if (what === 'mistakes') {
+            if (!PracticeStore.missedWords().length) {
+                showMessage(t('mistakes.none'), false);
+                return;
+            }
+            this._setView('quiz');
+            this.startQuiz('mistakes');
+        } else if (what === 'hunt' || what === 'bingo') {
+            this._stopHunt();
+            this.huntKind = what;
+            this.renderHuntSetup();
+            this.showHuntBlock('setup');
+            this._setView('hunt');
+        } else if (what === 'lists') {
+            this._stopHunt();
+            this._setView('lists');
+            this.openList();
+        } else if (what === 'daily') {
+            Daily.load();
+            this._setView('daily');
+        } else {
+            this._stopHunt();
+            this._setView('hub');
+            this.renderHub();
+        }
+    },
+
+    back() {
+        this._stopHunt();
+        this.open('hub');
+    },
+
+    // --- Főoldal ---
+
+    renderHub() {
+        const data = PracticeStore.get();
+        document.getElementById('pstat-streak').textContent = PracticeStore.streak();
+        document.getElementById('pstat-today').textContent = PracticeStore.todayCount();
+        const accuracy = PracticeStore.accuracy();
+        document.getElementById('pstat-accuracy').textContent = accuracy === null ? '–' : accuracy + '%';
+
+        document.getElementById('pmeta-quiz').textContent = data.quiz.questions
+            ? t('quiz.meta', { pct: accuracy, n: data.quiz.questions }) : '';
+        const best = Math.max(0, ...Object.values(data.hunt.best));
+        document.getElementById('pmeta-hunt').textContent = best ? t('hunt.meta', { n: best }) : '';
+        document.getElementById('pmeta-bingo').textContent = data.bingo.attempts
+            ? t('bingo.meta', { solved: data.bingo.solved, n: data.bingo.attempts }) : '';
+        const missed = PracticeStore.missedWords().length;
+        document.getElementById('pmeta-mistakes').textContent = missed ? t('mistakes.meta', { n: missed }) : '';
+        document.getElementById('practice-mistakes-item').classList.toggle('is-empty', !missed);
+    },
+
+    // --- Szókvíz ---
+
+    showQuizBlock(block) {
+        document.getElementById('quiz-setup').classList.toggle('hidden', block !== 'setup');
+        document.getElementById('quiz-play').classList.toggle('hidden', block !== 'play');
+        document.getElementById('quiz-result').classList.toggle('hidden', block !== 'result');
+        document.getElementById('quiz-heading').textContent = this.quiz && this.quiz.mode === 'mistakes'
+            ? t('mistakes.title') : t('quiz.title');
+    },
+
+    async startQuiz(mode) {
         const btn = document.getElementById('btn-quiz-start');
         btn.disabled = true;
         try {
-            const query = this.mode === 'mixed' ? '' : `&length=${this.mode}`;
-            const res = await fetch(`/api/practice/quiz?n=10${query}`);
-            const data = await res.json();
-            if (!data.success || !data.questions.length) {
-                showMessage(tServer(data.message) || t('quiz.load_error'), true);
-                return;
+            let questions;
+            if (mode === 'mistakes') {
+                questions = shuffled(PracticeStore.missedWords()).slice(0, 10);
+            } else {
+                const res = await fetch(`/api/practice/quiz?n=${this.quizCount}&mode=${encodeURIComponent(mode)}`);
+                const data = await res.json();
+                if (!data.success || !data.questions.length) {
+                    showMessage(tServer(data.message) || t('common.load_failed'), true);
+                    return;
+                }
+                questions = data.questions.map((word, i) => ({ word, tiles: data.tiles[i] }));
             }
-            this.quiz = { questions: data.questions, index: 0, correct: 0, answered: false };
-            document.getElementById('quiz-result').classList.add('hidden');
-            document.getElementById('quiz-play').classList.remove('hidden');
+            this.quiz = {
+                mode, questions, index: 0, correct: 0, streak: 0, bestStreak: 0,
+                answered: false, results: [], startedAt: Date.now(), finished: false,
+            };
+            this.lastFeedback = null;
+            this.showQuizBlock('play');
             this.renderQuestion();
         } catch {
-            showMessage(t('quiz.load_error'), true);
+            showMessage(t('common.load_failed'), true);
         } finally {
             btn.disabled = false;
         }
@@ -3534,54 +3942,89 @@ const Practice = {
     renderQuestion(keepFeedback = false) {
         const quiz = this.quiz;
         if (!quiz || quiz.index >= quiz.questions.length) return;
+        const question = quiz.questions[quiz.index];
         document.getElementById('quiz-progress').textContent =
-            t('quiz.progress', { n: quiz.index + 1, total: quiz.questions.length, correct: quiz.correct });
-        document.getElementById('quiz-word').textContent = quiz.questions[quiz.index];
-        if (!keepFeedback) {
-            document.getElementById('quiz-feedback').textContent = '';
-            document.getElementById('quiz-feedback').className = 'quiz-feedback';
-            document.getElementById('btn-quiz-next').classList.add('hidden');
-            this._setAnswerButtons(true);
-        }
+            t('quiz.progress', { n: quiz.index + 1, total: quiz.questions.length });
+        document.getElementById('quiz-bar-fill').style.width = `${(quiz.index / quiz.questions.length) * 100}%`;
+        document.getElementById('quiz-streak-count').textContent = quiz.streak;
+        document.getElementById('quiz-streak').classList.toggle('is-hot', quiz.streak >= 3);
+        if (keepFeedback) return;
+        fillWordTiles(document.getElementById('quiz-word'), question.tiles);
+        const feedback = document.getElementById('quiz-feedback');
+        feedback.classList.add('hidden');
+        feedback.replaceChildren();
+        document.getElementById('btn-quiz-next').classList.add('hidden');
+        this._setAnswerButtons(true);
+        this.lastFeedback = null;
     },
 
     _setAnswerButtons(enabled) {
-        document.getElementById('btn-quiz-valid').disabled = !enabled;
-        document.getElementById('btn-quiz-invalid').disabled = !enabled;
+        for (const id of ['btn-quiz-valid', 'btn-quiz-invalid']) {
+            const btn = document.getElementById(id);
+            btn.disabled = !enabled;
+            if (enabled) btn.classList.remove('is-picked');
+        }
     },
 
     async answer(isValid) {
         const quiz = this.quiz;
-        if (!quiz || quiz.answered) return;
+        if (!quiz || quiz.answered || quiz.finished) return;
         quiz.answered = true;
         this._setAnswerButtons(false);
-        const word = quiz.questions[quiz.index];
-        const feedback = document.getElementById('quiz-feedback');
+        document.getElementById(isValid ? 'btn-quiz-valid' : 'btn-quiz-invalid').classList.add('is-picked');
+        const question = quiz.questions[quiz.index];
+        let data;
         try {
-            const data = await postJson('/api/practice/answer', { word, answer: isValid });
+            data = await postJson('/api/practice/answer', { word: question.word, answer: isValid });
             if (!data.success) throw new Error('answer');
-            if (data.correct) quiz.correct++;
-            feedback.className = 'quiz-feedback ' + (data.correct ? 'right' : 'wrong');
-            const verdict = data.valid
-                ? t('quiz.is_valid', { score: data.score })
-                : t('quiz.is_invalid');
-            let text = (data.correct ? t('quiz.right') : t('quiz.wrong')) + ' ' + verdict;
-            if (!data.valid && data.suggestions && data.suggestions.length) {
-                text += ' ' + t('quiz.suggestions', { words: data.suggestions.join(', ') });
-            }
-            feedback.textContent = text;
         } catch {
             quiz.answered = false;
             this._setAnswerButtons(true);
-            showMessage(t('quiz.load_error'), true);
+            showMessage(t('common.load_failed'), true);
             return;
         }
-        document.getElementById('quiz-progress').textContent =
-            t('quiz.progress', { n: quiz.index + 1, total: quiz.questions.length, correct: quiz.correct });
-        const last = quiz.index + 1 >= quiz.questions.length;
+        if (data.correct) { quiz.correct++; quiz.streak++; quiz.bestStreak = Math.max(quiz.bestStreak, quiz.streak); }
+        else { quiz.streak = 0; }
+        quiz.results.push({ word: question.word, tiles: data.tiles, valid: data.valid, correct: data.correct,
+                            score: data.score, suggestions: data.suggestions || [] });
+        PracticeStore.recordAnswer(question.word, data.tiles, data.valid, data.correct);
+
+        fillWordTiles(document.getElementById('quiz-word'), data.tiles, data.correct ? 'right' : 'wrong');
+        document.getElementById('quiz-streak-count').textContent = quiz.streak;
+        document.getElementById('quiz-streak').classList.toggle('is-hot', quiz.streak >= 3);
+        document.getElementById('quiz-bar-fill').style.width = `${((quiz.index + 1) / quiz.questions.length) * 100}%`;
+        this.lastFeedback = data;
+        this.renderFeedback(data);
+        SoundManager.play(data.correct ? 'challenge_accept' : 'challenge_reject');
+        if (navigator.vibrate) navigator.vibrate(data.correct ? 12 : [30, 40, 30]);
+
         const next = document.getElementById('btn-quiz-next');
-        next.textContent = last ? t('quiz.finish') : t('quiz.next');
+        next.textContent = this._nextLabel();
         next.classList.remove('hidden');
+        next.focus({ preventScroll: true });
+    },
+
+    _nextLabel() {
+        const quiz = this.quiz;
+        return quiz.index + 1 >= quiz.questions.length ? t('quiz.finish') : t('quiz.next');
+    },
+
+    renderFeedback(data) {
+        const box = document.getElementById('quiz-feedback');
+        box.replaceChildren();
+        box.className = 'quiz-feedback ' + (data.correct ? 'right' : 'wrong');
+        const head = makeEl('div', 'quiz-feedback-head');
+        head.appendChild(makeIcon(data.correct ? 'check-circle' : 'x-circle'));
+        head.appendChild(makeEl('span', null, data.correct ? t('quiz.right') : t('quiz.wrong')));
+        box.appendChild(head);
+        box.appendChild(makeEl('div', 'quiz-feedback-text',
+            data.valid ? t('quiz.is_valid', { score: data.score }) : t('quiz.is_invalid')));
+        if (!data.valid && data.suggestions && data.suggestions.length) {
+            box.appendChild(makeEl('div', 'quiz-feedback-text', t('quiz.suggestions')));
+            const list = makeEl('div', 'chip-list');
+            for (const word of data.suggestions) list.appendChild(wordChip(word));
+            box.appendChild(list);
+        }
     },
 
     next() {
@@ -3589,79 +4032,723 @@ const Practice = {
         if (!quiz || !quiz.answered) return;
         quiz.index++;
         quiz.answered = false;
-        if (quiz.index >= quiz.questions.length) {
-            this.showResult();
-        } else {
-            this.renderQuestion();
-        }
+        if (quiz.index >= quiz.questions.length) this.finishQuiz();
+        else this.renderQuestion();
     },
 
-    showResult() {
+    finishQuiz() {
         const quiz = this.quiz;
-        document.getElementById('quiz-play').classList.add('hidden');
+        quiz.finished = true;
+        quiz.seconds = (Date.now() - quiz.startedAt) / 1000;
+        const data = PracticeStore.get();
+        data.quiz.best_streak = Math.max(data.quiz.best_streak, quiz.bestStreak);
+        PracticeStore.touch();
+        this.showQuizBlock('result');
+        this.renderQuizResult();
+        const ratio = quiz.correct / quiz.questions.length;
+        SoundManager.play(ratio >= 0.7 ? 'challenge_accept' : 'tile_place');
+    },
+
+    renderQuizResult() {
+        const quiz = this.quiz;
         const box = document.getElementById('quiz-result');
         box.replaceChildren();
-        const score = document.createElement('div');
-        score.className = 'quiz-result-score';
-        score.textContent = t('quiz.result', { correct: quiz.correct, total: quiz.questions.length });
-        const verdict = document.createElement('div');
-        const ratio = quiz.correct / quiz.questions.length;
-        verdict.textContent = ratio === 1 ? t('quiz.perfect') : ratio >= 0.7 ? t('quiz.good') : t('quiz.practice_more');
-        box.appendChild(score);
-        box.appendChild(verdict);
-        box.classList.remove('hidden');
-        this.quiz = null;
+        const total = quiz.questions.length;
+        const ratio = quiz.correct / total;
+
+        const ring = makeEl('div', 'score-ring' + (ratio === 1 ? ' is-perfect' : ''));
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('viewBox', '0 0 120 120');
+        const radius = 54;
+        const circumference = 2 * Math.PI * radius;
+        for (const cls of ['ring-track', 'ring-fill']) {
+            const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            c.setAttribute('class', cls);
+            c.setAttribute('cx', 60); c.setAttribute('cy', 60); c.setAttribute('r', radius);
+            if (cls === 'ring-fill') {
+                c.setAttribute('stroke-dasharray', circumference);
+                c.setAttribute('stroke-dashoffset', circumference);
+                requestAnimationFrame(() => requestAnimationFrame(() =>
+                    c.setAttribute('stroke-dashoffset', circumference * (1 - ratio))));
+            }
+            svg.appendChild(c);
+        }
+        const text = makeEl('div', 'score-ring-text');
+        text.append(makeEl('b', null, `${quiz.correct}/${total}`), makeEl('span', null, t('quiz.correct_label')));
+        ring.append(svg, text);
+
+        const verdictKey = ratio === 1 ? 'quiz.perfect' : ratio >= 0.7 ? 'quiz.good' : 'quiz.practice_more';
+        box.append(ring, makeEl('div', 'result-title', t(verdictKey)));
+        if (ratio < 0.7) box.appendChild(makeEl('div', 'result-text', t('quiz.practice_tip')));
+
+        const stats = makeEl('div', 'stat-grid');
+        for (const [value, label] of [[Math.round(ratio * 100) + '%', t('quiz.stat_accuracy')],
+                                      [quiz.bestStreak, t('quiz.stat_streak')],
+                                      [formatClock(quiz.seconds), t('quiz.stat_time')]]) {
+            const stat = makeEl('div', 'practice-stat');
+            stat.append(makeEl('span', 'practice-stat-value', value), makeEl('span', 'practice-stat-label', label));
+            stats.appendChild(stat);
+        }
+        box.appendChild(stats);
+
+        const wrong = quiz.results.filter(r => !r.correct);
+        if (wrong.length) {
+            box.appendChild(makeEl('div', 'result-section-title', t('quiz.mistakes')));
+            const list = makeEl('div', 'mistake-list');
+            for (const r of wrong) {
+                const row = makeEl('div', 'mistake-row');
+                const word = makeEl('div', 'mistake-word', r.word);
+                if (!r.valid && r.suggestions.length) {
+                    word.appendChild(makeEl('span', 'mistake-note', t('quiz.suggestions_short', { words: r.suggestions.join(', ') })));
+                }
+                row.append(word, makeEl('span', 'verdict-pill ' + (r.valid ? 'is-valid' : 'is-invalid'),
+                    r.valid ? t('quiz.verdict_valid') : t('quiz.verdict_invalid')));
+                list.appendChild(row);
+            }
+            box.appendChild(list);
+        }
+
+        const actions = makeEl('div', 'result-actions');
+        const again = makeEl('button', null, t('quiz.again'));
+        again.type = 'button';
+        again.addEventListener('click', () => this.startQuiz(quiz.mode === 'mistakes' && !PracticeStore.missedWords().length ? this.quizMode : quiz.mode));
+        actions.appendChild(again);
+        if (quiz.mode !== 'mistakes' && PracticeStore.missedWords().length) {
+            const review = makeEl('button', 'tinted', t('quiz.review_mistakes', { n: PracticeStore.missedWords().length }));
+            review.type = 'button';
+            review.addEventListener('click', () => this.startQuiz('mistakes'));
+            actions.appendChild(review);
+        }
+        const done = makeEl('button', 'secondary', t('practice.done'));
+        done.type = 'button';
+        done.addEventListener('click', () => this.back());
+        actions.appendChild(done);
+        box.appendChild(actions);
     },
 
-    // --- Rövid szavak ---
+    // --- Betűvadász és bingó-edző ---
 
-    async loadShortWords() {
-        const length = this.shortLength;
-        if (!this._short[length]) {
-            try {
-                const res = await fetch(`/api/practice/short-words?length=${length}`);
-                const data = await res.json();
-                if (!data.success) { showMessage(tServer(data.message) || t('quiz.load_error'), true); return; }
-                this._short[length] = data.words;
-            } catch {
-                showMessage(t('quiz.load_error'), true);
+    renderHuntSetup() {
+        const bingo = this.huntKind === 'bingo';
+        document.getElementById('hunt-heading').textContent = t(bingo ? 'bingo.title' : 'hunt.title');
+        document.getElementById('hunt-intro').textContent = t(bingo ? 'bingo.intro' : 'hunt.intro');
+        document.getElementById('hunt-timer-group').classList.toggle('hidden', bingo);
+        this.renderHuntRecord();
+    },
+
+    renderHuntRecord() {
+        const data = PracticeStore.get();
+        const el = document.getElementById('hunt-record');
+        if (this.huntKind === 'bingo') {
+            el.textContent = data.bingo.attempts
+                ? t('bingo.record', { solved: data.bingo.solved, n: data.bingo.attempts, best: data.bingo.best_streak }) : '';
+        } else {
+            const best = data.hunt.best[String(this.huntSeconds)];
+            el.textContent = best ? t('hunt.record', { n: best }) : '';
+        }
+    },
+
+    showHuntBlock(block) {
+        document.getElementById('hunt-setup').classList.toggle('hidden', block !== 'setup');
+        document.getElementById('hunt-play').classList.toggle('hidden', block !== 'play');
+        document.getElementById('hunt-result').classList.toggle('hidden', block !== 'result');
+    },
+
+    _stopHunt() {
+        if (this.hunt && this.hunt.timer) clearInterval(this.hunt.timer);
+        this.hunt = null;
+    },
+
+    async startHunt() {
+        const btn = document.getElementById('btn-hunt-start');
+        btn.disabled = true;
+        const kind = this.huntKind;
+        try {
+            const res = await fetch(`/api/practice/rack?kind=${kind}`);
+            const data = await res.json();
+            if (!data.success) {
+                showMessage(tServer(data.message) || t('common.load_failed'), true);
                 return;
             }
+            this._beginHunt(data);
+        } catch {
+            showMessage(t('common.load_failed'), true);
+        } finally {
+            btn.disabled = false;
         }
-        this.renderShortWords();
     },
 
-    renderShortWords() {
-        const words = this._short[this.shortLength];
-        const box = document.getElementById('short-words');
-        box.replaceChildren();
-        const count = document.getElementById('short-count');
-        if (!words) { count.textContent = ''; return; }
-        count.textContent = t('short.count', { n: words.length });
-        let initial = null;
-        let group = null;
-        for (const entry of words) {
-            const first = entry.word.startsWith('SZ') || entry.word.startsWith('CS') || entry.word.startsWith('GY')
-                || entry.word.startsWith('NY') || entry.word.startsWith('LY') || entry.word.startsWith('TY')
-                || entry.word.startsWith('ZS') ? entry.word.slice(0, 2) : entry.word[0];
-            if (first !== initial) {
-                initial = first;
-                const heading = document.createElement('div');
-                heading.className = 'short-initial';
-                heading.textContent = first;
-                group = document.createElement('div');
-                group.className = 'short-group';
-                box.appendChild(heading);
-                box.appendChild(group);
-            }
-            const chip = document.createElement('span');
-            chip.className = 'short-chip';
-            chip.textContent = entry.word;
-            const score = document.createElement('small');
-            score.textContent = entry.score;
-            chip.appendChild(score);
-            group.appendChild(chip);
+    _beginHunt(data) {
+        this._stopHunt();
+        const seconds = data.kind === 'bingo' ? 0 : this.huntSeconds;
+        this.hunt = {
+            kind: data.kind, seconds, rack: data.rack, order: data.rack.map((_, i) => i),
+            words: data.words, total: data.total_score,
+            solution: new Map(data.words.map(w => [w.word, w])),
+            found: [], foundSet: new Set(), score: 0,
+            built: [], pending: '', busy: false, finished: false,
+            hintTarget: null, hintLevel: 0, hints: 0, gaveUp: false,
+            startedAt: Date.now(), timer: null,
+        };
+        this.showHuntBlock('play');
+        const bingo = data.kind === 'bingo';
+        document.getElementById('hunt-clock-box').classList.toggle('hidden', bingo);
+        document.getElementById('hunt-streak-box').classList.toggle('hidden', !bingo);
+        document.getElementById('btn-hunt-finish').textContent = t(bingo ? 'bingo.give_up' : 'hunt.finish');
+        document.getElementById('hunt-hint').classList.add('hidden');
+        this.setHuntMsg('');
+        this.renderHunt();
+        if (!bingo) {
+            this.hunt.timer = setInterval(() => this.tickHunt(), 250);
+            this.tickHunt();
         }
+    },
+
+    // A gyakorlás lapja látszik-e (az időkorlátos kör órája csak akkor jár)
+    _huntVisible() {
+        return this.view === 'hunt' && !document.hidden
+            && document.getElementById('lobby-panel-practice').classList.contains('active')
+            && !document.getElementById('lobby-screen').classList.contains('hidden');
+    },
+
+    tickHunt() {
+        const h = this.hunt;
+        if (!h || h.finished) return;
+        const now = Date.now();
+        const last = h.lastTick || now;
+        h.lastTick = now;
+        if (!this._huntVisible()) {            // szünet: a háttérben töltött idő nem számít
+            h.startedAt += now - last;
+            return;
+        }
+        const elapsed = (now - h.startedAt) / 1000;
+        const clock = document.getElementById('hunt-clock');
+        if (h.seconds) {
+            const left = h.seconds - elapsed;
+            clock.textContent = formatClock(Math.ceil(left));
+            clock.classList.toggle('is-low', left <= 10);
+            if (left <= 0) this.huntFinish(true);
+        } else {
+            clock.textContent = formatClock(elapsed);
+            clock.classList.remove('is-low');
+        }
+    },
+
+    setHuntMsg(text, tone) {
+        const el = document.getElementById('hunt-msg');
+        el.textContent = text;
+        el.className = 'hunt-msg' + (tone ? ' is-' + tone : '');
+    },
+
+    // A kéz, a szósor, a találatok újrarajzolása
+    renderHunt() {
+        const h = this.hunt;
+        if (!h) return;
+        const bingo = h.kind === 'bingo';
+        document.getElementById('hunt-heading').textContent = t(bingo ? 'bingo.title' : 'hunt.title');
+        document.getElementById('hunt-score').textContent = h.score;
+        document.getElementById('hunt-found').textContent = bingo ? `${h.found.length}/${h.words.length}` : `${h.found.filter(f => !f.bonus).length}/${h.words.length}`;
+        document.getElementById('hunt-streak').textContent = PracticeStore.get().bingo.streak;
+
+        const used = new Set(h.built);
+        const rack = document.getElementById('hunt-rack');
+        rack.replaceChildren();
+        for (const i of h.order) {
+            const tile = h.rack[i];
+            const btn = makeEl('button', 'htile' + (used.has(i) ? ' is-used' : ''), tile);
+            btn.type = 'button';
+            btn.appendChild(makeEl('small', null, TILE_VALUES[tile]));
+            btn.addEventListener('click', () => this.huntAdd(i));
+            rack.appendChild(btn);
+        }
+
+        const line = document.getElementById('hunt-line');
+        line.replaceChildren();
+        line.className = 'hunt-line';
+        line.setAttribute('aria-label', t('hunt.word_aria'));
+        h.built.forEach((rackIndex, pos) => {
+            const tile = h.rack[rackIndex];
+            const btn = makeEl('button', 'htile', tile);
+            btn.type = 'button';
+            btn.style.setProperty('--i', pos);
+            btn.appendChild(makeEl('small', null, TILE_VALUES[tile]));
+            btn.addEventListener('click', () => this.huntRemove(pos));
+            line.appendChild(btn);
+        });
+        if (!h.built.length) for (let i = 0; i < h.rack.length; i++) line.appendChild(makeEl('span', 'hunt-slot'));
+
+        document.getElementById('btn-hunt-submit').disabled = h.built.length < 2 || h.busy || h.finished;
+        document.getElementById('btn-hunt-clear').disabled = !h.built.length;
+        document.getElementById('btn-hunt-hint').disabled = h.finished;
+
+        this.renderHuntProgress();
+        this.renderHuntWords();
+    },
+
+    renderHuntProgress() {
+        const h = this.hunt;
+        const box = document.getElementById('hunt-progress');
+        box.replaceChildren();
+        if (h.kind === 'bingo') return;
+        // Hány szó van hány zsetonosból, és mennyit találtál meg
+        const totals = {}, got = {};
+        for (const w of h.words) totals[w.tiles] = (totals[w.tiles] || 0) + 1;
+        for (const f of h.found) if (!f.bonus && h.solution.has(f.word)) { const n = h.solution.get(f.word).tiles; got[n] = (got[n] || 0) + 1; }
+        for (const len of Object.keys(totals).map(Number).sort((a, b) => a - b)) {
+            const done = (got[len] || 0) >= totals[len];
+            box.appendChild(makeEl('span', 'hp-chip' + (done ? ' is-done' : ''),
+                t('hunt.progress_chip', { len, got: got[len] || 0, total: totals[len] })));
+        }
+    },
+
+    renderHuntWords() {
+        const h = this.hunt;
+        const box = document.getElementById('hunt-words');
+        box.replaceChildren();
+        for (const f of h.found.slice().reverse()) {
+            box.appendChild(wordChip(f.word, f.score, f.bingo ? 'is-bingo' : (f.bonus ? 'is-bonus' : '')));
+        }
+    },
+
+    huntAdd(rackIndex) {
+        const h = this.hunt;
+        if (!h || h.finished || h.busy || h.built.includes(rackIndex)) return;
+        h.built.push(rackIndex);
+        this.setHuntMsg('');
+        this.renderHunt();
+        SoundManager.play('tile_place');
+    },
+
+    huntRemove(pos) {
+        const h = this.hunt;
+        if (!h || h.finished || h.busy) return;
+        h.built.splice(pos, 1);
+        this.setHuntMsg('');
+        this.renderHunt();
+    },
+
+    huntClear() {
+        const h = this.hunt;
+        if (!h || h.finished || h.busy) return;
+        h.built = [];
+        h.pending = '';
+        this.setHuntMsg('');
+        this.renderHunt();
+    },
+
+    huntShuffle() {
+        const h = this.hunt;
+        if (!h || h.finished) return;
+        h.order = shuffled(h.order);
+        this.renderHunt();
+    },
+
+    // Billentyűzet: a gépelt betű az első szabad ugyanilyen zsetont veszi; a kétjegyű betű (SZ, CS…) két
+    // billentyű, ha nincs külön S / C zseton
+    huntType(ch) {
+        const h = this.hunt;
+        if (!h || h.finished || h.busy) return;
+        const free = (letter) => h.rack.findIndex((tile, i) => tile === letter && !h.built.includes(i));
+        let index = -1;
+        if (h.pending) index = free(h.pending + ch);
+        h.pending = '';
+        if (index < 0) index = free(ch);
+        if (index < 0 && h.rack.some((tile, i) => tile.length === 2 && tile[0] === ch && !h.built.includes(i))) {
+            h.pending = ch;
+            return;
+        }
+        if (index >= 0) this.huntAdd(index);
+    },
+
+    _onKey(e) {
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        if (!document.getElementById('lobby-panel-practice').classList.contains('active')) return;
+        if (document.querySelector('.dialog:not(.hidden)')) return;
+        const target = e.target;
+        if (target && (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA')) return;
+
+        if (this.view === 'quiz' && this.quiz && !this.quiz.finished) {
+            if (e.key === 'ArrowLeft') { e.preventDefault(); this.answer(false); }
+            else if (e.key === 'ArrowRight') { e.preventDefault(); this.answer(true); }
+            else if ((e.key === 'Enter' || e.key === ' ') && this.quiz.answered) { e.preventDefault(); this.next(); }
+        } else if (this.view === 'hunt' && this.hunt && !this.hunt.finished) {
+            if (e.key === 'Enter') { e.preventDefault(); this.huntSubmit(); }
+            else if (e.key === 'Backspace') { e.preventDefault(); this.huntRemove(this.hunt.built.length - 1); }
+            else if (e.key === 'Escape') this.huntClear();
+            else if (e.key === ' ') { e.preventDefault(); this.huntShuffle(); }
+            else if (e.key.length === 1 && /\p{L}/u.test(e.key)) this.huntType(e.key.toUpperCase());
+        }
+    },
+
+    async huntSubmit() {
+        const h = this.hunt;
+        if (!h || h.finished || h.busy || h.built.length < 2) return;
+        const tiles = h.built.map(i => h.rack[i]);
+        const word = tiles.join('');
+        const bingo = tiles.length === h.rack.length;
+        if (h.kind === 'bingo' && !bingo) {
+            this.huntReject(t('bingo.need_all'), true);
+            return;
+        }
+        if (h.foundSet.has(word)) {
+            this.huntReject(t('hunt.already'));
+            return;
+        }
+        const score = tiles.reduce((sum, tile) => sum + TILE_VALUES[tile], 0) + (bingo ? 50 : 0);
+        let bonus = false;
+        if (!h.solution.has(word)) {
+            // A listán nem szereplő szót a szerver bírálja el (a szókincs nem teljes)
+            h.busy = true;
+            this.renderHunt();
+            let res;
+            try {
+                res = await postJson('/api/practice/rack-word', { rack: h.rack, word });
+            } catch {
+                h.busy = false;
+                this.renderHunt();
+                showMessage(t('common.load_failed'), true);
+                return;
+            }
+            h.busy = false;
+            if (this.hunt !== h || h.finished) return;
+            if (!res.success || !res.ok) {
+                this.huntReject(t('hunt.reason_' + (res.reason || 'not_a_word')));
+                return;
+            }
+            bonus = true;
+        }
+        h.found.push({ word, score, bonus, bingo, tiles: tiles.length, tileList: tiles });
+        h.foundSet.add(word);
+        h.score += score;
+        h.built = [];
+        h.pending = '';
+        if (h.kind === 'bingo') {
+            this.huntSolved(word);
+            return;
+        }
+        this.setHuntMsg(bingo ? t('hunt.bingo', { n: score }) : bonus ? t('hunt.bonus', { n: score }) : t('hunt.plus', { n: score }),
+            bingo ? 'bingo' : 'ok');
+        if (h.hintTarget === word) { h.hintTarget = null; h.hintLevel = 0; document.getElementById('hunt-hint').classList.add('hidden'); }
+        SoundManager.play(bingo ? 'challenge_accept' : 'tile_place');
+        this.renderHunt();
+        document.getElementById('hunt-line').classList.add(bingo ? 'is-bingo' : 'is-right');
+        if (h.found.filter(f => !f.bonus).length >= h.words.length) this.huntFinish(false, true);
+    },
+
+    huntReject(message, soft) {
+        this.setHuntMsg(message, soft ? null : 'bad');
+        const line = document.getElementById('hunt-line');
+        line.classList.remove('is-wrong');
+        void line.offsetWidth;          // az animáció újraindításához
+        line.classList.add('is-wrong');
+        if (!soft) SoundManager.play('challenge_reject');
+        if (navigator.vibrate) navigator.vibrate([30, 40, 30]);
+    },
+
+    // --- Tipp ---
+
+    huntHint() {
+        const h = this.hunt;
+        if (!h || h.finished) return;
+        const box = document.getElementById('hunt-hint');
+        if (!h.hintTarget || h.foundSet.has(h.hintTarget)) {
+            const open = h.words.filter(w => !h.foundSet.has(w.word));
+            if (!open.length) return;
+            h.hintTarget = open[0].word;            // a legtöbb pontot érő megtalálatlan szó
+            h.hintLevel = 0;
+        }
+        const target = h.solution.get(h.hintTarget);
+        h.hintLevel = Math.min(h.hintLevel + 1, Math.max(1, target.word.length - 2));
+        h.hints++;
+        const letters = target.word.slice(0, h.hintLevel);
+        box.textContent = h.kind === 'bingo'
+            ? t('bingo.hint', { letters })
+            : t('hunt.hint_text', { tiles: target.tiles, letters });
+        box.classList.remove('hidden');
+    },
+
+    // --- Befejezés ---
+
+    huntFinish(timeUp, allFound) {
+        const h = this.hunt;
+        if (!h || h.finished) return;
+        if (h.kind === 'bingo') { this.huntGiveUp(); return; }
+        h.finished = true;
+        if (h.timer) clearInterval(h.timer);
+        h.elapsed = (Date.now() - h.startedAt) / 1000;
+        const data = PracticeStore.get();
+        data.hunt.sessions++;
+        const key = String(h.seconds);
+        const record = h.score > (data.hunt.best[key] || 0);
+        if (record) data.hunt.best[key] = h.score;
+        PracticeStore.touch();
+        h.record = record;
+        h.timeUp = !!timeUp;
+        h.allFound = !!allFound;
+        this.showHuntBlock('result');
+        this.renderHuntResult();
+        SoundManager.play(record ? 'challenge_accept' : 'tile_place');
+    },
+
+    renderHuntResult() {
+        const h = this.hunt;
+        const box = document.getElementById('hunt-result');
+        box.replaceChildren();
+        const listed = h.found.filter(f => !f.bonus);
+        const pct = h.total ? Math.min(100, Math.round(100 * listed.reduce((s, f) => s + f.score, 0) / h.total)) : 0;
+        const rankKey = pct >= 85 ? 'master' : pct >= 60 ? 'advanced' : pct >= 35 ? 'solid' : 'beginner';
+
+        box.appendChild(makeEl('div', 'hunt-result-score', h.score));
+        box.appendChild(makeEl('div', 'result-text', t('hunt.score')));
+        box.appendChild(makeEl('span', 'hunt-rank' + (pct >= 85 ? ' is-top' : ''), t('hunt.rank_' + rankKey)));
+        if (h.record) box.appendChild(makeEl('div', 'result-text', t('hunt.new_record')));
+
+        const stats = makeEl('div', 'stat-grid');
+        for (const [value, label] of [[`${listed.length}/${h.words.length}`, t('hunt.stat_words')],
+                                      [pct + '%', t('hunt.stat_share')],
+                                      [h.hints, t('hunt.stat_hints')]]) {
+            const stat = makeEl('div', 'practice-stat');
+            stat.append(makeEl('span', 'practice-stat-value', value), makeEl('span', 'practice-stat-label', label));
+            stats.appendChild(stat);
+        }
+        box.appendChild(stats);
+
+        const bonus = h.found.filter(f => f.bonus);
+        if (bonus.length) {
+            box.appendChild(makeEl('div', 'result-section-title', t('hunt.bonus_words')));
+            const list = makeEl('div', 'chip-list');
+            for (const f of bonus) list.appendChild(wordChip(f.word, f.score, 'is-bonus'));
+            box.appendChild(list);
+        }
+        const missed = h.words.filter(w => !h.foundSet.has(w.word));
+        if (missed.length) {
+            box.appendChild(makeEl('div', 'result-section-title', t('hunt.missed_words', { n: missed.length })));
+            const list = makeEl('div', 'chip-list');
+            for (const w of missed.slice(0, 24)) list.appendChild(wordChip(w.word, w.score, w.tiles === h.rack.length ? 'is-bingo' : 'is-missed'));
+            if (missed.length > 24) list.appendChild(makeEl('span', 'word-chip is-missed', `+${missed.length - 24}`));
+            box.appendChild(list);
+        }
+
+        const actions = makeEl('div', 'result-actions');
+        const again = makeEl('button', null, t('hunt.again'));
+        again.type = 'button';
+        again.addEventListener('click', () => this.startHunt());
+        const done = makeEl('button', 'secondary', t('practice.done'));
+        done.type = 'button';
+        done.addEventListener('click', () => this.back());
+        actions.append(again, done);
+        box.appendChild(actions);
+    },
+
+    // Bingó: megtaláltad (huntSolved) vagy feladtad (huntGiveUp) — mindkettő a következő kézhez vezet
+    huntSolved(word) {
+        const h = this.hunt;
+        h.finished = true;
+        const data = PracticeStore.get();
+        data.bingo.attempts++;
+        data.bingo.solved++;
+        data.bingo.streak++;
+        data.bingo.best_streak = Math.max(data.bingo.best_streak, data.bingo.streak);
+        PracticeStore.touch();
+        h.solvedWord = word;
+        this.showHuntBlock('result');
+        this.renderBingoResult();
+        SoundManager.play('challenge_accept');
+    },
+
+    huntGiveUp() {
+        const h = this.hunt;
+        h.finished = true;
+        h.gaveUp = true;
+        const data = PracticeStore.get();
+        data.bingo.attempts++;
+        data.bingo.streak = 0;
+        PracticeStore.touch();
+        this.showHuntBlock('result');
+        this.renderBingoResult();
+    },
+
+    renderBingoResult() {
+        const h = this.hunt;
+        const box = document.getElementById('hunt-result');
+        box.replaceChildren();
+        const data = PracticeStore.get();
+        const solved = !h.gaveUp;
+        box.appendChild(makeEl('div', 'result-title', solved ? t('bingo.solved_title') : t('bingo.missed_title')));
+        if (solved) {
+            box.appendChild(makeEl('div', 'result-text', t('bingo.solved_text', { n: h.score, streak: data.bingo.streak })));
+        } else {
+            box.appendChild(makeEl('div', 'result-text', t('bingo.missed_text')));
+        }
+        const word = solved ? h.solvedWord : h.words[0].word;
+        const shown = makeEl('div', 'word-tiles');
+        fillWordTiles(shown, solved ? h.found[h.found.length - 1].tileList : (tokenizeWord(word) || []), solved ? 'right' : '');
+        box.appendChild(shown);
+
+        const others = h.words.filter(w => w.word !== word);
+        if (others.length) {
+            box.appendChild(makeEl('div', 'result-section-title', t('bingo.other_words')));
+            const list = makeEl('div', 'chip-list');
+            for (const w of others) list.appendChild(wordChip(w.word, w.score, 'is-bingo'));
+            box.appendChild(list);
+        }
+        const stats = makeEl('div', 'stat-grid');
+        for (const [value, label] of [[data.bingo.streak, t('bingo.streak')], [data.bingo.best_streak, t('bingo.best_streak')],
+                                      [`${data.bingo.solved}/${data.bingo.attempts}`, t('bingo.stat_solved')]]) {
+            const stat = makeEl('div', 'practice-stat');
+            stat.append(makeEl('span', 'practice-stat-value', value), makeEl('span', 'practice-stat-label', label));
+            stats.appendChild(stat);
+        }
+        box.appendChild(stats);
+        const actions = makeEl('div', 'result-actions');
+        const next = makeEl('button', null, t('bingo.next'));
+        next.type = 'button';
+        next.addEventListener('click', () => this.startHunt());
+        const done = makeEl('button', 'secondary', t('practice.done'));
+        done.type = 'button';
+        done.addEventListener('click', () => this.back());
+        actions.append(next, done);
+        box.appendChild(actions);
+    },
+
+    // --- Szólisták ---
+
+    async openList() {
+        const kind = this.lists.kind;
+        document.getElementById('list-words-panel').classList.toggle('hidden', kind === 'tiles');
+        document.getElementById('list-tiles-panel').classList.toggle('hidden', kind !== 'tiles');
+        if (kind === 'tiles') { this.renderTilesTable(); return; }
+        if (!this.lists.data[kind]) {
+            try {
+                const res = await fetch(`/api/practice/short-words?length=${kind}`);
+                const data = await res.json();
+                if (!data.success) { showMessage(tServer(data.message) || t('common.load_failed'), true); return; }
+                this.lists.data[kind] = data.words.slice().sort((a, b) => compareWords(a.word, b.word));
+            } catch {
+                showMessage(t('common.load_failed'), true);
+                return;
+            }
+            if (this.lists.kind !== kind) return;       // közben másik listára váltottak
+        }
+        this.renderList();
+    },
+
+    _initial(word) {
+        const tokens = tokenizeWord(word);
+        return tokens ? tokens[0] : word[0];
+    },
+
+    renderList() {
+        const { kind, sort, letter, query } = this.lists;
+        const words = this.lists.data[kind];
+        if (!words) return;
+        document.getElementById('list-intro').textContent = t(kind === '2' ? 'lists.intro_2' : 'lists.intro_3');
+
+        // Kezdőbetű-szűrő
+        const initials = [...new Set(words.map(w => this._initial(w.word)))].sort((a, b) => (HU_ORDER[a] ?? 99) - (HU_ORDER[b] ?? 99));
+        if (letter && !initials.includes(letter)) this.lists.letter = '';
+        const chips = document.getElementById('list-letters');
+        chips.replaceChildren();
+        for (const value of ['', ...initials]) {
+            const chip = makeEl('button', 'chip-btn' + (value === this.lists.letter ? ' active' : ''), value || t('lists.all'));
+            chip.type = 'button';
+            chip.addEventListener('click', () => { this.lists.letter = value; this.renderList(); });
+            chips.appendChild(chip);
+        }
+
+        let shown = words;
+        if (this.lists.letter) shown = shown.filter(w => this._initial(w.word) === this.lists.letter);
+        if (query) shown = shown.filter(w => w.word.includes(query));
+        document.getElementById('list-count').textContent = shown.length === words.length
+            ? t('lists.count', { n: words.length }) : t('lists.count_filtered', { n: shown.length, total: words.length });
+
+        const box = document.getElementById('list-words');
+        box.replaceChildren();
+        if (!shown.length) {
+            box.innerHTML = emptyStateHtml(t('lists.none'));
+            return;
+        }
+        if (sort === 'score') {
+            shown = shown.slice().sort((a, b) => b.score - a.score || compareWords(a.word, b.word));
+            const group = makeEl('div', 'chip-list');
+            for (const w of shown) group.appendChild(wordChip(w.word, w.score));
+            box.appendChild(group);
+            return;
+        }
+        let current = null, group = null;
+        for (const w of shown) {
+            const initial = this._initial(w.word);
+            if (initial !== current) {
+                current = initial;
+                const section = makeEl('div', 'list-group');
+                section.appendChild(makeEl('div', 'list-group-title', initial));
+                group = makeEl('div', 'chip-list');
+                section.appendChild(group);
+                box.appendChild(section);
+            }
+            group.appendChild(wordChip(w.word, w.score));
+        }
+    },
+
+    // Zsetonok: pontérték szerint csoportosítva, darabszámmal
+    renderTilesTable() {
+        document.getElementById('tiles-intro').textContent = t('lists.tiles_intro');
+        const box = document.getElementById('tiles-table');
+        box.replaceChildren();
+        const groups = new Map();
+        for (const [letter, value] of Object.entries(TILE_VALUES)) {
+            if (!groups.has(value)) groups.set(value, []);
+            groups.get(value).push(letter);
+        }
+        for (const value of Array.from(groups.keys()).sort((a, b) => a - b)) {
+            const letters = groups.get(value).sort((a, b) => (HU_ORDER[a] ?? 99) - (HU_ORDER[b] ?? 99));
+            const count = letters.reduce((sum, l) => sum + (TILE_COUNTS[l] || 0), 0);
+            const row = makeEl('div', 'tiles-group');
+            const label = makeEl('div', 'tiles-group-value', t('common.points', { n: value }));
+            label.appendChild(makeEl('small', null, t('lists.tile_total', { n: count })));
+            const tiles = makeEl('div', 'tiles-group-tiles');
+            for (const letter of letters) {
+                const cell = makeEl('div', 'tile-with-count');
+                const tile = makeEl('span', 'qtile', letter || ' ');
+                if (letter) tile.appendChild(makeEl('small', null, value));
+                cell.append(tile, makeEl('em', null, `×${TILE_COUNTS[letter]}`));
+                if (!letter) cell.title = t('tracker.blank');
+                tiles.appendChild(cell);
+            }
+            row.append(label, tiles);
+            box.appendChild(row);
+        }
+    },
+};
+
+
+// ===== LOBBY NAVIGÁCIÓ: görgethető fülsor =====
+// Keskeny képernyőn a fülek elférnek-e: a kijelölt fül középre görgetődik, a széleken elhalványul a sor.
+
+const LobbyNav = {
+    init() {
+        const nav = document.getElementById('lobby-nav');
+        nav.addEventListener('scroll', () => this.update(), { passive: true });
+        window.addEventListener('resize', () => this.update());
+        if ('ResizeObserver' in window) new ResizeObserver(() => this.update()).observe(nav);
+        this.update();
+    },
+
+    update() {
+        const nav = document.getElementById('lobby-nav');
+        const max = nav.scrollWidth - nav.clientWidth;
+        nav.classList.toggle('can-scroll-left', max > 2 && nav.scrollLeft > 4);
+        nav.classList.toggle('can-scroll-right', max > 2 && nav.scrollLeft < max - 4);
+    },
+
+    reveal(tab) {
+        const nav = document.getElementById('lobby-nav');
+        if (!tab || nav.scrollWidth <= nav.clientWidth) return;
+        const navRect = nav.getBoundingClientRect();
+        const tabRect = tab.getBoundingClientRect();
+        const target = nav.scrollLeft + (tabRect.left - navRect.left) - (navRect.width - tabRect.width) / 2;
+        const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        nav.scrollTo({ left: Math.max(0, target), behavior: reduce ? 'auto' : 'smooth' });
     },
 };
 
@@ -4939,7 +6026,7 @@ const Friends = {
 
 const Dialogs = {
     // A háttérre koppintással / Esc-szel bezárható lapok
-    SHEETS: ['blank-dialog', 'exit-dialog', 'dictionary-dialog', 'tracker-dialog', 'hint-dialog'],
+    SHEETS: ['blank-dialog', 'exit-dialog', 'dictionary-dialog', 'tracker-dialog', 'hint-dialog', 'async-new-dialog'],
 
     init() {
         for (const id of this.SHEETS) {
@@ -5309,6 +6396,7 @@ Badges.init();
 Daily.init();
 Practice.init();
 AsyncGames.init();
+LobbyNav.init();
 Push.init();
 Replay.init();
 GameOver.init();
