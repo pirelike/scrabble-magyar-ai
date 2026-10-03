@@ -14,14 +14,22 @@ _HAS_VOWEL_RE = re.compile('[aáeéiíoóöőuúüű]')
 _VOWELLESS_INTERJECTIONS = frozenset({'brr', 'brrr', 'hm', 'hmm', 'hmmm', 'khm', 'khmm', 'pszt'})
 
 
+def load_checker():
+    """A beágyazott hu_HU szótár ellenőrzője, a ténylegesen használt "kockázatos" alakok listájával
+    (dict/hu_attested.txt; ha hiányzik, a kockázatos levezetések is érvényesek)."""
+    from affix_checker import AffixChecker
+    attested = os.path.join(_DICT_DIR, 'hu_attested.txt')
+    return AffixChecker(os.path.join(_DICT_DIR, 'hu_HU.aff'), os.path.join(_DICT_DIR, 'hu_HU.dic'),
+                        attested if os.path.exists(attested) else None)
+
+
 def _init_checker():
     """Betölti a beágyazott hu_HU szótárat (dict/hu_HU.aff + .dic). Nincs külső függőség:
     sem a pyenchant/libenchant, sem a hunspell program nem szükséges."""
     global _checker, _checker_type, _init_attempted
     _init_attempted = True
     try:
-        from affix_checker import AffixChecker
-        _checker = AffixChecker(os.path.join(_DICT_DIR, 'hu_HU.aff'), os.path.join(_DICT_DIR, 'hu_HU.dic'))
+        _checker = load_checker()
         _checker_type = 'builtin'
         print(f"Szótár: beágyazott hu_HU ({_checker.entry_count} szótő)")
     except (OSError, ValueError) as exc:

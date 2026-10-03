@@ -15,10 +15,10 @@ Böngészőben: http://localhost:5000
 - `server.py` — Flask + SocketIO szerver (gevent), lobby/szoba kezelés, Cloudflare tunnel integráció, Socket.IO event handlerek, reconnection grace period, robotlépések (`_schedule_bot_turn` / `_play_bot_turn`), megfigyelők, előnézet, tipp, napi feladvány (`start_daily`…), levelezős játékok (`create_async_game`, `open_async_game`, határidő-figyelő `_async_sweeper`), push értesítés a saját körre (`_maybe_push_turn`), kitüntetések és értékszám kiküldése játék végén
 - `game.py` — Játéklogika (Game osztály), körök, pontozás, játék vége (6 pont nélküli kör; döntetlennél több győztes: `winners`), challenge rendszer, kör időlimit, robotok (`add_bot`, `bot_level`), szerkezetes `last_action_info`, lépéstörténet (`get_history`, a lépésnapló a kezet is rögzíti: `rack`), előnézet (`preview_placement`), visszavonás (`withdraw_pending`), napi feladvány mód (`puzzle`), levelezős mód (`async_mode`, határidő, `expire_turn`, `resign`)
 - `player.py` — Player osztály (id, név, kéz, pontszám, disconnected állapot, `is_bot`, `difficulty`: a robot fokozata 1–10 vagy `'auto'` („igazodik hozzám”), a régi `easy`/`medium`/`hard` átképeződik; `timeouts`, `resigned`)
-- `ai_player.py` — Robot ellenfél: szókincs (a szótár tőszavai + ~250 000 gyakori ragozott alak), horgonyalapú lépésgenerátor, 10 fokozatú nehézség (`parse_level`, `_PROFILES`) + „igazodik hozzám” (`adaptive_level`, `LEVEL_STRENGTH`), tippek
+- `ai_player.py` — Robot ellenfél: szókincs (a szótár tőszavai + ~225 000 gyakori ragozott alak, a furcsa alakok nélkül), horgonyalapú lépésgenerátor, 10 fokozatú nehézség (`parse_level`, `_PROFILES`) + „igazodik hozzám” (`adaptive_level`, `LEVEL_STRENGTH`), tippek
 - `board.py` — 15×15 tábla, premium mezők, szó elhelyezés validáció és pontozás
 - `dictionary.py` — Magyar szótár-ellenőrzés a beágyazott `affix_checker`-rel (nincs rendszerfüggőség), magánhangzó nélküli rövidítések kizárása, `is_available`/`warm_up`, tömeges `filter_valid` (gyorsítótárral), `suggest_words` (egy betűnyi szerkesztés)
-- `affix_checker.py` — Tisztán Python, Hunspell-szerű szóellenőrző a `dict/hu_HU.{aff,dic}` fájlokhoz: szótő, előtag, legfeljebb két toldalék, folytatási osztályok (AF aliasok), NEEDAFFIX/ONLYINCOMPOUND/FORBIDDENWORD; **összetételi szabályok nélkül**; `inflected_forms` — ragozott alakok előállítása a saját szabályaiból (a robot szókincséhez)
+- `affix_checker.py` — Tisztán Python, Hunspell-szerű szóellenőrző a `dict/hu_HU.{aff,dic}` fájlokhoz: szótő, előtag, legfeljebb két toldalék, folytatási osztályok (AF aliasok), NEEDAFFIX/ONLYINCOMPOUND/FORBIDDENWORD; **összetételi szabályok nélkül**; a morfológiai címkék (AM aliasok) alapján szűri a furcsa alakokat (lásd „Furcsa szavak szűrése”); `inflected_forms` — ragozott alakok előállítása a saját szabályaiból (a robot szókincséhez)
 - `achievements.py` — Kitüntetések (10 + 1 jelvény): játékonkénti kiértékelés a lépésnaplóból (`evaluate_game`) és összesítők (`cumulative_badges`)
 - `analysis.py` — Játékelemzés: lépésenként a legjobb lehetséges lépés és a kint maradt pont (a robot motorjával), gyorsítótárazva
 - `async_games.py` — Levelezős játék: `build_game`, névütközés-kezelés, a lobby-lista összegzése
@@ -37,7 +37,7 @@ Böngészőben: http://localhost:5000
 - `rate_limiter.py` — Generikus rate limiter Socket.IO (SID) és HTTP (IP) endpointokhoz
 - `socket_auth.py` — Aláírt, rövid életű token a Socket.IO identitás igazolásához (`set_name`)
 - `tunnel.py` — Cloudflare tunnel subprocess kezelés (indítás/leállítás)
-- `dict/` — Beágyazott hu_HU hunspell szótár fájlok (hu_HU.dic, hu_HU.aff)
+- `dict/` — Beágyazott hu_HU hunspell szótár fájlok (hu_HU.dic, hu_HU.aff) + `hu_attested.txt` (a kockázatos levezetések ténylegesen használt alakjai, CC BY-SA 4.0)
 - `templates/index.html` — Egyoldalas UI: auth (3 tab), lobby (Kezdőlap / Új szoba / Mentett játékok / Barátok / Levelezős / Gyakorlás / Ranglista), várakozó szoba, játék, profil, visszajátszás (+ elemzés); közös SVG ikon-sprite, minden képernyőn egységes felső sáv (`app-topbar`); minden szöveg `data-i18n*` jelölésű
 - `templates/sw.js` — Service worker (Jinja sablon, `VERSION` = kliens fájlok mtime-ja)
 - `static/app.js` — Kliens logika, drag & drop, pinch-to-zoom, Socket.IO kommunikáció, auth flow, téma váltás, hang rendszer (SoundManager, SoundSettings), megfigyelő mód, ranglista, szótár-böngésző, előnézet, zsetonszámláló, tipp, gyorsbillentyűk, PWA telepítés; modulok: `Daily`, `Practice` (+ `PracticeStore`: a gyakorlás statisztikája a `localStorage`-ban), `AsyncGames`, `LobbyNav`, `Push`, `Badges`, `Replay` (elemzés, megosztás); közös segédek: `makeEl`, `makeAvatar`, `tokenizeWord` (a szerver `tokenize_word`-jének mása), `fillWordTiles`
@@ -45,7 +45,8 @@ Böngészőben: http://localhost:5000
 - `static/style.css` — Apple HIG ihletésű design rendszer (tokenek, iOS-szerű komponensek), sötét/világos téma, reszponzív layout (asztali / tablet / telefon, álló és fekvő), 17. szakasz: új funkciók és animációk, 18. szakasz: Gyakorlás és Levelezős (újratervezve: közös elemek, hub, szókvíz, betűvadász, szólisták, levelezős kártyák és lap)
 - `static/manifest.webmanifest`, `static/offline.html`, `static/icons/` — PWA
 - `tools/bot_arena.py` — Robot-aréna: a fokozatok erejének mérése bot–bot játékokkal (`ladder`, `match`, `adapt`; kalibrációhoz, nem része a szervernek)
-- `tests/` — Tesztek (pytest, 1302 teszt)
+- `tools/build_attested.py` — a `dict/hu_attested.txt` előállítása egy szógyakorisági listából (elírás- és névszűrővel; nem része a szervernek)
+- `tests/` — Tesztek (pytest, 1360 teszt)
 - `requirements.txt` — Python függőségek (flask, flask-socketio, gevent, gevent-websocket, opcionálisan pywebpush)
 - `.venv/` — Virtual environment
 
@@ -83,7 +84,7 @@ Böngészőben: http://localhost:5000
 - **Újracsatlakozás (grace period)**: 120 másodperc a visszacsatlakozásra ha a kapcsolat megszakad játék közben; a várakozó szoba tulajdonosának 10 perc (token alapú)
 - **Pinch-to-zoom**: mobilon a tábla nagyítható/kicsinyíthető csípő mozdulattal
 - **Szótár-böngésző (Challenge fázis)**: A megtámadás során a lerakott szavak kattintható linkek, amelyek egy új lapon indítanak Google keresést az adott szóra ("A magyar nyelv értelmező szótára" fókusszal).
-- Szótár-ellenőrzés: beágyazott hu_HU szótár (`affix_checker.py`, tisztán Python — ugyanúgy működik fejlesztői gépen, Windowson és tárhelyen; korábban a pyenchant/hunspell hiánya miatt a szerveren minden szó érvényesnek látszott). A szavakat kisbetűvel keresi, így a tulajdonnevek (pl. DUNA, BUDAPEST) nem érvényesek; a Hunspell összetételi szabályait nem használja (értelmetlen összetételeket, pl. PAGONYAGY, nem fogad el); a magánhangzó nélküli tételek (KG, DB, TV, betűnevek) nem érvényesek, az indulatszavak (BRR, HM, PSZT) igen. Ha a szótár nem tölthető be, a Szótár-eszköz 503-at ad (nem jelöl érvényesnek semmit)
+- Szótár-ellenőrzés: beágyazott hu_HU szótár (`affix_checker.py`, tisztán Python — ugyanúgy működik fejlesztői gépen, Windowson és tárhelyen; korábban a pyenchant/hunspell hiánya miatt a szerveren minden szó érvényesnek látszott). A szavakat kisbetűvel keresi, így a tulajdonnevek (pl. DUNA, BUDAPEST) nem érvényesek; a Hunspell összetételi szabályait nem használja (értelmetlen összetételeket, pl. PAGONYAGY, nem fogad el); a magánhangzó nélküli tételek (KG, DB, TV, betűnevek) nem érvényesek, az indulatszavak (BRR, HM, PSZT) igen; a nyelvtanilag lehetséges, de értelmetlen alakokat (FALIM, TAROM, ÉJÉK, BLÖKIÜL, VU) kiszűri (lásd „Furcsa szavak szűrése”). Ha a szótár nem tölthető be, a Szótár-eszköz 503-at ad (nem jelöl érvényesnek semmit)
 - **Játék mentés / visszatöltés**: manuális mentés (owner-only) a kilépés menüből, lobby-first restore flow
 - **Visszajátszás**: befejezett játékok lépésről lépésre visszanézhetők (board snapshot-okkal)
 - **Kilépés menü**: owner: mentés+kilépés / kilépés mentés nélkül / mégsem; nem-owner: kilépés / mégsem
@@ -166,7 +167,7 @@ Vendég mód: a régi név-megadós flow megmarad (statisztikák nem mentődnek)
 - `GET /api/auth/me` — session cookie ellenőrzés
 - `GET /api/auth/profile` — statisztikák és játékelőzmények (session cookie)
 - `GET /api/auth/socket-token` — rövid életű (5 perc) aláírt token a Socket.IO `set_name`-hez (session cookie)
-- `GET /api/game/<int:game_id>/moves` — lépések listája (replay-hez; `players`, `finished` is)
+- `GET /api/game/<int:game_id>/moves` — lépések listája (replay-hez; `players`, `finished` is; folyamatban lévő játéknál a kezek — `rack` — nélkül)
 - `POST /api/game/<id>/share` — megosztható replay-link (csak résztvevő, befejezett játék); `GET /api/replay/<token>` — nyilvános megosztott visszajátszás
 - `GET /api/game/<id>/analysis` — játékelemzés (háttérben számolódik: `status: running|ready|unavailable|error`)
 - `GET /api/async/games` — a felhasználó folyamatban lévő levelezős játékai (akinél a sor, az elöl)
@@ -212,14 +213,14 @@ Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztésh
 | `tests/test_server_auth.py` | 52 | HTTP auth route-ok, cookie flow |
 | `tests/test_server_socket.py` | 68 | Socket.IO eventek, lobby, szobák, privát szobák, challenge szavazás, chat, owner kilépés, kör időlimit |
 | `tests/test_challenge.py` | 17 | Challenge szavazásos rendszer |
-| `tests/test_dictionary.py` | 59 | Szótár-ellenőrzés (valódi szótárral: kisbetűs keresés, tulajdonnevek, rövidítések, értelmetlen szavak pl. SALYT), elérhetőség, javaslatok, tábla-validáció |
-| `tests/test_affix_checker.py` | 39 | Beépített szóellenőrző: toldalékok, előtagok, folytatási osztályok, speciális jelzők, a valódi szótár (hunspellel összevetve) |
+| `tests/test_dictionary.py` | 99 | Szótár-ellenőrzés (valódi szótárral: kisbetűs keresés, tulajdonnevek, rövidítések, értelmetlen szavak pl. SALYT, a furcsa alakok szűrése és a használt alakok megtartása), elérhetőség, javaslatok, tábla-validáció |
+| `tests/test_affix_checker.py` | 46 | Beépített szóellenőrző: toldalékok, előtagok, folytatási osztályok, speciális jelzők, morfológiai szűrés (kockázatos levezetések, használati lista, kötőjeles szócikkek), a valódi szótár (hunspellel összevetve) |
 | `tests/test_email_service.py` | 4 | Email küldés |
 | `tests/test_room.py` | 12 | Room osztály |
 | `tests/test_friends.py` | 27 | Barát CRUD, kérések, felhasználókeresés, szobameghívó, online státusz |
-| `tests/test_timer_and_replay.py` | 28 | Kör időlimit, replay perzisztencia |
-| `tests/test_regressions.py` | 81 | Kódátvizsgálás során talált hibák: zsák, dupla cella, passz-végjáték, döntetlen mentése, mentés szavazás közben, IP rate limit, e-mail megerősítés, socket-token, session átvétel, visszaállítás/késői csatlakozás, várakozó szoba türelmi ideje |
-| `tests/test_ai_player.py` | 81 | Robot motor: szókincs (ragozott alakok, zsetonokra bontható szavak), lépésgenerátor (pontszám = játék pontozása), 10 fokozat (monoton skála, régi nevek átképezése, érvénytelen értékek), csere/passz, tipp, erősségpróba |
+| `tests/test_timer_and_replay.py` | 30 | Kör időlimit, replay perzisztencia |
+| `tests/test_regressions.py` | 82 | Kódátvizsgálás során talált hibák: zsák, dupla cella, passz-végjáték, döntetlen mentése, mentés szavazás közben, IP rate limit, e-mail megerősítés, socket-token, session átvétel, visszaállítás/késői csatlakozás, várakozó szoba türelmi ideje |
+| `tests/test_ai_player.py` | 82 | Robot motor: szókincs (ragozott alakok, zsetonokra bontható szavak), lépésgenerátor (pontszám = játék pontozása), 10 fokozat (monoton skála, régi nevek átképezése, érvénytelen értékek), csere/passz, tipp, erősségpróba |
 | `tests/test_bots.py` | 114 | Robotok a játékmodellben (szavazás, mentés), szerver (lépés, ütemezés, tipp, előnézet), `last_action_info`, lépéstörténet |
 | `tests/test_spectator.py` | 30 | Megfigyelő mód, élő játékok, szoba életciklus |
 | `tests/test_public_api.py` | 52 | Ranglista (DB + route, robotos játékok kizárása), szótár API, PWA végpontok |
@@ -228,17 +229,17 @@ Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztésh
 | `tests/test_frontend_consistency.py` | 23 | Kliens ↔ szerver: konstansok (TILE_VALUES, premium mezők), elem-azonosítók, robot-fokozat választó, Socket.IO események, API útvonalak, JS szintaxis |
 
 | `tests/test_adaptive_bot.py` | 40 | „Igazodik hozzám”: `parse_difficulty`, fokozat az átlagból, keverés, `Game.recent_stats`/`bot_level`, mentés, szerver |
-| `tests/test_achievements.py` | 26 | Kitüntetések: kiértékelés, összesítők, tárolás, profil, szerver |
+| `tests/test_achievements.py` | 27 | Kitüntetések: kiértékelés, összesítők, tárolás, profil, szerver |
 | `tests/test_elo.py` | 27 | ELO számítás, értékelt játékok, ranglista értékszám szerint, `rating_update`, feladó |
 | `tests/test_replay_share.py` | 11 | Megosztási token, nyilvános replay, jogosultság, rate limit |
-| `tests/test_analysis.py` | 23 | Kezek rögzítése, lépéselemzés, gyorsítótár, háttérszámítás, API |
-| `tests/test_daily.py` | 49 | Napi feladvány: előállítás (determinizmus), játék, ranglista, socket, HTTP |
+| `tests/test_analysis.py` | 25 | Kezek rögzítése, lépéselemzés, gyorsítótár, háttérszámítás, API |
+| `tests/test_daily.py` | 50 | Napi feladvány: előállítás (determinizmus), játék, ranglista, socket, HTTP |
 | `tests/test_practice.py` | 47 | Szókvíz (csapda mód), rövid szavak, válasz-ellenőrzés, betűvadász / bingó (kéz, szólista, szó-bírálat), API |
 | `tests/test_practice_client.py` | 15 | A kliens gyakorló logikája node-ban: zsetonokra bontás a szerverrel egyezik, magyar ábécé-rendezés, napi sorozat, „Hibáim” pakli, tároló |
-| `tests/test_push.py` | 42 | VAPID, feliratkozások, küldés (mockolva), API, „Te jössz!” kiváltása |
-| `tests/test_async_games.py` | 55 | Levelezős játék: játéklogika (határidő, lejárat, feladás), szerver, mentés / visszaállítás, lista, útvonalak |
+| `tests/test_push.py` | 44 | VAPID, feliratkozások, küldés (mockolva), API, „Te jössz!” kiváltása |
+| `tests/test_async_games.py` | 56 | Levelezős játék: játéklogika (határidő, lejárat, feladás), szerver, mentés / visszaállítás, lista, útvonalak |
 
-**Összesen: 1302 teszt**
+**Összesen: 1360 teszt**
 
 Fixture: `tests/conftest.py` — temp_db (auto-applied, ideiglenes SQLite DB minden teszthez)
 Segédek: `tests/helpers.py` — `registered_set_name_payload()` (érvényes socket-tokennel), `verify_email()`
@@ -330,7 +331,7 @@ Játék közben a side panelen chat szekció érhető el:
 | `pass_turn` | Kör passzolása |
 | `accept_words` | Lerakás elfogadása / challenge elfogadás / elfogadó szavazat |
 | `reject_words` | Lerakás elutasítása (2 játékos) / megtámadás indítása (3+ játékos) |
-| `withdraw_words` | A lerakó visszavonja a szavazásra váró lerakását (amíg senki sem szavazott) |
+| `withdraw_words` | A lerakó visszavonja a szavazásra váró lerakását (amíg senki sem szavazott); időlimitnél a kör hátralévő ideje folytatódik (legalább `_MIN_TIME_AFTER_WITHDRAW` = 10 mp), nem indul újra |
 | `send_chat` | Chat üzenet küldése |
 | `save_game` | Manuális mentés (owner only) |
 | `restore_game` | Mentett játék visszaállítása (várakozó szoba létrehozás) |
@@ -565,10 +566,10 @@ A tábla cellái `container-type: inline-size` + `cqw` egységekkel méreteződn
 - `_emit_all_states` már `socketio.emit`-et használ, így háttérszálból is hívható.
 
 ### Motor (`ai_player.py`)
-- Szókincs: `dict/hu_HU.dic` tőszavai (csak kisbetűs, magánhangzót tartalmazó, tiltott betűk nélküli — zsetonokra bontható —, 2–15 betű; ~68 000 szó) **+ gyakori ragozott alakok** (`AffixChecker.inflected_forms`: szótő + egy végződés a szótár saját szabályaival, a tővégi a/e nyúlásával, legfeljebb 6 betűs szótövekre és 12 betűs alakokra; a végződések az `_INFLECT_ADDS` fehérlistán: többes szám, tárgyrag, esetragok, birtokos személyjelek, igei végződések — ~250 000 alak, ~+38 MB). Rendezett lista + `bisect` prefix- és tagsági kereséssel (nincs trie és nincs külön halmaz: kevés memória; a keresés így is ~12 ms/állás).
+- Szókincs: `dict/hu_HU.dic` tőszavai (csak kisbetűs, magánhangzót tartalmazó, tiltott betűk nélküli — zsetonokra bontható —, 2–15 betű, a szótár szerint önmagában érvényes (`AffixChecker.has_stem`: nincs VU, COS, MADAME); ~65 000 szó) **+ gyakori ragozott alakok** (`AffixChecker.inflected_forms`: szótő + egy végződés a szótár saját szabályaival, a tővégi a/e nyúlásával, legfeljebb 6 betűs szótövekre és 12 betűs alakokra; a végződések az `_INFLECT_ADDS` fehérlistán: többes szám, tárgyrag, esetragok, birtokos személyjelek, igei végződések; a kockázatos levezetések (melléknév + birtokos, -ék, -ul/-ül főnéven, -né) nélkül, akkor is, ha a használati listán szerepelnek — `inflected_forms(..., risky=False)` — ~225 000 alak, ~+35 MB). Rendezett lista + `bisect` prefix- és tagsági kereséssel (nincs trie és nincs külön halmaz: kevés memória; a keresés így is ~12 ms/állás).
 - `generate_moves`: Appel–Jacobson horgonykeresés vízszintesen és (átfordított rácson) függőlegesen; a többkarakteres zsetonok (SZ, CS...) több karaktert lépnek a prefixben; joker bármely betű. A keresztszavak érvényességét **egyetlen** `filter_valid` hívás dönti el az egész táblára. A pontozás a játék saját `Board.validate_placement`-jével történik egy privát másolaton.
 - **10 fokozat** (`_PROFILES`, `_ordered_candidates`): az erőt a **lépéskiválasztás** szabja meg, nem a szókincs (a szókincs szűkítése mérés szerint alig gyengít, mert a robot a megmaradtak közül is a legjobbat választja). Az 1–7. fokozat *célpontszámos*: minden körben célpontszámot sorsol (átlag `mu`, lognormális szórás `_TARGET_CV`), és a hozzá legközelebbi pontszámú lépést rakja le. A 8–10. fokozat *értékeléses*: a legnagyobb `equity` (= pont + `leave_value`, végjátékban a kézben maradó zsetonok levonva), Gauss-zajjal (`sigma` 8 / 4 / 0). Az 1. fokozat 15% eséllyel „nem talál" lépést (csere, ha a zsák ≥ 7, különben passz). Jokert minden fokozat használ.
-- **Mért erősség** (bot–bot önjáték, átlagos pont/kör, ragozott szókinccsel): 4,3 · 6,1 · 7,5 · 10,3 · 13,0 · 16,1 · 19,3 · 23,2 · 25,3 · 28,0 (`LEVEL_STRENGTH`; újramérés után ezt is frissíteni kell). A régi szintek helye: könnyű = 3, közepes = 6 (alapértelmezett), nehéz = 10. A régi mentések és kliensek `easy`/`medium`/`hard` értéke `parse_level`-lel képeződik át (a `Player` is normalizál). Újramérés a paraméterek módosítása után: `python tools/bot_arena.py ladder -n 24 -j 4` (fokozatonként), `python tools/bot_arena.py match 3 6` (két fokozat egymás ellen); a bot–bot játék kevésbé szór, mint egy ember, ezért ott a szomszédos fokozatok közti győzelmi arány élesebb, mint embernél.
+- **Mért erősség** (bot–bot önjáték, átlagos pont/kör, ragozott szókinccsel, a furcsa alakok nélkül): 4,3 · 6,1 · 7,4 · 10,1 · 12,7 · 15,7 · 18,4 · 21,2 · 24,6 · 27,0 (`LEVEL_STRENGTH`; újramérés után ezt is frissíteni kell). A régi szintek helye: könnyű = 3, közepes = 6 (alapértelmezett), nehéz = 10. A régi mentések és kliensek `easy`/`medium`/`hard` értéke `parse_level`-lel képeződik át (a `Player` is normalizál). Újramérés a paraméterek módosítása után: `python tools/bot_arena.py ladder -n 24 -j 4` (fokozatonként), `python tools/bot_arena.py match 3 6` (két fokozat egymás ellen); a bot–bot játék kevésbé szór, mint egy ember, ezért ott a szomszédos fokozatok közti győzelmi arány élesebb, mint embernél.
 - A kiválasztott lépés minden szavát `_first_valid` ellenőrzi a játék szótárával; ha nincs lépés: csere (zsák ≥ 7) vagy passz.
 - A keresés időkerete (`_TIME_BUDGET`) csak védőkorlát: a keresés a legtöbb táblán jóval hamarabb véget ér, így a fokozatok ereje nem függ a szerver sebességétől; lejártakor az addigi legjobbal dolgozik.
 - **„Igazodik hozzám” (`'auto'`)**: `Game.recent_stats` az emberi játékosok utolsó 6 körének átlagát számolja (passz/csere = 0), `ai_player.level_for_average` ezt a mért skálán tört fokozattá képezi, `adaptive_level` a két szomszédos fokozatot véletlenszerűen keveri (kevés adatnál az induló 5. fokozat felé húz). A szerver lépésenként `Game.bot_level(bot)`-ot használ. Ellenőrzés: `python tools/bot_arena.py adapt 5`.
@@ -577,7 +578,7 @@ A tábla cellái `container-type: inline-size` + `cqw` egységekkel méreteződn
 ## Megfigyelő mód
 
 - `Room.spectators {sid: név}` + `ServerState.spectator_rooms {sid: room_id}`; a megfigyelő a Socket.IO szobába is belép (chat, események), de a `player_rooms`-ban nem szerepel, így a játékos-eventek (lerakás, chat küldés...) hatástalanok.
-- `_emit_all_states` a megfigyelőknek `Game.get_spectator_state()`-et küld (kezek nélkül, `spectator: true`); minden játékos állapotában `spectator_count`.
+- `_emit_all_states` a megfigyelőknek `Game.get_spectator_state()`-et küld (kezek nélkül, `spectator: true`); minden játékos állapotában `spectator_count`. A lecsatlakozott (`disconnected`) játékosnak nem küld állapotot: a SID-je még élhet a lobbyban (pl. kilépett, vagy levelezős játékból bezárta a nézetet), és a kliense visszaugrana a játékba.
 - Életciklus: `disconnect`/`logout`/`leave_spectate` eltávolítja; `_cleanup_room` és `_disband_active_room` `room_disbanded`-et küld nekik. Kliens oldalon újracsatlakozáskor `Spectate.resume()` újraindítja a megfigyelést.
 - A `get_rooms` a `live_games` eseményt is kiküldi; játék indításakor/végén broadcast.
 
@@ -609,6 +610,20 @@ A tábla cellái `container-type: inline-size` + `cqw` egységekkel méreteződn
 - `Game.puzzle`: egyjátékos játék, egyetlen lerakás után vége (nincs passz, csere, végső elszámolás); sosem mentődik az előzményekbe. Szoba: privát, `room.is_puzzle`. Vendég is játszhat, de csak regisztrált kerül a ranglistára (`daily_scores`: legjobb pont → kevesebb próbálkozás → korábbi idő). A megoldás megnézése (`reveal_daily`) lezárja a ranglistás részvételt; ha valaki a legjobbnál többet ér el, az lesz az új legjobb. `daily_best` kitüntetés.
 - `GET /api/daily`: a saját eredmény, top 10, tegnapi megoldás; a feladvány legjobb pontszáma csak a már próbálkozóknak látszik.
 
+## Furcsa szavak szűrése
+
+A hu_HU szótár helyesírás-ellenőrzésre készült: minden nyelvtanilag lehetséges alakot elfogad, a Scrabble-ban viszont ez sok értelmetlen szót engedne (a robot ilyeneket rakott le, pl. FALIM, TAROM, ÉJÉK, VU). Az `affix_checker` ezért a szótár morfológiai címkéit is beolvassa (`AM` aliasok: a szócikk szófaja `po:`, a toldalék fajtája `is:` / `ds:`):
+- **Csak kötőjellel toldalékolható szócikkek** (`al:szó-`, főnév: rövidítések, mértékegységek, idegen írásmódú szavak — VU, UV, COS, KCAL, SZJA, MADAME, CROISSANT): nem érvényesek (`_KIND_FOREIGN`).
+- **Kockázatos levezetések** (`_rule_risk`, `_is_risky`): csak akkor érvényesek, ha az alak a `dict/hu_attested.txt` listán szerepel (ténylegesen használt):
+  - melléknév (vagy -s/-i/-bb/-nyi… képzős melléknév, ill. -s foglalkozásnév) + birtokos személyjel / birtokjel: KEDVESEM, DRÁGÁM, GYILKOSA igen — TAROM, FALIJA, DOMBOSOM nem;
+  - -ék családi többes: SZOMSZÉDÉK, ANYÁMÉK igen — ÉJÉK, CIRMOSÉK nem;
+  - -ul/-ül **főnéven**: FELESÉGÜL, AJÁNDÉKUL igen — BLÖKIÜL nem (melléknéven ez a szabályos határozószó: ROSSZUL, VÉLETLENÜL — mindig érvényes);
+  - -né képző: KIRÁLYNÉ, SÓGORNÉ igen — ALMÁNÉ nem.
+  - A -ó/-ő, -andó/-endő melléknévi igenév főnévként viselkedik (TANULÓM, FAGYASZTÓMBÓL rendben).
+- `dict/hu_attested.txt`: `tools/build_attested.py` állítja elő a FrequencyWords (OpenSubtitles 2018, magyar, CC BY-SA 4.0) gyakorisági listából: azok az alakok, amelyek csak kockázatos levezetéssel érvényesek és legalább 2-szer előfordulnak; kiszűrve az elírások (egy ≥10× gyakoribb érvényes szó ékezet nélkül, egy kimaradt vagy megkettőzött betűvel: TAROM ← TARTOM, KORUL ← KÖRÜL) és a tulajdonnévből képzettek (ALISA ← Ali). A fájl hiányában a kockázatos levezetések mind érvényesek (a hunspell viselkedése). A listán maradt kevés zaj (pl. MAID, MARISA) ritka, hosszú vagy kevéssé valószínű alak.
+- A robot a kockázatos alakokat akkor sem rakja le, ha a listán szerepelnek (`inflected_forms(..., risky=False)`), így a lépései és a napi feladvány táblája természetes szavakból állnak.
+- Ellenőrzés: `AffixChecker.needs_attestation(szó)` — csak kockázatos levezetéssel érvényes-e.
+
 ## Gyakorló módok
 
 A Gyakorlás lap főoldalból (statisztika-sáv: napi sorozat / mai gyakorlat / kvíz-pontosság; a napi feladvány kiemelt kártyája; a módok iOS-szerű csoportosított listája) és al-nézetekből áll (`.practice-view`, `Practice.open(nézet)` / `back()`; a telefonon nincs egyetlen hosszú görgetés). Az eredmények és a „Hibáim” pakli az eszközön élnek (`PracticeStore`, `localStorage('scrabble-practice')`: napok, mai szám, kvíz-számlálók, betűvadász legjobb pontja időkorlátonként, bingó-sorozat, `missed`), vendégnek is működnek.
@@ -629,7 +644,7 @@ A Gyakorlás lap főoldalból (statisztika-sáv: napi sorozat / mai gyakorlat / 
 
 ## Web Push
 
-- `push_service`: VAPID kulcspár (`VAPID_PRIVATE_KEY` / `VAPID_PUBLIC_KEY` környezeti változó, ennek híján az első induláskor generálódik és az `app_settings` táblában marad), `VAPID_SUBJECT` (alapért.: `mailto:SMTP_FROM`). `pywebpush` nélkül a funkció kikapcsol. Küldés háttérfeladatban; a 404/410 válaszú feliratkozás törlődik.
+- `push_service`: VAPID kulcspár (`VAPID_PRIVATE_KEY` környezeti változó: PEM vagy a `web-push` eszköz base64url formája — a nyilvános kulcs ebből számolódik; ennek híján az első induláskor generálódik és az `app_settings` táblában marad), `VAPID_SUBJECT` (alapért.: `mailto:SMTP_FROM`). `pywebpush` nélkül a funkció kikapcsol. Küldés háttérfeladatban; a 404/410 válaszú feliratkozás törlődik.
 - `push_subscriptions` tábla (felhasználónként több eszköz, nyelvvel: hu/en). A szerver `_maybe_push_turn`-nel értesít, ha a soron lévő regisztrált ember távol van (lecsatlakozott, vagy a lapja a `set_visibility` szerint háttérben): körönként egyszer, robotnak / vendégnek / napi feladványban soha.
 - Service worker: `push` (értesítés) és `notificationclick` (az alkalmazás előtérbe hozása). Kliens: profil → kapcsoló (`Push` modul, engedélykérés, iOS-n a Főképernyőhöz adás tanácsa).
 

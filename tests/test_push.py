@@ -1,4 +1,5 @@
 """Web Push: VAPID kulcsok, feliratkozások, küldés és a „Te jössz!” értesítés."""
+import base64
 import json
 from types import SimpleNamespace
 
@@ -116,6 +117,24 @@ class TestVapidKeys:
         monkeypatch.setenv('VAPID_PRIVATE_KEY', vapid_pem.replace('\n', '\\n'))
         assert push_service.public_key() == expected
         assert auth.get_setting('vapid_private_pem') is None     # nem generált újat
+
+    def test_environment_key_in_base64url_form(self, monkeypatch):
+        # a `web-push generate-vapid-keys` formája: a nyers 32 bájtos kulcs base64url-ben
+        vapid = push_service.get_keys()[0]
+        expected = push_service.public_key()
+        raw = vapid.private_key.private_numbers().private_value.to_bytes(32, 'big')
+        with auth._db() as conn:
+            conn.execute('DELETE FROM app_settings')
+        push_service._keys = None
+        monkeypatch.setenv('VAPID_PRIVATE_KEY', base64.urlsafe_b64encode(raw).rstrip(b'=').decode())
+        assert push_service.public_key() == expected
+        assert auth.get_setting('vapid_private_pem') is None     # nem cserélte le egy generáltra
+
+    def test_unreadable_environment_key_falls_back_to_the_stored_one(self, monkeypatch):
+        stored = push_service.public_key()
+        push_service._keys = None
+        monkeypatch.setenv('VAPID_PRIVATE_KEY', 'nem-kulcs')
+        assert push_service.public_key() == stored
 
     def test_subject(self, monkeypatch):
         assert push_service.subject().startswith('mailto:')

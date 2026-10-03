@@ -362,6 +362,22 @@ class TestPlaying:
         assert any(e['name'] == 'room_left' for e in a.get_received())
         assert room.id in server.state.rooms and room.game.players[0].disconnected
 
+    def test_player_who_left_the_view_gets_no_game_state_in_the_lobby(self):
+        # különben a kliense azonnal (és a másik játékos minden lépésénél) visszaugrana a játékba
+        a, a_id, b, b_id, room = _setup()
+        room.game.players[0].hand = list(ALMA_HAND)
+        a.emit('place_tiles', {'tiles': ALMA})
+        a.get_received()
+        a.emit('leave_room')
+        assert [e['name'] for e in a.get_received()] == ['room_left']
+        b.emit('open_async_game', {'game_id': room.db_game_id})
+        b.get_received()
+        b.emit('pass_turn')
+        got = [e['name'] for e in a.get_received()]
+        assert 'game_state' not in got and 'async_your_turn' in got
+        a.emit('open_async_game', {'game_id': room.db_game_id})
+        assert 'game_state' in [e['name'] for e in a.get_received()]
+
     def test_open_from_the_list_as_the_invited_friend(self):
         import server
         a, a_id, b, b_id, room = _setup()

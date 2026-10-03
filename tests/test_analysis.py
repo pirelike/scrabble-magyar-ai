@@ -290,6 +290,22 @@ class TestAnalysisApi:
         _login(client, alice)
         assert client.get(f'/api/game/{game_id}/analysis').status_code == 400
 
+    def test_moves_of_an_unfinished_game_hide_the_racks(self, client):
+        # folyamatban lévő (pl. levelezős) játékban a lépésnaplóból nem látszhat az ellenfél keze
+        game_id, alice, *_ = _saved_game(status='active')
+        _login(client, alice)
+        data = client.get(f'/api/game/{game_id}/moves').get_json()
+        assert data['finished'] is False and len(data['moves']) == 2
+        details = [json.loads(m['details_json']) for m in data['moves']]
+        assert all('rack' not in d for d in details)
+        assert details[0]['words'] and details[0]['tiles']
+
+    def test_moves_of_a_finished_game_keep_the_racks(self, client):
+        game_id, alice, *_ = _saved_game()
+        _login(client, alice)
+        data = client.get(f'/api/game/{game_id}/moves').get_json()
+        assert all('rack' in json.loads(m['details_json']) for m in data['moves'])
+
     def test_rate_limited(self, client, small_vocab, run_tasks_inline):
         game_id, alice, *_ = _saved_game()
         _login(client, alice)

@@ -124,7 +124,7 @@ def _fake_words(sources, count, rng, length=None, mutate=_mutate):
                 continue
             if length is not None and len(tokens) != length:
                 continue
-            if len(fake) > 15:
+            if len(fake) > 15 or len(tokens) > MAX_TILES:
                 continue
             seen.add(fake)
             batch.append(fake)

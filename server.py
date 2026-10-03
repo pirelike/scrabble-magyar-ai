@@ -116,6 +116,8 @@ _DISCONNECT_GRACE_PERIOD = 120
 # kapcsolatot, ezért ez hosszabb, mint a játék közbeni türelmi idő.
 _WAITING_OWNER_GRACE_PERIOD = 600
 ALLOWED_TURN_TIME_LIMITS = {0, 60, 90, 120, 180, 300}
+# A visszavont lerakás után legalább ennyi idő marad a körből (mp)
+_MIN_TIME_AFTER_WITHDRAW = 10
 MAX_BOTS = 3
 # Robot "gondolkodási" ideje másodpercben (min, max): a lépés ennyi várakozás után jelenik meg
 _BOT_THINK_DELAY = {'easy': (1.5, 3.0), 'medium': (1.2, 2.6), 'hard': (1.0, 2.2)}
@@ -258,7 +260,12 @@ def _emit_all_states(game, room_id=None):
     room = _find_room_of(game, room_id)
     expires_at = room.turn_timer_expires_at if room else None
     spectator_count = len(room.spectators) if room else 0
+    # A lecsatlakozott / kilépett játékos SID-je még élhet (a lobbyban van, pl. levelezős játékból
+    # kilépve): neki nem küldünk állapotot, különben a kliense visszaugrana a játékképernyőre
+    away = {p.id for p in game.players if p.disconnected}
     for player_id, gs in game.get_all_states().items():
+        if player_id in away:
+            continue
         gs['turn_timer_expires_at'] = expires_at
         gs['spectator_count'] = spectator_count
         socketio.emit('game_state', gs, room=player_id)
@@ -394,8 +401,9 @@ def _start_challenge_timer(room_id):
     socketio.start_background_task(timeout_callback)
 
 
-def _start_turn_timer(room_id):
-    """Kör visszaszámlálás indítása. Ha lejár, auto-passz."""
+def _start_turn_timer(room_id, seconds=None):
+    """Kör visszaszámlálás indítása. Ha lejár, auto-passz. `seconds`: a teljes körnél rövidebb
+    hátralévő idő (pl. a visszavont lerakás után)."""
     room = state.rooms.get(room_id)
     if not room or not room.game.turn_time_limit:
         return
@@ -403,7 +411,7 @@ def _start_turn_timer(room_id):
         return  # challenge fut, nem indítunk kör timert
 
     timer_id = room.invalidate_turn_timer()
-    limit = room.game.turn_time_limit
+    limit = seconds if seconds is not None else room.game.turn_time_limit
     room.turn_timer_expires_at = time.time() + limit
 
     def timeout_callback():
@@ -1640,12 +1648,16 @@ def handle_place_tiles(data):
         emit('action_result', {'success': False, 'message': err})
         return
 
+    timer_expires_at = room.turn_timer_expires_at
     success, msg, score = game.place_tiles(sid, tiles_placed)
 
     if success:
         room.invalidate_turn_timer()
         emit('action_result', {'success': True, 'message': msg, 'score': score, 'own_turn': True})
         if game.pending_challenge:
+            # Ha a lerakó visszavonja a lerakását, csak a maradék idejét kapja vissza
+            room.withdraw_time_left = (max(0.0, timer_expires_at - time.time())
+                                       if timer_expires_at else None)
             _start_challenge_timer(room_id)
         elif game.finished and game.puzzle is not None:
             _finish_puzzle(sid, game)
@@ -1754,7 +1766,9 @@ def handle_withdraw_words():
     success, msg = game.withdraw_pending(sid)
     if success:
         room.invalidate_challenge_timer()
-        _start_turn_timer(room_id)
+        # A lerakás + visszavonás ne adjon új, teljes kört: a lerakáskor hátralévő idő folytatódik
+        left = room.withdraw_time_left
+        _start_turn_timer(room_id, None if left is None else max(_MIN_TIME_AFTER_WITHDRAW, left))
         emit('action_result', {'success': True, 'message': msg, 'own_turn': True})
         _emit_all_states(game, room_id)
     else:
@@ -1906,6 +1920,9 @@ def handle_start_daily():
     except Exception as e:
         print(f"[daily] Nem sikerült a feladvány: {e}")
         emit('error', {'message': 'A napi feladvány most nem érhető el.'})
+        return
+    # A feladvány előállítása alatt (kooperatív váltás) egy második kérés már szobát nyithatott
+    if state.player_rooms.get(sid) in state.rooms:
         return
 
     player_name = state.player_names.get(sid, 'Névtelen')

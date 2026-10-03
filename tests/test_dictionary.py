@@ -1,5 +1,4 @@
 """Tests for dictionary.py - word validation."""
-import os
 import pytest
 from unittest.mock import patch
 
@@ -94,9 +93,7 @@ class TestCheckWordsNoChecker:
 def real_checker():
     """A beágyazott szótár egyszer betöltve (a betöltés ~0,3 mp)."""
     import dictionary
-    from affix_checker import AffixChecker
-    return AffixChecker(os.path.join(dictionary._DICT_DIR, 'hu_HU.aff'),
-                        os.path.join(dictionary._DICT_DIR, 'hu_HU.dic'))
+    return dictionary.load_checker()   # ugyanúgy, mint a szerveren (a használati listával)
 
 
 @pytest.fixture
@@ -140,6 +137,26 @@ class TestBuiltinDictionary:
     @pytest.mark.parametrize('word', ['KG', 'DB', 'TV', 'SMS', 'PDF', 'TB', 'CS', 'SZ'])
     def test_abbreviations_and_letter_names_are_invalid(self, real_dictionary, word):
         assert real_dictionary.check_words([word])[0] is False
+
+    @pytest.mark.parametrize('word', [
+        'VU', 'UV', 'COS', 'SIN', 'KCAL', 'SZJA', 'MADAME',     # csak kötőjellel ragozható szócikkek
+        'FALIM', 'FALIJA', 'TAROM', 'DOMBOSOM', 'BODZÁSUNK',    # melléknév + birtokos személyjel
+        'ÉJÉK', 'CIRMOSÉK', 'OKOZATÉK',                          # -ék családi többes tárgyakon
+        'BLÖKIÜL', 'CSÜRHÉÜL', 'EREZETÜL',                       # -ul/-ül főnéven
+        'ALMÁNÉ',                                                # -né képző
+    ])
+    def test_grammatical_but_unused_forms_are_invalid(self, real_dictionary, word):
+        """A szótár (helyesírás-ellenőrző) ezeket elfogadná, a Scrabble-ban értelmetlenek."""
+        assert real_dictionary.check_words([word])[0] is False
+
+    @pytest.mark.parametrize('word', [
+        'KEDVESEM', 'DRÁGÁM', 'ÖREGEM', 'GYILKOSA', 'KEDVENCE',  # melléknév + birtokos: használt alakok
+        'SZOMSZÉDÉK', 'ANYÁMÉK', 'FELESÉGÜL', 'AJÁNDÉKUL', 'MAGYARUL', 'KIRÁLYNÉ',
+        'ROSSZUL', 'VÉLETLENÜL', 'TÉTLENÜL',                     # -ul/-ül melléknéven: szabályos
+        'BETEGEM', 'OLVASÓM', 'TANULÓM', 'FIATALOK', 'GITÁROSOKNAK', 'HA', 'PÉLDÁUL',
+    ])
+    def test_similar_forms_in_real_use_stay_valid(self, real_dictionary, word):
+        assert real_dictionary.check_words([word])[0] is True
 
     @pytest.mark.parametrize('word', ['BRR', 'HM', 'HMM', 'PSZT'])
     def test_vowelless_interjections_are_valid(self, real_dictionary, word):

@@ -29,7 +29,7 @@ Open http://localhost:5000 in your browser.
 - **Teljes magyar betűkészlet** — 100 zseton, beleértve a többkarakteres betűket (SZ, CS, GY, LY, NY, ZS, TY)
 - **Standard Scrabble pontozás** — DL, TL, DW, TW premium mezők, 50 pont bónusz mind a 7 zseton kirakásakor
 - **Szótár-böngésző (Challenge fázis)** — a megtámadás során a lerakott szavakra kattintva egy új lapon indíthatunk Google keresést (szótári fókusszal), segítve a szavazást
-- **Szótár-ellenőrzés** — beágyazott hu_HU szótár (rendszerfüggőség nélkül): a szótári szavakat és ragozott alakjaikat fogadja el; tulajdonnevek, rövidítések és a szótárban nem szereplő összetételek nem érvényesek
+- **Szótár-ellenőrzés** — beágyazott hu_HU szótár (rendszerfüggőség nélkül): a szótári szavakat és ragozott alakjaikat fogadja el; tulajdonnevek, rövidítések, idegen írásmódú szavak és a szótárban nem szereplő összetételek nem érvényesek; a nyelvtanilag lehetséges, de a használatban nem előforduló alakokat (FALIM, ÉJÉK, BLÖKIÜL) kiszűri
 - **Drag & drop és kattintásos** betűelhelyezés
 - **Joker** — üres zseton bármely betűként használható
 - **Betűcsere és passz**
@@ -96,6 +96,8 @@ python -m venv .venv
 ```
 
 A magyar szótár fájlok (`hu_HU.dic`, `hu_HU.aff`) a repó `dict/` mappájában vannak, amit a program automatikusan megtalál; semmilyen rendszercsomag nem kell hozzá.
+
+A `dict/hu_attested.txt` a nyelvtanilag lehetséges, de gyakran értelmetlen alakok (pl. melléknév + birtokos személyjel, „-ék”, „-ul/-ül” főnéven) közül a ténylegesen használtakat sorolja fel; a szótár ezeket a csoportokat csak a listán szereplő alakokkal fogadja el. Forrása Hermit Dave [FrequencyWords](https://github.com/hermitdave/FrequencyWords) gyakorisági listája (OpenSubtitles 2018, magyar), ezért a fájl CC BY-SA 4.0 licencű. Újraépítés: `python tools/build_attested.py hu_full.txt`.
 
 ### macOS
 
@@ -216,7 +218,7 @@ A szerver opcionális környezeti változókat olvas. Egyik sem kötelező — m
 | `SMTP_USER` | *(üres)* | SMTP felhasználó |
 | `SMTP_PASSWORD` | *(üres)* | SMTP jelszó (app password) |
 | `SMTP_FROM` | *(üres)* | Feladó email cím |
-| `VAPID_PRIVATE_KEY` | *(első induláskor generált, az adatbázisban marad)* | Web Push VAPID privát kulcs (PEM; sortörések `\n`-nel) |
+| `VAPID_PRIVATE_KEY` | *(első induláskor generált, az adatbázisban marad)* | Web Push VAPID privát kulcs (PEM, sortörések `\n`-nel; vagy a `web-push generate-vapid-keys` base64url kulcsa) |
 | `VAPID_SUBJECT` | `mailto:SMTP_FROM` | Web Push `sub` mező (`mailto:` vagy `https:` cím) |
 
 Ha az SMTP változók nincsenek beállítva, a verifikációs kódok a szerver konzolra íródnak ki (fejlesztéshez elegendő).
@@ -266,7 +268,7 @@ email_service.py   — Email verifikációs kód küldés (SMTP / konzol fallbac
 rate_limiter.py    — Generikus rate limiter (Socket.IO + HTTP)
 socket_auth.py     — Aláírt socket-token a Socket.IO identitás igazolásához
 tunnel.py          — Cloudflare tunnel subprocess kezelés
-dict/              — Beágyazott hu_HU hunspell szótár fájlok
+dict/              — Beágyazott hu_HU hunspell szótár fájlok + hu_attested.txt (használati lista, CC BY-SA 4.0)
 templates/
   index.html       — Egyoldalas UI (auth, lobby, várakozó szoba, játék, profil, replay)
   sw.js            — Service worker (Jinja sablon: a verzió a kliens fájlok módosítási idejéből jön)
@@ -276,7 +278,7 @@ static/
   i18n-data.js     — Fordítások (hu / en) — szigorú JSON, a tesztek is ezt olvassák
   style.css        — Stílusok, sötét/világos téma (Slate+Gold paletta), reszponzív layout, animációk
   manifest.webmanifest, offline.html, icons/ — PWA: manifest, kapcsolat nélküli oldal, ikonok
-tests/             — Tesztek (pytest, 1302 teszt)
+tests/             — Tesztek (pytest, 1360 teszt)
 ```
 
 ---
@@ -298,13 +300,13 @@ A játék kiemelt figyelmet fordít a multiplayer sessionök stabilitására:
 
 | Fokozat | Név | Mért erő (pont/kör) |
 |---|---|---|
-| 1 – 3 | újonc · kezdő · könnyű | 4,3 · 6,1 · 7,5 |
-| 4 – 7 | mérsékelt · alkalmi · közepes · ügyes | 10,3 · 13,0 · 16,1 · 19,3 |
-| 8 – 10 | haladó · erős · mester | 23,2 · 25,3 · 28,0 |
+| 1 – 3 | újonc · kezdő · könnyű | 4,3 · 6,1 · 7,4 |
+| 4 – 7 | mérsékelt · alkalmi · közepes · ügyes | 10,1 · 12,7 · 15,7 · 18,4 |
+| 8 – 10 | haladó · erős · mester | 21,2 · 24,6 · 27,0 |
 | **Igazodik hozzám** | a robot az utolsó ~6 köröd átlagához állítja az erejét | — |
 
 - Az alsó fokozatok célpontszámot sorsolnak, és a hozzá legközelebbi lépést rakják le; a felsők a pont + a kézben maradó zsetonok értéke alapján a legjobb lépést választják (egyre kisebb zajjal). Jokert minden fokozat használ.
-- A robotok szókincse a szótár **tőszavai** (kb. 68 000 szó) és azok **gyakori ragozott alakjai** (többes szám, tárgyrag, esetragok, birtokos és igei végződések; kb. 250 000 alak, a szótár saját szabályaival előállítva). A keresztszavakat és a kiválasztott lépés szavait a teljes szótár ellenőrzi.
+- A robotok szókincse a szótár **tőszavai** (kb. 65 000 szó) és azok **gyakori ragozott alakjai** (többes szám, tárgyrag, esetragok, birtokos és igei végződések; kb. 225 000 alak, a szótár saját szabályaival előállítva; a nyelvtanilag lehetséges, de furcsa alakok — pl. FALIM, ÉJÉK — nélkül). A keresztszavakat és a kiválasztott lépés szavait a teljes szótár ellenőrzi.
 - **Igazodik hozzám**: a robot az emberi játékosok utolsó 6 körének átlagát (a passz 0 pont) a mért skálán fokozattá képezi; tört fokozatnál a két szomszédos fokozatot keveri. Az első néhány körben az 5. fokozat felé húz.
 - Megtámadás módban a robotok **nem szavaznak**: ha a lerakónak nincs emberi ellenfele, a szótár dönt; a robot lerakására az emberek szavaznak.
 - Egyedül (robotok ellen) játszva a **Tipp** gomb a három legjobb lépést mutatja; az „Elhelyez” a táblára teszi, a lerakást te hagyod jóvá.
@@ -395,14 +397,14 @@ Támogatott böngészőben a lobby felső sávjában megjelenik a **Telepítés*
 | `tests/test_server_auth.py` | 52 | HTTP auth route-ok, cookie flow |
 | `tests/test_server_socket.py` | 68 | Socket.IO eventek, lobby, szobák, challenge, chat, owner kilépés |
 | `tests/test_challenge.py` | 17 | Challenge szavazásos rendszer |
-| `tests/test_dictionary.py` | 59 | Szótár-ellenőrzés (valódi szótárral: kisbetűs keresés, tulajdonnevek, rövidítések, értelmetlen szavak pl. SALYT), elérhetőség, javaslatok, tábla-validáció |
-| `tests/test_affix_checker.py` | 39 | Beépített szóellenőrző: toldalékok, előtagok, folytatási osztályok, speciális jelzők, a valódi szótár (hunspellel összevetve) |
+| `tests/test_dictionary.py` | 99 | Szótár-ellenőrzés (valódi szótárral: kisbetűs keresés, tulajdonnevek, rövidítések, értelmetlen szavak pl. SALYT), elérhetőség, javaslatok, tábla-validáció |
+| `tests/test_affix_checker.py` | 46 | Beépített szóellenőrző: toldalékok, előtagok, folytatási osztályok, speciális jelzők, a valódi szótár (hunspellel összevetve) |
 | `tests/test_email_service.py` | 4 | Email küldés |
 | `tests/test_room.py` | 12 | Room osztály |
 | `tests/test_friends.py` | 27 | Barát CRUD, kérések, felhasználókeresés, szobameghívó, online státusz |
-| `tests/test_timer_and_replay.py` | 28 | Körszámláló UI, kör időlimit, replay perzisztencia |
-| `tests/test_regressions.py` | 81 | Kódátvizsgálás során talált hibák regressziós tesztjei |
-| `tests/test_ai_player.py` | 81 | Robot: szókincs (ragozott alakok), lépésgenerátor, nehézségi szintek, tipp |
+| `tests/test_timer_and_replay.py` | 30 | Körszámláló UI, kör időlimit, replay perzisztencia |
+| `tests/test_regressions.py` | 82 | Kódátvizsgálás során talált hibák regressziós tesztjei |
+| `tests/test_ai_player.py` | 82 | Robot: szókincs (ragozott alakok), lépésgenerátor, nehézségi szintek, tipp |
 | `tests/test_bots.py` | 114 | Robotok a játékmodellben és a szerveren, lépéstörténet, előnézet, tipp |
 | `tests/test_spectator.py` | 30 | Megfigyelő mód, élő játékok listája |
 | `tests/test_public_api.py` | 52 | Ranglista (DB + route), szótár-ellenőrző API, PWA végpontok |
@@ -411,17 +413,17 @@ Támogatott böngészőben a lobby felső sávjában megjelenik a **Telepítés*
 | `tests/test_frontend_consistency.py` | 23 | Kliens ↔ szerver összhang: konstansok, elem-azonosítók, Socket.IO események, JS szintaxis |
 
 | `tests/test_adaptive_bot.py` | 40 | „Igazodik hozzám” robot |
-| `tests/test_achievements.py` | 26 | Kitüntetések |
+| `tests/test_achievements.py` | 27 | Kitüntetések |
 | `tests/test_elo.py` | 27 | ELO értékszám, értékszám szerinti ranglista |
 | `tests/test_replay_share.py` | 11 | Megosztható visszajátszás |
-| `tests/test_analysis.py` | 23 | Játékelemzés |
-| `tests/test_daily.py` | 49 | Napi feladvány és ranglistája |
+| `tests/test_analysis.py` | 25 | Játékelemzés |
+| `tests/test_daily.py` | 50 | Napi feladvány és ranglistája |
 | `tests/test_practice.py` | 47 | Szókvíz, betűvadász / bingó, rövid szavak |
 | `tests/test_practice_client.py` | 15 | A gyakorló felület kliensoldali logikája (node) |
-| `tests/test_push.py` | 42 | Web Push |
-| `tests/test_async_games.py` | 55 | Levelezős játék |
+| `tests/test_push.py` | 44 | Web Push |
+| `tests/test_async_games.py` | 56 | Levelezős játék |
 
-**Összesen: 1302 teszt** (a node-ot igénylő tesztek node nélkül kimaradnak)
+**Összesen: 1360 teszt** (a node-ot igénylő tesztek node nélkül kimaradnak)
 
 ---
 
