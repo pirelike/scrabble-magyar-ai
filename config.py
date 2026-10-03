@@ -17,6 +17,11 @@ VERIFICATION_CODE_EXPIRY_MINUTES = 10
 VERIFICATION_MAX_ATTEMPTS = 5
 EMAIL_VERIFIED_WINDOW_MINUTES = 30  # ennyi ideig regisztrálható a kóddal megerősített email
 
+# --- Szótár-építő ---
+# Ennyivel kell több „nem szó” szavazatnak lennie a „rendes szó” szavazatoknál, hogy a szót kizárja a
+# játék szótára. Az alapérték 1: egyetlen elutasítás elég; több ember átnézésénél emelhető (pl. 2).
+WORD_REJECT_THRESHOLD = max(1, int(os.environ.get('WORD_REJECT_THRESHOLD', 1)))
+
 # --- Rate limiting (IP-alapú, auth endpointokra) ---
 AUTH_RATE_LIMITS = {
     'request_code': (3, 300),    # 3 kérés / 5 perc
@@ -30,4 +35,5 @@ AUTH_RATE_LIMITS = {
     'daily': (60, 60),           # 60 kérés / 1 perc (napi feladvány, ranglista)
     'practice': (120, 60),       # 120 kérés / 1 perc (kvíz, rövid szavak)
     'push': (20, 60),            # 20 kérés / 1 perc (push feliratkozás)
+    'word_review': (240, 60),    # 240 kérés / 1 perc (szótár-építő: egy kérés egy döntés)
 }

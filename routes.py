@@ -13,6 +13,7 @@ import daily
 import dictionary
 import practice
 import push_service
+import word_review
 from config import SMTP_CONFIGURED
 from tiles import tokenize_word, word_base_score, TILE_VALUES
 from auth import (
@@ -677,6 +678,79 @@ def practice_rack_word():
     if blocked:
         return blocked
     return jsonify({'success': True, **practice.check_rack_word(rack, word)})
+
+
+# --- Szótár-építő: véletlen szavak átnézése (a „nem szó” döntés kizárja a szót a játékból) ---
+
+def _word_review_user():
+    """A szótár-építő végpontjainak közös őre: bejelentkezés, rate limit, szótár.
+    Visszatér: (felhasználó, None) vagy (None, hibaválasz)."""
+    user = validate_session(request.cookies.get('session_token'))
+    if not user:
+        return None, (jsonify({'success': False, 'message': 'Bejelentkezés szükséges.'}), 401)
+    if not _rate_limiter.check_ip(_get_client_ip(), 'word_review'):
+        return None, (jsonify({'success': False, 'message': 'Túl sok kérés. Próbáld újra később.'}), 429)
+    if not dictionary.is_available():
+        return None, (jsonify({'success': False, 'message': 'A szótár nem érhető el.'}), 503)
+    return user, None
+
+
+@public_bp.route('/api/practice/word-review', methods=['GET'])
+def word_review_next():
+    """Átnézésre váró véletlen szavak (zsetonjaikkal) és a felhasználó összesítője."""
+    user, error = _word_review_user()
+    if error:
+        return error
+    try:
+        count = int(request.args.get('n', word_review.BATCH_SIZE))
+    except ValueError:
+        count = word_review.BATCH_SIZE
+    words = word_review.next_words(count)
+    return jsonify({'success': True, 'words': words, 'tiles': [tokenize_word(w) for w in words],
+                    'stats': word_review.stats(user['id'])})
+
+
+@public_bp.route('/api/practice/word-review', methods=['POST'])
+def word_review_vote():
+    """Egy szó átnézése: `{word, valid}` — `valid: false` esetén a szó kikerül a játék szótárából."""
+    user, error = _word_review_user()
+    if error:
+        return error
+    data = request.get_json(silent=True) or {}
+    word = word_review.normalize(data.get('word'))
+    if word is None or not isinstance(data.get('valid'), bool):
+        return jsonify({'success': False, 'message': 'Érvénytelen kérés.'}), 400
+    rejected = word_review.record_vote(user['id'], word, data['valid'])
+    if rejected is None:
+        return jsonify({'success': False, 'message': 'Ez a szó már nincs a szótárban.'}), 409
+    return jsonify({'success': True, 'word': word, 'rejected': rejected,
+                    'stats': word_review.stats(user['id'])})
+
+
+@public_bp.route('/api/practice/word-review/undo', methods=['POST'])
+def word_review_undo():
+    """A felhasználó saját döntésének visszavonása (`{word}`): a szó visszakerül a szótárba, ha csak ez
+    a szavazat zárta ki."""
+    user, error = _word_review_user()
+    if error:
+        return error
+    data = request.get_json(silent=True) or {}
+    word = word_review.normalize(data.get('word'))
+    if word is None:
+        return jsonify({'success': False, 'message': 'Érvénytelen kérés.'}), 400
+    done, rejected = word_review.undo_vote(user['id'], word)
+    if not done:
+        return jsonify({'success': False, 'message': 'Nincs mit visszavonni.'}), 404
+    return jsonify({'success': True, 'word': word, 'rejected': rejected,
+                    'stats': word_review.stats(user['id'])})
+
+
+@public_bp.route('/api/practice/word-review/stats', methods=['GET'])
+def word_review_stats():
+    user, error = _word_review_user()
+    if error:
+        return error
+    return jsonify({'success': True, 'stats': word_review.stats(user['id'])})
 
 
 _MAX_DICT_WORDS = 8

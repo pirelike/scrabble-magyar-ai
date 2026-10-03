@@ -8,6 +8,15 @@ _checker = None
 _checker_type = None  # 'builtin', ha a beágyazott szótár betöltődött
 _init_attempted = False  # a szótár inicializálását csak egyszer próbáljuk meg (ne minden szónál)
 
+# Elutasított szavak: a szótár elfogadná őket, de emberi (vagy AI-) átnézés szerint nem rendes szavak.
+# Két forrásból állnak össze, mindkettő pontos szóalakot (kisbetűs) zár ki, a ragozott alakokat nem:
+#  - `dict/hu_rejected.txt`: a szótár-építő átnézések tartós listája (a szótárral együtt töltődik be);
+#  - a felhasználói szavazatok (`word_review.py`): futás közben változik, az adatbázisból épül fel.
+_REJECTED_PATH = os.path.join(_DICT_DIR, 'hu_rejected.txt')
+_rejected_listed = frozenset()
+_rejected_voted = set()
+_rejected_version = 0  # minden változásnál nő: a szótárból számolt gyorsítótárak ebből látják, hogy elavultak
+
 # Magánhangzó nélküli tételek a szótárban: betűnevek (B, CS), rövidítések (KG, DB, SMS, TV, PDF)
 # és indulatszavak. A Scrabble-ban a rövidítések és betűnevek nem érvényesek, az indulatszavak igen.
 _HAS_VOWEL_RE = re.compile('[aáeéiíoóöőuúüű]')
@@ -23,15 +32,32 @@ def load_checker():
                         attested if os.path.exists(attested) else None)
 
 
+def load_rejected(path=_REJECTED_PATH):
+    """Az elutasított szavak listája (soronként egy szó, `#` megjegyzés): kisbetűs szavak halmaza.
+    Hiányzó fájlnál üres."""
+    words = set()
+    try:
+        with open(path, encoding='utf-8') as fh:
+            for line in fh:
+                word = line.split('#', 1)[0].strip().lower()
+                if word:
+                    words.add(word)
+    except OSError:
+        pass
+    return frozenset(words)
+
+
 def _init_checker():
     """Betölti a beágyazott hu_HU szótárat (dict/hu_HU.aff + .dic). Nincs külső függőség:
     sem a pyenchant/libenchant, sem a hunspell program nem szükséges."""
-    global _checker, _checker_type, _init_attempted
+    global _checker, _checker_type, _init_attempted, _rejected_listed, _rejected_version
     _init_attempted = True
     try:
         _checker = load_checker()
         _checker_type = 'builtin'
-        print(f"Szótár: beágyazott hu_HU ({_checker.entry_count} szótő)")
+        _rejected_listed = load_rejected()
+        _rejected_version += 1
+        print(f"Szótár: beágyazott hu_HU ({_checker.entry_count} szótő, {len(_rejected_listed)} elutasított szó)")
     except (OSError, ValueError) as exc:
         _checker = None
         _checker_type = None
@@ -62,9 +88,61 @@ def is_available():
 
 def _lookup(word):
     """Egyetlen kisbetűs szó keresése a szótárban (ragozott alakokkal együtt)."""
+    if word in _rejected_listed or word in _rejected_voted:
+        return False
     if not _HAS_VOWEL_RE.search(word) and word not in _VOWELLESS_INTERJECTIONS:
         return False
     return _checker.check(word)
+
+
+# --- Elutasított szavak ---
+
+def _ensure_init():
+    if _checker_type is None and not _init_attempted:
+        _init_checker()
+
+
+def rejected_version():
+    """Az elutasított szavak állapotának verziója (a számolt gyorsítótárak érvénytelenítéséhez)."""
+    _ensure_init()
+    return _rejected_version
+
+
+def listed_rejected():
+    """A `dict/hu_rejected.txt` szavai (kisbetűs halmaz)."""
+    _ensure_init()
+    return _rejected_listed
+
+
+def is_rejected(word):
+    """Igaz, ha a (bármilyen kis/nagybetűs) szót elutasították — akkor is, ha a szótár elfogadná."""
+    _ensure_init()
+    word = word.lower()
+    return word in _rejected_listed or word in _rejected_voted
+
+
+def set_voted_rejected(words):
+    """A szavazatok alapján elutasított szavak teljes cseréje (indításkor, az adatbázisból)."""
+    global _rejected_voted, _rejected_version
+    _ensure_init()
+    _rejected_voted = {w.lower() for w in words}
+    _rejected_version += 1
+    _valid_cache.clear()
+
+
+def mark_voted_rejected(word, rejected):
+    """Egy szó felvétele az elutasítottak közé (vagy kivétele belőle) a szavazatok alapján."""
+    global _rejected_version
+    _ensure_init()
+    word = word.lower()
+    if (word in _rejected_voted) == bool(rejected):
+        return
+    if rejected:
+        _rejected_voted.add(word)
+    else:
+        _rejected_voted.discard(word)
+    _rejected_version += 1
+    _valid_cache.pop(word, None)
 
 
 # Érvényes magyar szó karakterek (nagybetűk + ékezetes betűk)

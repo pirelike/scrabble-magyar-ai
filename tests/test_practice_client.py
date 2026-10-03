@@ -111,7 +111,7 @@ def result():
     rng = random.Random(7)
     import dictionary
     dictionary.warm_up()
-    stems = practice._stems()
+    stems = practice.stem_words()
     words = (rng.sample(stems, 1500)
              + [e['word'] for e in practice.short_words(2)] + [e['word'] for e in practice.short_words(3)]
              + ['SZÓ', 'ASZTAL', 'GYÓGYSZER', 'NYELV', 'LYUK', 'TYÚK', 'ZSÍR', 'CSÓK', 'szó', 'XYZ', 'QWERTY', ''])

@@ -33,13 +33,13 @@ _LENGTH_PAIRS.update({v: k for k, v in list(_LENGTH_PAIRS.items())})
 
 _VOWEL_TILES = [t for t in LETTERS if t[0] in VOWELS]
 _CONSONANT_TILES = [t for t in LETTERS if t[0] not in VOWELS]
-_short_cache = {}
+_short_cache = {}     # {hossz: (az elutasított szavak verziója, lista)}
 _stem_cache = None
 
 
 def warm_up():
     """A gyakorló módok lusta adatainak előállítása (szerverindításkor: az első kérés ne várjon másodperceket)."""
-    _stems()
+    stem_words()
     for length in SHORT_LENGTHS:
         short_words(length)
 
@@ -48,7 +48,7 @@ def _is_valid(word):
     return word in dictionary.filter_valid({word})
 
 
-def _stems():
+def stem_words():
     """A szótár tőszavai (nagybetűs), a robot szókincsének szűrésével: csak kirakható, magánhangzós szavak."""
     global _stem_cache
     if _stem_cache is None:
@@ -62,14 +62,16 @@ def short_words(length):
     """Az összes érvényes, pontosan `length` zsetonos szó pontértékkel: [{'word', 'score'}], ábécé szerint."""
     if length not in SHORT_LENGTHS:
         raise ValueError('a rövid szavak hossza 2 vagy 3 zseton')
-    if length not in _short_cache:
+    version = dictionary.rejected_version()
+    cached = _short_cache.get(length)
+    if cached is None or cached[0] != version:      # egy újonnan elutasított szó kikerül a listából
         candidates = {''.join(combo) for combo in product(LETTERS, repeat=length)}
         candidates = {w for w in candidates
                       if len(tokenize_word(w) or ()) == length and any(c in VOWELS for c in w)}
         valid = dictionary.filter_valid(candidates)
-        _short_cache[length] = sorted(
-            ({'word': w, 'score': word_base_score(w)} for w in valid), key=lambda e: e['word'])
-    return _short_cache[length]
+        cached = _short_cache[length] = (version, sorted(
+            ({'word': w, 'score': word_base_score(w)} for w in valid), key=lambda e: e['word']))
+    return cached[1]
 
 
 def _mutate(word, rng):
@@ -153,7 +155,7 @@ def make_quiz(count=QUESTION_COUNT, mode='mixed', rng=None):
 
     if mode in ('mixed', 'tricky'):
         tricky = mode == 'tricky'
-        stems = [w for w in rng.sample(_stems(), min(len(_stems()), valid_count * (14 if tricky else 6)))
+        stems = [w for w in rng.sample(stem_words(), min(len(stem_words()), valid_count * (14 if tricky else 6)))
                  if MIN_TILES <= len(tokenize_word(w) or ()) <= MAX_TILES and (not tricky or _accent_sensitive(w))]
         stem_set = set(stems)
         inflected_target = round(valid_count * INFLECTED_SHARE)
@@ -261,7 +263,7 @@ BINGO_STEM_SHARE = 0.75      # a bingó-kezek ekkora része szótári tőszóbó
 
 def _bingo_rack(rng):
     """Olyan kéz, amelyből biztosan kirakható egy 7 zsetonos szó (a szótár egy véletlen szavából)."""
-    stems = _stems()
+    stems = stem_words()
     vocabulary = ai_player.get_vocabulary().words
     for _ in range(400):
         pool = stems if rng.random() < BINGO_STEM_SHARE else vocabulary

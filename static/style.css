@@ -4327,6 +4327,7 @@ button.practice-item:active:not(:disabled) {
 .tone-red { background: linear-gradient(145deg, #ff7a70, #ff3b30); }
 .tone-green { background: linear-gradient(145deg, #5fdc82, #28b84e); }
 .tone-gold { background: linear-gradient(145deg, #f2c94c, #d4a017); }
+.tone-teal { background: linear-gradient(145deg, #5fd3c9, #1ea89c); }
 
 
 /* ---- Gyakorlás: al-nézetek ---- */
@@ -5330,4 +5331,55 @@ label.pick-row.is-locked { opacity: 0.45; cursor: not-allowed; }
     .practice-stat-label { font-size: 10px; }
     .hunt-actions { grid-template-columns: 46px 46px 1fr; }
     .choice-title { font-size: var(--text-sm); }
+}
+
+
+/* ===== 19. SZÓTÁR-ÉPÍTŐ ===== */
+
+.wb-play .word-tiles { margin: var(--space-4) 0 0; min-height: 52px; }
+
+.wb-empty {
+    margin: var(--space-3) 0;
+    text-align: center;
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+}
+
+.wb-lookup { align-self: center; margin-top: 0; }
+
+.wb-secondary {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.wb-secondary button.small-btn { gap: 6px; }
+.wb-secondary button.small-btn .icon { width: 16px; height: 16px; }
+
+.wb-secondary kbd {
+    display: none;
+    padding: 0 6px;
+    border-radius: 5px;
+    background: var(--bg-card);
+    font: inherit;
+    font-size: var(--text-xs);
+    opacity: 0.8;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .wb-secondary kbd { display: inline-block; }
+}
+
+.wb-status {
+    min-height: 1.4em;
+    text-align: center;
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+}
+
+.wb-status.is-warn { color: var(--danger-text); }
+
+@media (max-width: 600px) {
+    .wb-play .word-tiles { margin-top: var(--space-3); }
 }
