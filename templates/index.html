@@ -542,6 +542,15 @@
                             </span>
                             <svg class="icon chevron"><use href="#i-chevron"/></svg>
                         </button>
+                        <button class="practice-item" type="button" data-practice-open="wordbuilder">
+                            <span class="practice-icon tone-teal"><svg class="icon"><use href="#i-book"/></svg></span>
+                            <span class="practice-item-body">
+                                <span class="practice-item-title" data-i18n="wb.title">Szótár-építő</span>
+                                <span class="practice-item-desc" data-i18n="wb.desc">Rendes szó-e? A „nem szó” döntéseddel kikerül a játék szótárából.</span>
+                                <span class="practice-item-meta" id="pmeta-wordbuilder"></span>
+                            </span>
+                            <svg class="icon chevron"><use href="#i-chevron"/></svg>
+                        </button>
                     </div>
                 </div>
 
@@ -723,6 +732,68 @@
                 </div>
 
                 <!-- Napi ranglista -->
+                <!-- Szótár-építő: véletlen szavak átnézése -->
+                <div class="practice-view" id="practice-wordbuilder" data-view="wordbuilder">
+                    <div class="pview-header">
+                        <button class="pview-back" type="button" data-practice-back aria-label="Vissza" data-i18n-title="common.back">
+                            <svg class="icon"><use href="#i-back"/></svg>
+                            <span data-i18n="practice.title">Gyakorlás</span>
+                        </button>
+                        <h2 class="pview-title" data-i18n="wb.title">Szótár-építő</h2>
+                        <span class="pview-spacer"></span>
+                    </div>
+
+                    <!-- Belépés nélkül -->
+                    <section class="pview-card hidden" id="wb-login">
+                        <p class="form-hint" data-i18n="wb.login_needed">A szótár-építéshez be kell jelentkezned: a döntéseid mindenki játékát érintik, ezért vendégként nem érhető el.</p>
+                    </section>
+
+                    <!-- Átnézés -->
+                    <section class="pview-card wb-play" id="wb-play">
+                        <p class="form-hint" data-i18n="wb.intro">Rendes magyar szó ez? Ha a „Nem szó” gombot nyomod, a szó kikerül a játék szótárából: nem lehet lerakni, és a robot sem használja. Ha nem vagy biztos benne, hagyd ki.</p>
+                        <div class="stat-grid wb-stats">
+                            <div class="practice-stat">
+                                <span class="practice-stat-value" id="wb-stat-today">0</span>
+                                <span class="practice-stat-label" data-i18n="wb.stat_today">ma átnézve</span>
+                            </div>
+                            <div class="practice-stat">
+                                <span class="practice-stat-value" id="wb-stat-total">0</span>
+                                <span class="practice-stat-label" data-i18n="wb.stat_total">összesen</span>
+                            </div>
+                            <div class="practice-stat">
+                                <span class="practice-stat-value" id="wb-stat-invalid">0</span>
+                                <span class="practice-stat-label" data-i18n="wb.stat_invalid">kizárt szó</span>
+                            </div>
+                        </div>
+                        <div id="wb-word" class="word-tiles" aria-live="polite"></div>
+                        <a id="wb-lookup" class="dict-link dict-lookup wb-lookup" target="_blank" rel="noopener noreferrer" data-i18n="dict.lookup">Keresés a magyar értelmező szótárban</a>
+                        <div class="quiz-buttons">
+                            <button id="btn-wb-invalid" class="answer-btn answer-no" type="button">
+                                <svg class="icon"><use href="#i-x-circle"/></svg>
+                                <span data-i18n="wb.invalid">Nem szó</span>
+                                <kbd>←</kbd>
+                            </button>
+                            <button id="btn-wb-valid" class="answer-btn answer-yes" type="button">
+                                <svg class="icon"><use href="#i-check-circle"/></svg>
+                                <span data-i18n="wb.valid">Rendes szó</span>
+                                <kbd>→</kbd>
+                            </button>
+                        </div>
+                        <div class="wb-secondary">
+                            <button id="btn-wb-skip" class="secondary small-btn" type="button">
+                                <span data-i18n="wb.skip">Nem tudom</span>
+                                <kbd>↓</kbd>
+                            </button>
+                            <button id="btn-wb-undo" class="secondary small-btn" type="button">
+                                <svg class="icon"><use href="#i-undo"/></svg>
+                                <span data-i18n="wb.undo">Visszavonás</span>
+                                <kbd>⌫</kbd>
+                            </button>
+                        </div>
+                        <div id="wb-status" class="wb-status" aria-live="polite"></div>
+                    </section>
+                </div>
+
                 <div class="practice-view" id="practice-daily" data-view="daily">
                     <div class="pview-header">
                         <button class="pview-back" type="button" data-practice-back aria-label="Vissza" data-i18n-title="common.back">

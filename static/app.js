@@ -3745,6 +3745,256 @@ const PracticeStore = {
 };
 
 
+// ===== SZÓTÁR-ÉPÍTŐ =====
+// Véletlen szavak átnézése: a „Nem szó” döntés szavazatként a szerverre kerül, és a szót kizárja a játék
+// szótárából. A szavakat 20-asával kapjuk; a döntés azonnal továbblép, a küldés a háttérben, sorban megy.
+// Csak bejelentkezve érhető el (a szavazat mindenki játékát érinti).
+
+const WordBuilder = {
+    BATCH: 20,
+    PREFETCH_AT: 6,
+    userId: null,         // kinek a szavai vannak a sorban (kijelentkezés / fiókváltás után újrakezdjük)
+    queue: [],            // [{word, tiles}] a még nem látott szavak
+    current: null,
+    last: null,           // a legutóbbi döntés a visszavonáshoz: {word, tiles, valid}
+    seen: new Set(),      // a munkamenetben már kapott szavak (a kihagyottak nem jönnek vissza)
+    stats: null,          // {total, valid, invalid, today}
+    status: null,         // {key, params}: az utolsó eseményüzenet (nyelvváltáskor újraformázzuk)
+    loading: false,
+    exhausted: false,
+    _gen: 0,              // fiókváltáskor nő: a régi fiók késői válaszait eldobjuk
+    _chain: Promise.resolve(),
+
+    init() {
+        document.getElementById('btn-wb-valid').addEventListener('click', () => this.decide(true));
+        document.getElementById('btn-wb-invalid').addEventListener('click', () => this.decide(false));
+        document.getElementById('btn-wb-skip').addEventListener('click', () => this.skip());
+        document.getElementById('btn-wb-undo').addEventListener('click', () => this.undo());
+        window.addEventListener('langchange', () => {
+            this.renderStatus();
+            this.renderMeta();
+            if (!this.current) this.renderWord();
+        });
+    },
+
+    isLoggedIn() {
+        return !!(AppState.currentUser && !AppState.isGuest);
+    },
+
+    _syncUser() {
+        const id = this.isLoggedIn() ? AppState.currentUser.id : null;
+        if (id === this.userId) return;
+        this.userId = id;
+        this._gen++;
+        this.queue = [];
+        this.current = null;
+        this.last = null;
+        this.seen = new Set();
+        this.stats = null;
+        this.status = null;
+        this.loading = false;
+        this.exhausted = false;
+    },
+
+    // --- Nézetek ---
+
+    onHubShow() {
+        this._syncUser();
+        this.renderMeta();
+        this.loadStats();
+    },
+
+    async open() {
+        this._syncUser();
+        const loggedIn = this.isLoggedIn();
+        document.getElementById('wb-login').classList.toggle('hidden', loggedIn);
+        document.getElementById('wb-play').classList.toggle('hidden', !loggedIn);
+        if (!loggedIn) return;
+        this.exhausted = false;
+        this.renderStats();
+        this.renderStatus();
+        this.renderWord();
+        this.loadStats();
+        if (!this.current) await this.fetchBatch();
+    },
+
+    onKey(e) {
+        if (e.repeat || !this.isLoggedIn()) return;       // a lenyomva tartott billentyű ne döntsön tucatnyi szóról
+        if (e.key === 'ArrowLeft') { e.preventDefault(); this.decide(false); }
+        else if (e.key === 'ArrowRight') { e.preventDefault(); this.decide(true); }
+        else if (e.key === 'ArrowDown') { e.preventDefault(); this.skip(); }
+        else if (e.key === 'Backspace') { e.preventDefault(); this.undo(); }
+    },
+
+    // --- Szavak betöltése ---
+
+    async fetchBatch() {
+        if (this.loading || this.exhausted || !this.isLoggedIn()) return;
+        this.loading = true;
+        const gen = this._gen;
+        try {
+            const res = await fetch(`/api/practice/word-review?n=${this.BATCH}`);
+            const data = await res.json();
+            if (gen !== this._gen) return;
+            if (!data.success) {
+                showMessage(tServer(data.message) || t('common.load_failed'), true);
+                return;
+            }
+            this.stats = data.stats;
+            if (!data.words.length) this.exhausted = true;
+            data.words.forEach((word, i) => {
+                if (this.seen.has(word)) return;
+                this.seen.add(word);
+                this.queue.push({ word, tiles: data.tiles[i] });
+            });
+        } catch {
+            if (gen === this._gen) showMessage(t('common.load_failed'), true);
+        } finally {
+            if (gen === this._gen) this.loading = false;
+        }
+        if (gen !== this._gen) return;
+        if (!this.current) this.advance();
+        else this.renderStats();
+    },
+
+    async loadStats() {
+        if (!this.isLoggedIn()) return;
+        const gen = this._gen;
+        try {
+            const res = await fetch('/api/practice/word-review/stats');
+            const data = await res.json();
+            if (gen !== this._gen || !data.success) return;
+            this.stats = data.stats;
+            this.renderStats();
+            this.renderMeta();
+        } catch { /* a számlálók nélkül is működik */ }
+    },
+
+    advance() {
+        this.current = this.queue.shift() || null;
+        this.renderWord();
+        if (this.queue.length < this.PREFETCH_AT) this.fetchBatch();
+    },
+
+    // --- Döntések ---
+
+    decide(valid) {
+        const entry = this.current;
+        if (!entry || !this.isLoggedIn()) return;
+        this.last = { ...entry, valid };
+        this.current = null;
+        if (this.stats) {                                 // azonnali számlálók, a szerver válasza pontosítja
+            this.stats.total++;
+            this.stats.today++;
+            this.stats[valid ? 'valid' : 'invalid']++;
+        }
+        this.setStatus(valid ? 'wb.last_valid' : 'wb.last_invalid', { word: entry.word }, !valid);
+        this.advance();
+        this.renderStats();
+        this._send('/api/practice/word-review', { word: entry.word, valid }, entry);
+    },
+
+    skip() {
+        if (!this.current) return;
+        this.current = null;
+        this.advance();
+    },
+
+    undo() {
+        const last = this.last;
+        if (!last || !this.isLoggedIn()) return;
+        this.last = null;
+        if (this.current) this.queue.unshift(this.current);
+        this.current = { word: last.word, tiles: last.tiles };
+        if (this.stats) {
+            this.stats.total = Math.max(0, this.stats.total - 1);
+            this.stats.today = Math.max(0, this.stats.today - 1);
+            const key = last.valid ? 'valid' : 'invalid';
+            this.stats[key] = Math.max(0, this.stats[key] - 1);
+        }
+        this.setStatus('wb.undone', { word: last.word });
+        this.renderWord();
+        this.renderStats();
+        this._send('/api/practice/word-review/undo', { word: last.word }, null);
+    },
+
+    // A kéréseket sorban küldjük (a visszavonás a szavazat után érkezzen meg a szerverre)
+    _send(url, body, retry) {
+        const gen = this._gen;
+        this._chain = this._chain.then(async () => {
+            if (gen !== this._gen) return;
+            try {
+                const data = await postJson(url, body);
+                if (gen !== this._gen) return;
+                if (data.success) {
+                    this.stats = data.stats;
+                    this.renderStats();
+                    return;
+                }
+                showMessage(tServer(data.message) || t('common.load_failed'), true);
+            } catch {
+                if (gen !== this._gen) return;
+                showMessage(t('common.load_failed'), true);
+                if (retry) {                              // a döntés nem ment át: a szó újra sorra kerül
+                    this.queue.unshift(retry);
+                    if (!this.current) this.advance();
+                }
+            }
+            if (this.last && this.last.word === body.word) { this.last = null; this.renderWord(); }
+            this.loadStats();
+        });
+    },
+
+    // --- Megjelenítés ---
+
+    setStatus(key, params, warn = false) {
+        this.status = { key, params, warn };
+        this.renderStatus();
+    },
+
+    renderStatus() {
+        const el = document.getElementById('wb-status');
+        el.textContent = this.status ? t(this.status.key, this.status.params) : '';
+        el.classList.toggle('is-warn', !!(this.status && this.status.warn));
+    },
+
+    renderStats() {
+        const stats = this.stats || { total: 0, valid: 0, invalid: 0, today: 0 };
+        document.getElementById('wb-stat-today').textContent = stats.today;
+        document.getElementById('wb-stat-total').textContent = stats.total;
+        document.getElementById('wb-stat-invalid').textContent = stats.invalid;
+        this.renderMeta();
+    },
+
+    renderMeta() {
+        const total = this.stats ? this.stats.total : 0;
+        document.getElementById('pmeta-wordbuilder').textContent = total ? t('wb.meta', { n: total }) : '';
+    },
+
+    renderWord() {
+        const box = document.getElementById('wb-word');
+        const entry = this.current;
+        if (entry) {
+            fillWordTiles(box, entry.tiles);
+        } else {
+            box.replaceChildren();
+            if (this.exhausted) box.appendChild(makeEl('p', 'wb-empty', t('wb.empty')));
+        }
+        box.setAttribute('aria-busy', entry ? 'false' : 'true');
+        const link = document.getElementById('wb-lookup');
+        link.classList.toggle('hidden', !entry);
+        if (entry) {
+            // a szótár magyar marad: a keresés ugyanaz, mint a megtámadásnál és a szótár-böngészőben
+            link.href = `https://www.google.com/search?q=${encodeURIComponent(entry.word.toLowerCase() + ' - Kézikönyvtár A magyar nyelv értelmező szótára')}`;
+        }
+        for (const id of ['btn-wb-valid', 'btn-wb-invalid', 'btn-wb-skip']) {
+            document.getElementById(id).disabled = !entry;
+        }
+        document.getElementById('btn-wb-undo').disabled = !this.last;
+    },
+};
+
+
 // ===== GYAKORLÁS =====
 // Főoldal (napi feladvány + módok) és al-nézetek: szókvíz, betűvadász, bingó-edző, szólisták.
 // A szerver állapotmentes: a kvíz-választ és a kézhez beírt szavakat a játék szótárával bírálja el.
@@ -3831,6 +4081,7 @@ const Practice = {
 
     onShow() {
         this.renderHub();
+        WordBuilder.onHubShow();
     },
 
     // --- Navigáció ---
@@ -3867,6 +4118,10 @@ const Practice = {
         } else if (what === 'daily') {
             Daily.load();
             this._setView('daily');
+        } else if (what === 'wordbuilder') {
+            this._stopHunt();
+            this._setView('wordbuilder');
+            WordBuilder.open();
         } else {
             this._stopHunt();
             this._setView('hub');
@@ -3897,6 +4152,7 @@ const Practice = {
         const missed = PracticeStore.missedWords().length;
         document.getElementById('pmeta-mistakes').textContent = missed ? t('mistakes.meta', { n: missed }) : '';
         document.getElementById('practice-mistakes-item').classList.toggle('is-empty', !missed);
+        WordBuilder.renderMeta();
     },
 
     // --- Szókvíz ---
@@ -4371,6 +4627,8 @@ const Practice = {
             if (e.key === 'ArrowLeft') { e.preventDefault(); this.answer(false); }
             else if (e.key === 'ArrowRight') { e.preventDefault(); this.answer(true); }
             else if ((e.key === 'Enter' || e.key === ' ') && this.quiz.answered) { e.preventDefault(); this.next(); }
+        } else if (this.view === 'wordbuilder') {
+            WordBuilder.onKey(e);
         } else if (this.view === 'hunt' && this.hunt && !this.hunt.finished) {
             if (e.key === 'Enter') { e.preventDefault(); this.huntSubmit(); }
             else if (e.key === 'Backspace') { e.preventDefault(); this.huntRemove(this.hunt.built.length - 1); }
@@ -6394,6 +6652,7 @@ ExitGame.init();
 Profile.init();
 Badges.init();
 Daily.init();
+WordBuilder.init();
 Practice.init();
 AsyncGames.init();
 LobbyNav.init();

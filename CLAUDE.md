@@ -17,7 +17,7 @@ Böngészőben: http://localhost:5000
 - `player.py` — Player osztály (id, név, kéz, pontszám, disconnected állapot, `is_bot`, `difficulty`: a robot fokozata 1–10 vagy `'auto'` („igazodik hozzám”), a régi `easy`/`medium`/`hard` átképeződik; `timeouts`, `resigned`)
 - `ai_player.py` — Robot ellenfél: szókincs (a szótár tőszavai + ~225 000 gyakori ragozott alak, a furcsa alakok nélkül), horgonyalapú lépésgenerátor, 10 fokozatú nehézség (`parse_level`, `_PROFILES`) + „igazodik hozzám” (`adaptive_level`, `LEVEL_STRENGTH`), tippek
 - `board.py` — 15×15 tábla, premium mezők, szó elhelyezés validáció és pontozás
-- `dictionary.py` — Magyar szótár-ellenőrzés a beágyazott `affix_checker`-rel (nincs rendszerfüggőség), magánhangzó nélküli rövidítések kizárása, `is_available`/`warm_up`, tömeges `filter_valid` (gyorsítótárral), `suggest_words` (egy betűnyi szerkesztés)
+- `dictionary.py` — Magyar szótár-ellenőrzés a beágyazott `affix_checker`-rel (nincs rendszerfüggőség), magánhangzó nélküli rövidítések kizárása, `is_available`/`warm_up`, tömeges `filter_valid` (gyorsítótárral), `suggest_words` (egy betűnyi szerkesztés), elutasított szavak (`dict/hu_rejected.txt` + a szótár-építő szavazatai: `is_rejected`, `set_voted_rejected`, `mark_voted_rejected`, `rejected_version`)
 - `affix_checker.py` — Tisztán Python, Hunspell-szerű szóellenőrző a `dict/hu_HU.{aff,dic}` fájlokhoz: szótő, előtag, legfeljebb két toldalék, folytatási osztályok (AF aliasok), NEEDAFFIX/ONLYINCOMPOUND/FORBIDDENWORD; **összetételi szabályok nélkül**; a morfológiai címkék (AM aliasok) alapján szűri a furcsa alakokat (lásd „Furcsa szavak szűrése”); `inflected_forms` — ragozott alakok előállítása a saját szabályaiból (a robot szókincséhez)
 - `achievements.py` — Kitüntetések (10 + 1 jelvény): játékonkénti kiértékelés a lépésnaplóból (`evaluate_game`) és összesítők (`cumulative_badges`)
 - `analysis.py` — Játékelemzés: lépésenként a legjobb lehetséges lépés és a kint maradt pont (a robot motorjával), gyorsítótárazva
@@ -25,6 +25,7 @@ Böngészőben: http://localhost:5000
 - `daily.py` — Napi feladvány: dátumból determinisztikusan előállított tábla + kéz, játék felállítása, eredmény rögzítése
 - `elo.py` — Többjátékos ELO (páronként számolva, K = 32 / 20)
 - `practice.py` — Gyakorló módok motorja: szókvíz (`make_quiz`, módok: vegyes / 2 / 3 zsetonos / hosszú–rövid csapdák), betűvadász és bingó-edző (`make_rack`, `rack_words`, `check_rack_word`), a rövid (2–3 zsetonos) szavak listája; állapotmentes
+- `word_review.py` — Szótár-építő: véletlen szavak átnézésre (`next_words`, `sample_words`), szavazat és visszavonás (`record_vote`, `undo_vote`), a szavazatokból kizárt szavak betöltése (`refresh`), összesítő (`stats`); lásd „Szótár-építő”
 - `push_service.py` — Web Push: VAPID kulcsok, feliratkozások, „Te jössz!” üzenet (opcionális `pywebpush`)
 - `tiles.py` — Magyar betűkészlet (100 zseton), TileBag osztály, `tokenize_word` (szó → zsetonok)
 - `challenge.py` — Challenge (megtámadás) logika, szavazási állapotgép, vote resolution
@@ -37,7 +38,7 @@ Böngészőben: http://localhost:5000
 - `rate_limiter.py` — Generikus rate limiter Socket.IO (SID) és HTTP (IP) endpointokhoz
 - `socket_auth.py` — Aláírt, rövid életű token a Socket.IO identitás igazolásához (`set_name`)
 - `tunnel.py` — Cloudflare tunnel subprocess kezelés (indítás/leállítás)
-- `dict/` — Beágyazott hu_HU hunspell szótár fájlok (hu_HU.dic, hu_HU.aff) + `hu_attested.txt` (a kockázatos levezetések ténylegesen használt alakjai, CC BY-SA 4.0)
+- `dict/` — Beágyazott hu_HU hunspell szótár fájlok (hu_HU.dic, hu_HU.aff) + `hu_attested.txt` (a kockázatos levezetések ténylegesen használt alakjai, CC BY-SA 4.0) + `hu_rejected.txt` (a szótár-építő átnézésén elutasított szavak)
 - `templates/index.html` — Egyoldalas UI: auth (3 tab), lobby (Kezdőlap / Új szoba / Mentett játékok / Barátok / Levelezős / Gyakorlás / Ranglista), várakozó szoba, játék, profil, visszajátszás (+ elemzés); közös SVG ikon-sprite, minden képernyőn egységes felső sáv (`app-topbar`); minden szöveg `data-i18n*` jelölésű
 - `templates/sw.js` — Service worker (Jinja sablon, `VERSION` = kliens fájlok mtime-ja)
 - `static/app.js` — Kliens logika, drag & drop, pinch-to-zoom, Socket.IO kommunikáció, auth flow, téma váltás, hang rendszer (SoundManager, SoundSettings), megfigyelő mód, ranglista, szótár-böngésző, előnézet, zsetonszámláló, tipp, gyorsbillentyűk, PWA telepítés; modulok: `Daily`, `Practice` (+ `PracticeStore`: a gyakorlás statisztikája a `localStorage`-ban), `AsyncGames`, `LobbyNav`, `Push`, `Badges`, `Replay` (elemzés, megosztás); közös segédek: `makeEl`, `makeAvatar`, `tokenizeWord` (a szerver `tokenize_word`-jének mása), `fillWordTiles`
@@ -46,7 +47,8 @@ Böngészőben: http://localhost:5000
 - `static/manifest.webmanifest`, `static/offline.html`, `static/icons/` — PWA
 - `tools/bot_arena.py` — Robot-aréna: a fokozatok erejének mérése bot–bot játékokkal (`ladder`, `match`, `adapt`; kalibrációhoz, nem része a szervernek)
 - `tools/build_attested.py` — a `dict/hu_attested.txt` előállítása egy szógyakorisági listából (elírás- és névszűrővel; nem része a szervernek)
-- `tests/` — Tesztek (pytest, 1360 teszt)
+- `tools/word_review.py` — a szótár-építő tömeges párja: `sample` (véletlen szavak átnézésre, pl. AI-nak), `apply` (az elutasított szavak felvétele a `dict/hu_rejected.txt`-be), `stats` (nem része a szervernek)
+- `tests/` — Tesztek (pytest, 1408 teszt)
 - `requirements.txt` — Python függőségek (flask, flask-socketio, gevent, gevent-websocket, opcionálisan pywebpush)
 - `.venv/` — Virtual environment
 
@@ -56,7 +58,7 @@ Böngészőben: http://localhost:5000
 - **Megfigyelő mód**: nyilvános, folyamatban lévő játék megfigyelése (lobby „Élő játékok”), privát játék kóddal
 - **Ranglista**: **értékszám (ELO, alapértelmezett)** / győzelmek / nyerési arány / átlagpont / legjobb játék (csak regisztrált, robot nélküli, befejezett játékok)
 - **Napi feladvány**: naponta egy közös tábla + kéz, cél a legtöbb pontot érő lépés; napi ranglista, tegnapi megoldás
-- **Gyakorlás** (főoldal + al-nézetek): **Szókvíz** (vegyes / 2 / 3 zsetonos / hosszú–rövid csapdák, 10 vagy 20 kérdés, sorozat, magyarázat és javaslatok), **Betűvadász** (hét zsetonból minél több szó, opcionális 60 / 120 mp, tipp, bónusz szavak), **Bingó-edző** (a hét zsetonos szó megtalálása, sorozat), **Hibáim** (a kvízben eltévesztett szavak pakli, kétszeri helyes válasz kivesz), **Szólisták** (2–3 zsetonos szavak keresővel, kezdőbetű-szűrővel, rendezéssel + zsetontáblázat); napi sorozat és statisztika az eszközön; a napi feladvány kiemelt kártyaként a tetején
+- **Gyakorlás** (főoldal + al-nézetek): **Szókvíz** (vegyes / 2 / 3 zsetonos / hosszú–rövid csapdák, 10 vagy 20 kérdés, sorozat, magyarázat és javaslatok), **Betűvadász** (hét zsetonból minél több szó, opcionális 60 / 120 mp, tipp, bónusz szavak), **Bingó-edző** (a hét zsetonos szó megtalálása, sorozat), **Hibáim** (a kvízben eltévesztett szavak pakli, kétszeri helyes válasz kivesz), **Szólisták** (2–3 zsetonos szavak keresővel, kezdőbetű-szűrővel, rendezéssel + zsetontáblázat), **Szótár-építő** (véletlen szavak: „Rendes szó” / „Nem szó” / „Nem tudom”; a „Nem szó” kizárja a szót a játék szótárából; csak bejelentkezve; visszavonás); napi sorozat és statisztika az eszközön; a napi feladvány kiemelt kártyaként a tetején
 - **Levelezős játék**: barátokkal órák / napok alatt lépkedve (24 óra – 7 nap/lépés), push értesítéssel; játékkártyák (soron lévő, hátralévő idő sáv), új játék alsó lapon (idő: szegmentált választó, barátok: kijelölhető sorok)
 - **Játékelemzés**: a játék végén lépésenként a legjobb lehetséges lépés és a kint maradt pont
 - **Kitüntetések** (bingó, 100+ pontos lépés, 8+ zsetonos szó, joker, 300 pontos játék, robotverő, napi feladvány…), **visszajátszás megosztása linkkel** (`/?replay=TOKEN`), **visszavonás** (függő lerakás visszavonása szavazás előtt, Ctrl+Z)
@@ -84,7 +86,7 @@ Böngészőben: http://localhost:5000
 - **Újracsatlakozás (grace period)**: 120 másodperc a visszacsatlakozásra ha a kapcsolat megszakad játék közben; a várakozó szoba tulajdonosának 10 perc (token alapú)
 - **Pinch-to-zoom**: mobilon a tábla nagyítható/kicsinyíthető csípő mozdulattal
 - **Szótár-böngésző (Challenge fázis)**: A megtámadás során a lerakott szavak kattintható linkek, amelyek egy új lapon indítanak Google keresést az adott szóra ("A magyar nyelv értelmező szótára" fókusszal).
-- Szótár-ellenőrzés: beágyazott hu_HU szótár (`affix_checker.py`, tisztán Python — ugyanúgy működik fejlesztői gépen, Windowson és tárhelyen; korábban a pyenchant/hunspell hiánya miatt a szerveren minden szó érvényesnek látszott). A szavakat kisbetűvel keresi, így a tulajdonnevek (pl. DUNA, BUDAPEST) nem érvényesek; a Hunspell összetételi szabályait nem használja (értelmetlen összetételeket, pl. PAGONYAGY, nem fogad el); a magánhangzó nélküli tételek (KG, DB, TV, betűnevek) nem érvényesek, az indulatszavak (BRR, HM, PSZT) igen; a nyelvtanilag lehetséges, de értelmetlen alakokat (FALIM, TAROM, ÉJÉK, BLÖKIÜL, VU) kiszűri (lásd „Furcsa szavak szűrése”). Ha a szótár nem tölthető be, a Szótár-eszköz 503-at ad (nem jelöl érvényesnek semmit)
+- Szótár-ellenőrzés: beágyazott hu_HU szótár (`affix_checker.py`, tisztán Python — ugyanúgy működik fejlesztői gépen, Windowson és tárhelyen; korábban a pyenchant/hunspell hiánya miatt a szerveren minden szó érvényesnek látszott). A szavakat kisbetűvel keresi, így a tulajdonnevek (pl. DUNA, BUDAPEST) nem érvényesek; a Hunspell összetételi szabályait nem használja (értelmetlen összetételeket, pl. PAGONYAGY, nem fogad el); a magánhangzó nélküli tételek (KG, DB, TV, betűnevek) nem érvényesek, az indulatszavak (BRR, HM, PSZT) igen; a nyelvtanilag lehetséges, de értelmetlen alakokat (FALIM, TAROM, ÉJÉK, BLÖKIÜL, VU) kiszűri (lásd „Furcsa szavak szűrése”). A szótár-építőben „nem szó”-nak ítélt szavak (`dict/hu_rejected.txt`, felhasználói szavazatok) szintén érvénytelenek (lásd „Szótár-építő”). Ha a szótár nem tölthető be, a Szótár-eszköz 503-at ad (nem jelöl érvényesnek semmit)
 - **Játék mentés / visszatöltés**: manuális mentés (owner-only) a kilépés menüből, lobby-first restore flow
 - **Visszajátszás**: befejezett játékok lépésről lépésre visszanézhetők (board snapshot-okkal)
 - **Kilépés menü**: owner: mentés+kilépés / kilépés mentés nélkül / mégsem; nem-owner: kilépés / mégsem
@@ -174,6 +176,7 @@ Vendég mód: a régi név-megadós flow megmarad (statisztikák nem mentődnek)
 - `GET /api/daily` / `GET /api/daily/leaderboard?date=` — napi feladvány, napi ranglista
 - `GET /api/practice/quiz?n=&mode=mixed|2|3|tricky` (a kérdések + `tiles`), `POST /api/practice/answer`, `GET /api/practice/short-words?length=2|3`
 - `GET /api/practice/rack?kind=hunt|bingo` (7 zseton + az összes kirakható szó pontértékkel), `POST /api/practice/rack-word` (`{rack, word}`: kirakható-e és érvényes-e a listán nem szereplő szó)
+- `GET /api/practice/word-review?n=` (átnézésre váró szavak + `tiles` + `stats`, bejelentkezve), `POST /api/practice/word-review` (`{word, valid}`: `valid: false` kizárja a szót; `rejected`, `stats`; 409, ha a szó már nincs a szótárban), `POST /api/practice/word-review/undo` (`{word}`: a saját döntés visszavonása), `GET /api/practice/word-review/stats`
 - `GET /api/push/public-key`, `POST /api/push/subscribe|unsubscribe` — Web Push (bejelentkezve)
 - `GET /api/leaderboard?metric=rating|wins|win_rate|avg_score|best_game&limit=50` — ranglista (nyilvános; bejelentkezve a saját helyezés is: `me`, `is_me`)
 - `GET|POST /api/dictionary/check` (`q` / `words`, max. 8 szó) — szó-ellenőrzés: `valid`, `tiles`, `score`, `reason`, `suggestions`
@@ -238,8 +241,9 @@ Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztésh
 | `tests/test_practice_client.py` | 15 | A kliens gyakorló logikája node-ban: zsetonokra bontás a szerverrel egyezik, magyar ábécé-rendezés, napi sorozat, „Hibáim” pakli, tároló |
 | `tests/test_push.py` | 44 | VAPID, feliratkozások, küldés (mockolva), API, „Te jössz!” kiváltása |
 | `tests/test_async_games.py` | 56 | Levelezős játék: játéklogika (határidő, lejárat, feladás), szerver, mentés / visszaállítás, lista, útvonalak |
+| `tests/test_word_review.py` | 48 | Szótár-építő: elutasított szavak a szótárban (lista + szavazatok), szavazás / küszöb / visszavonás, mintavétel, API (belépés, ellenőrzés, rate limit), `tools/word_review.py`, a mellékelt lista épsége |
 
-**Összesen: 1360 teszt**
+**Összesen: 1408 teszt**
 
 Fixture: `tests/conftest.py` — temp_db (auto-applied, ideiglenes SQLite DB minden teszthez)
 Segédek: `tests/helpers.py` — `registered_set_name_payload()` (érvényes socket-tokennel), `verify_email()`
@@ -397,7 +401,7 @@ Játék közben a side panelen chat szekció érhető el:
 - `request_code`: 3 kérés / 300 mp
 - `login`: 10 kérés / 300 mp
 - `register`: 3 kérés / 3600 mp
-- `replay` 60/perc, `analysis` 30/perc, `daily` 60/perc, `practice` 120/perc, `push` 20/perc (IP-alapú, `config.py`)
+- `replay` 60/perc, `analysis` 30/perc, `daily` 60/perc, `practice` 120/perc, `word_review` 240/perc, `push` 20/perc (IP-alapú, `config.py`)
 
 ## UI felépítés
 
@@ -514,6 +518,7 @@ A tábla cellái `container-type: inline-size` + `cqw` egységekkel méreteződn
 - `VERIFICATION_MAX_ATTEMPTS = 5`
 - `SMTP_CONFIGURED` — bool, automatikusan kalkulált
 - `AUTH_RATE_LIMITS` — dict, IP-alapú rate limit konfigok
+- `WORD_REJECT_THRESHOLD = 1` (vagy env var) — ennyivel kell több „nem szó” szavazat a „rendes szó”-nál a szó kizárásához (szótár-építő)
 
 ## Játék mentés / visszatöltés
 
@@ -634,6 +639,18 @@ A Gyakorlás lap főoldalból (statisztika-sáv: napi sorozat / mai gyakorlat / 
 - A `tokenizeWord` (JS) a szerver `tokenize_word`-jével azonos dinamikus programozás (kevesebb zseton, döntetlennél több pont: KÉSZSÉG = K É S ZS É G); a `tests/test_practice_client.py` több ezer szón összeveti.
 - A végpontok közös őre: `routes._practice_guard()` (IP-alapú rate limit `practice`: 120 / perc, és a szótár elérhetősége — hiányában 503).
 
+## Szótár-építő
+
+A hu_HU szótár helyesírás-ellenőrzésre készült, ezért a Scrabble-ban sok olyan alakot is elfogad, amelyet senki sem tekintene rendes szónak (pl. a gépiesen képzett „…gyűlölet” / „…ellenesség” népnevekkel, értelmetlen számnevek, torz alakok). A szótár-építő az emberi (és AI-s) átnézéssel tisztítja a szótárt.
+
+- **Felület**: Gyakorlás → „Szótár-építő” (`WordBuilder` modul az `app.js`-ben, `#practice-wordbuilder`). Egy szó látszik játékbeli zsetonokkal és „Keresés a magyar értelmező szótárban” hivatkozással; **Nem szó** (←), **Rendes szó** (→), **Nem tudom** (↓, nincs szavazat), **Visszavonás** (⌫, a legutóbbi döntés). A döntés azonnal továbblép (a szavakat 20-asával kapja a kliens, a küldés a háttérben, sorban megy; hálózati hibánál a szó újra sorra kerül). Számlálók: ma átnézett / összes / kizárt. Csak bejelentkezve (vendégnek magyarázó kártya), mert a szavazat mindenki játékát érinti. A lenyomva tartott billentyű nem dönt (`e.repeat`).
+- **Mintavétel** (`word_review.sample_words`): a robot szókincséből (tőszavak és gyakori ragozott alakok 7 : 3 arányban), csak olyan szó, amelyet a szótár most elfogad és amelyet még senki sem nézett át (az elfogadottak sem térnek vissza). Az eszköz (`tools/word_review.py`) ugyanezt használja, bármekkora mintára.
+- **Döntések és kizárás**: `word_reviews` tábla (szó kisbetűsen, felhasználónként egy szavazat: 1 rendes szó, 0 nem szó). Egy szót akkor zár ki a szótár, ha `nem szó − rendes szó ≥ config.WORD_REJECT_THRESHOLD` (alapérték 1: egyetlen elutasítás elég; több emberes átnézésnél emelhető). A kizárás pontos szóalakra szól (a ragozott alakokra nem), azonnal él (`dictionary.mark_voted_rejected`: a lerakás, a robot, a kvíz, a szólisták és a szótár-böngésző is érvénytelennek veszi), és indításkor az adatbázisból töltődik vissza (`word_review.refresh`). Csak a szótár által éppen elfogadott szóra lehet szavazni.
+- **Tartós lista**: `dict/hu_rejected.txt` (soronként egy kisbetűs szó, `#` megjegyzés) — a szótárral együtt töltődik be, a robot szókincséből is kimarad; a szavazatoktól független. Karbantartása a `tools/word_review.py`-vel (vagy kézzel); a szavazatok nem kerülnek bele automatikusan.
+- **AI-s átnézés**: `python tools/word_review.py sample 5000 --seed N --out sample.txt` (átnézendő szavak), az ítéletek (a nem rendes szavak) egy fájlba, majd `python tools/word_review.py apply rejected.txt` (csak a szótár által elfogadott szó kerülhet a listára; `--dry-run`). Első kör (2026-10-03): 5000 véletlen szó, 188 elutasítás. Második kör: további 20 000 szó (`--seed 20261004 --exclude` az első minta), első szűrőként Claude Haikuval (szavankénti ítélet, csomagonként kanári-szavakkal; 3315 jelölés), de **minden jelölést egyenként felülbíráltam**, 436 elutasítással — a lista így 622 szó. A mérce mindkét körben: nem használatos, gépiesen képzett alak (ritka népnév + -gyűlölet / -ellenesség / -üldözés / -barát / -imádat / -tanítás / -centrikus, értelmetlen számnevek, személyes névmás + névutó torzítások, nem személyre vonatkozó „-é” alakok) vagy elírás; a bizonytalan szót az átnézés megtartotta, ezért a lista óvatos. **A Haiku önmagában nem megbízható bírálónak**: a kalibráló mintán (a saját 33 ítéletem) a recall 85% volt, de a pontosság csak ~15% (valódi szavakat is megjelölt: hágcsó, kényszeredett, hoznál, kétlek), a „javított alakot” kérő és a szkeptikus ellenőrző körök pedig nem javítottak rajta (az utóbbi a jó jelöléseket is elejtette), ezért csak recall-szűrőként használható, az ítéletet ember (vagy erősebb modell) hozza. Ugyanaz a szó kétszer ne kerüljön átnézésre: a `--exclude` kihagyja a korábbi minták fájljait. Új lista után az elemzés gyorsítótárának verzióját (`analysis.ANALYSIS_VERSION`) növelni kell.
+- **Gyorsítótárak**: `dictionary.rejected_version()` nő minden változásnál; a számolt gyorsítótárak (`practice.short_words`) ebből veszik észre, hogy elavultak; a `filter_valid` gyorsítótárából a kizárt szó törlődik. A tesztekben a `conftest.py` autouse fixture-je minden teszt után törli a szavazatból kizártakat.
+- **Biztonság / visszaélés**: csak regisztrált felhasználó szavazhat; IP-alapú rate limit (`word_review` 240/perc); a szó alakját és szótári érvényességét a szerver ellenőrzi. Mivel az alapértelmezett küszöb 1, egy fiók egyedül is kizárhat szavakat — nagyobb közösségnél érdemes a `WORD_REJECT_THRESHOLD`-ot 2–3-ra állítani.
+
 ## Levelezős (aszinkron) játék
 
 - `Game.async_mode`, `turn_hours`, `turn_deadline`: a lecsatlakozott játékost nem ugorjuk át (`_next_turn`), a soron lévőnek `turn_hours` órája van. `expire_turn()`: automatikus passz (`timeout` lépés), három egymás utáni után `resign`. `resign()`: a játék véget ér, a feladó nem lehet győztes (az ELO-ban is mindenki mögé kerül, `resigned` a `players_data`-ban).
@@ -695,6 +712,7 @@ A Gyakorlás lap főoldalból (statisztika-sáv: napi sorozat / mai gyakorlat / 
 - [x] Kényelmi funkciók — élő előnézet, zsetonszámláló, keverés/rendezés + gyorsbillentyűk, meghívó link, lépéstörténet
 
 ### Ötletek
+- [ ] Szótár-építő: az AI által elutasított szavak emberi második véleménye (külön mintavétel a `hu_rejected.txt` szavaiból), a felhasználói szavazatok exportja a tartós listába, mintázat-alapú átvizsgálás (a népnév + -gyűlölet / -ellenesség / -üldözés … családok teljes végigjárása), szavankénti szerepkör / küszöb
 - [ ] Robot: kétszeres ragozás és hosszabb szótövek (memória!), tapasztalati értékelés (szimuláció), emberszerűbb lépések (kevesebb egyzsetonos lépés az alsó fokozatokon), gyakori szavak listája a ritka szavak elkerülésére, fokozat robotonként a felületen
 - [ ] Levelezős játék: nyitott (ismeretlen ellenfeles) játékok, e-mail értesítés push híján, chat, emlékeztető a határidő előtt
 - [ ] Több nyelv a felületen (a `i18n-data.js` blokkja és a `SUPPORTED` lista bővítésével)

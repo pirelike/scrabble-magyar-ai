@@ -11,7 +11,7 @@ import json
 import ai_player
 from board import Board
 
-ANALYSIS_VERSION = 3   # 3: a szótár a furcsa (használatban nem előforduló) alakokat kiszűri
+ANALYSIS_VERSION = 5   # 5: a szótár-építő második körös átnézése (4: első kör, 3: a furcsa alakok szűrése)
 SECONDS_PER_MOVE = 0.8
 # Ezek a lépések számítanak a játékos körének (az elutasított lerakás nem)
 TURN_TYPES = ('place', 'challenge_accept', 'exchange', 'pass')

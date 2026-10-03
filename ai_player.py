@@ -233,6 +233,8 @@ def load_vocabulary(path=_DIC_PATH, inflect=True):
         forms = checker.inflected_forms(short, _INFLECT_ADDS, INFLECT_MAX_FORM, risky=False)
         words.update(f.upper() for f in forms
                      if _STEM_RE.match(f) and _HAS_VOWEL_RE.search(f) and _placeable(f))
+    # a szótár-építő átnézésén elutasított szavakat a robot sem keresi (a játék szótára úgyis elvetné őket)
+    words -= {w.upper() for w in dictionary.listed_rejected()}
     return Vocabulary(words)
 
 

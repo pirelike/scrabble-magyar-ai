@@ -41,3 +41,12 @@ def clean_state():
         server.join_codes.clear()
         
     yield
+
+
+@pytest.fixture(autouse=True)
+def clean_rejected_words():
+    """A szótár-építő szavazatai (a memóriában tartott elutasított szavak) ne szivárogjanak át a tesztek között."""
+    yield
+    import dictionary
+    if dictionary._rejected_voted:
+        dictionary.set_voted_rejected([])

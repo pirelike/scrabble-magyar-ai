@@ -18,6 +18,7 @@ import async_games
 import daily
 import dictionary
 import practice
+import word_review
 import push_service
 from game import Game, CHALLENGE_TIMEOUT, ALLOWED_HINT_LIMITS, DEFAULT_HINT_LIMIT
 from room import Room
@@ -2527,6 +2528,7 @@ if __name__ == '__main__':
     cleanup_expired()
     _cleanup_finished_saves()
     dictionary.warm_up()  # a szótár betöltése indításkor (az első lerakásnál ne kelljen várni)
+    word_review.refresh()  # a szótár-építőn elutasított szavak kizárása (az adatbázisból)
     ai_player.get_vocabulary()  # a robot szókincse (a ragozott alakokkal ~2 mp) is előre épüljön fel
     practice.warm_up()  # gyakorló módok: tőszavak, a 2–3 zsetonos szavak listái
     try:

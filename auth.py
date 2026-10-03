@@ -193,6 +193,16 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_friendships_user_id ON friendships(user_id);
         CREATE INDEX IF NOT EXISTS idx_friendships_friend_id ON friendships(friend_id);
+
+        CREATE TABLE IF NOT EXISTS word_reviews (
+            word TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            verdict INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (word, user_id),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_word_reviews_user ON word_reviews(user_id, created_at);
     ''')
     # Migráció: owner_name oszlop hozzáadása ha nem létezik
     try:
@@ -857,6 +867,65 @@ def count_push_subscriptions(user_id):
     with _db() as conn:
         return conn.execute('SELECT COUNT(*) FROM push_subscriptions WHERE user_id = ?',
                             (user_id,)).fetchone()[0]
+
+
+# --- Szótár-építő: szavak átnézése ---
+#
+# `word_reviews`: felhasználónként és szavanként egy döntés (verdict 1: rendes szó, 0: nem szó). A szavak
+# kisbetűsen tárolódnak. Az elutasítás szabályát (hány szavazat kell) a `word_review.py` tartalmazza.
+
+def save_word_review(user_id, word, verdict):
+    """Egy szó átnézésének mentése (a korábbi döntést felülírja)."""
+    with _db() as conn:
+        conn.execute(
+            'INSERT INTO word_reviews (word, user_id, verdict) VALUES (?, ?, ?) '
+            'ON CONFLICT(word, user_id) DO UPDATE SET verdict = excluded.verdict, '
+            "created_at = datetime('now')",
+            (word, user_id, 1 if verdict else 0))
+
+
+def delete_word_review(user_id, word):
+    """Egy saját döntés törlése (visszavonás). Visszatér: törölt sorok száma."""
+    with _db() as conn:
+        return conn.execute('DELETE FROM word_reviews WHERE word = ? AND user_id = ?',
+                            (word, user_id)).rowcount
+
+
+def get_word_review_votes(word):
+    """Egy szó szavazatai: (rendes szó, nem szó) darabszám."""
+    with _db() as conn:
+        row = conn.execute(
+            'SELECT COALESCE(SUM(verdict), 0) AS good, COALESCE(SUM(1 - verdict), 0) AS bad '
+            'FROM word_reviews WHERE word = ?', (word,)).fetchone()
+    return row['good'], row['bad']
+
+
+
+def get_reviewed_words():
+    """Az összes szó, amelyet bárki átnézett (kisbetűs halmaz): a mintavételből kimaradnak."""
+    with _db() as conn:
+        return {row['word'] for row in conn.execute('SELECT DISTINCT word FROM word_reviews')}
+
+
+def get_voted_rejected_words(threshold):
+    """Azok a szavak, amelyekre a „nem szó” szavazatok száma legalább `threshold`-tal több, mint a
+    „rendes szó” szavazatoké."""
+    with _db() as conn:
+        rows = conn.execute(
+            'SELECT word FROM word_reviews GROUP BY word '
+            'HAVING SUM(1 - verdict) - SUM(verdict) >= ?', (threshold,)).fetchall()
+    return {row['word'] for row in rows}
+
+
+def get_word_review_stats(user_id):
+    """A felhasználó átnézéseinek összesítője: összes, rendes szó, nem szó, ma átnézett (UTC nap)."""
+    with _db() as conn:
+        row = conn.execute(
+            'SELECT COUNT(*) AS total, COALESCE(SUM(verdict), 0) AS good, '
+            "COALESCE(SUM(CASE WHEN date(created_at) = date('now') THEN 1 ELSE 0 END), 0) AS today "
+            'FROM word_reviews WHERE user_id = ?', (user_id,)).fetchone()
+    return {'total': row['total'], 'valid': row['good'], 'invalid': row['total'] - row['good'],
+            'today': row['today']}
 
 
 # --- Napi feladvány ---
