@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from werkzeug.security import generate_password_hash, check_password_hash
 
+import config
 import elo
 from config import (
     DB_PATH, SESSION_MAX_AGE_DAYS, VERIFICATION_CODE_EXPIRY_MINUTES,
@@ -37,6 +38,13 @@ def _db():
         raise
     finally:
         conn.close()
+
+
+def _ensure_column(conn, table, column, ddl):
+    """Oszlop hozzáadása migrációval, ha még nincs (a nevek rögzített, kódból jövő értékek)."""
+    existing = {row[1] for row in conn.execute(f'PRAGMA table_info({table})')}
+    if column not in existing:
+        conn.execute(f'ALTER TABLE {table} ADD COLUMN {column} {ddl}')
 
 
 def init_db():
@@ -203,6 +211,148 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_word_reviews_user ON word_reviews(user_id, created_at);
+
+        -- Admin napló: csak hozzáfűzhető (a triggerek a módosítást és a törlést is megtiltják)
+        CREATE TABLE IF NOT EXISTS admin_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_user_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            target_type TEXT,
+            target_id TEXT,
+            details_json TEXT,
+            ip TEXT,
+            user_agent TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit(created_at);
+        CREATE INDEX IF NOT EXISTS idx_admin_audit_target ON admin_audit(target_type, target_id);
+        CREATE TRIGGER IF NOT EXISTS admin_audit_no_update BEFORE UPDATE ON admin_audit
+        BEGIN
+            SELECT RAISE(ABORT, 'admin_audit is append-only');
+        END;
+        CREATE TRIGGER IF NOT EXISTS admin_audit_no_delete BEFORE DELETE ON admin_audit
+        BEGIN
+            SELECT RAISE(ABORT, 'admin_audit is append-only');
+        END;
+
+        -- Admin panel: belső jegyzetek, kézi értékszám-módosítások, szótári felülbírálatok
+        CREATE TABLE IF NOT EXISTS user_admin_notes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            admin_user_id INTEGER NOT NULL,
+            note TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_user_admin_notes_user ON user_admin_notes(user_id);
+
+        CREATE TABLE IF NOT EXISTS rating_adjustments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            admin_user_id INTEGER NOT NULL,
+            rating_before INTEGER NOT NULL,
+            rating_after INTEGER NOT NULL,
+            reason TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_rating_adjustments_user ON rating_adjustments(user_id);
+
+        CREATE TABLE IF NOT EXISTS word_overrides (
+            word TEXT PRIMARY KEY,
+            verdict TEXT NOT NULL,
+            admin_user_id INTEGER,
+            reason TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS word_additions (
+            word TEXT PRIMARY KEY,
+            admin_user_id INTEGER,
+            reason TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        -- Közlemények (banner), bejelentések, belépési napló, IP tiltások, chat napló, tiltott szavak
+        CREATE TABLE IF NOT EXISTS announcements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            text_hu TEXT NOT NULL,
+            text_en TEXT NOT NULL DEFAULT '',
+            kind TEXT NOT NULL DEFAULT 'info',
+            starts_at TEXT,
+            ends_at TEXT,
+            audience TEXT NOT NULL DEFAULT 'all',
+            active INTEGER NOT NULL DEFAULT 1,
+            created_by INTEGER,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            reporter_user_id INTEGER,
+            reporter_name TEXT NOT NULL DEFAULT '',
+            reported_user_id INTEGER,
+            reported_name TEXT NOT NULL DEFAULT '',
+            kind TEXT NOT NULL DEFAULT 'player',
+            message TEXT NOT NULL DEFAULT '',
+            reason TEXT NOT NULL DEFAULT '',
+            room_id TEXT,
+            room_name TEXT NOT NULL DEFAULT '',
+            snapshot_json TEXT,
+            status TEXT NOT NULL DEFAULT 'new',
+            handled_by INTEGER,
+            handled_at TEXT,
+            handler_note TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status, created_at);
+
+        CREATE TABLE IF NOT EXISTS login_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            email TEXT NOT NULL DEFAULT '',
+            ip TEXT,
+            user_agent TEXT,
+            success INTEGER NOT NULL DEFAULT 0,
+            reason TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_login_events_created ON login_events(created_at);
+        CREATE INDEX IF NOT EXISTS idx_login_events_ip ON login_events(ip, created_at);
+        CREATE INDEX IF NOT EXISTS idx_login_events_user ON login_events(user_id, created_at);
+
+        CREATE TABLE IF NOT EXISTS ip_bans (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ip TEXT NOT NULL,
+            reason TEXT NOT NULL DEFAULT '',
+            expires_at TEXT,
+            created_by INTEGER,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS chat_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            room_id TEXT NOT NULL,
+            room_name TEXT NOT NULL DEFAULT '',
+            user_id INTEGER,
+            name TEXT NOT NULL DEFAULT '',
+            message TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_chat_log_created ON chat_log(created_at);
+        CREATE INDEX IF NOT EXISTS idx_chat_log_room ON chat_log(room_id);
+
+        CREATE TABLE IF NOT EXISTS usage_counters (
+            day TEXT NOT NULL,
+            key TEXT NOT NULL,
+            count INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (day, key)
+        );
+
+        CREATE TABLE IF NOT EXISTS banned_words (
+            word TEXT PRIMARY KEY,
+            created_by INTEGER,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
     ''')
     # Migráció: owner_name oszlop hozzáadása ha nem létezik
     try:
@@ -243,6 +393,20 @@ def init_db():
     except sqlite3.OperationalError:
         conn.execute("ALTER TABLE game_players ADD COLUMN rating_before INTEGER")
         conn.execute("ALTER TABLE game_players ADD COLUMN rating_after INTEGER")
+    try:
+        conn.execute('SELECT admin_seen_at FROM sessions LIMIT 1')
+    except sqlite3.OperationalError:
+        # Admin panel: az utolsó admin-kérés ideje (tétlenségi időkorlát) és a sudo mód lejárata
+        conn.execute("ALTER TABLE sessions ADD COLUMN admin_seen_at TEXT")
+        conn.execute("ALTER TABLE sessions ADD COLUMN sudo_until TEXT")
+    # Admin panel: kitiltás, némítás, szótár-építő tiltás, utolsó belépés, törlés (anonimizálás) jelzése
+    for column, ddl in (('banned_until', 'TEXT'), ('ban_reason', 'TEXT'), ('chat_muted_until', 'TEXT'),
+                        ('review_blocked', 'INTEGER NOT NULL DEFAULT 0'), ('last_login_at', 'TEXT'),
+                        ('last_login_ip', 'TEXT'), ('deleted_at', 'TEXT')):
+        _ensure_column(conn, 'users', column, ddl)
+    # Admin panel: a munkamenet létrehozásának IP-je és böngészője, az utolsó használat ideje
+    for column in ('ip', 'user_agent', 'last_seen'):
+        _ensure_column(conn, 'sessions', column, 'TEXT')
     conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_saved_games_share_token '
                  'ON saved_games(share_token) WHERE share_token IS NOT NULL')
     conn.commit()
@@ -287,11 +451,85 @@ def create_user(email, display_name, password):
 def verify_password(email, password):
     """Jelszó ellenőrzés. Visszaad (success, user_or_error)."""
     user = get_user_by_email(email)
-    if not user:
+    if not user or user['deleted_at'] or not user['password_hash']:
         return False, 'Hibás email cím vagy jelszó.'
     if not check_password_hash(user['password_hash'], password):
         return False, 'Hibás email cím vagy jelszó.'
     return True, dict(user)
+
+
+def bump_counter(key, amount=1):
+    """Használati számláló növelése (napi bontásban): a statisztika a gyakorló módok használatát ebből mutatja.
+    A hibája sosem akadályozza a kérést."""
+    try:
+        with _db() as conn:
+            conn.execute('INSERT INTO usage_counters (day, key, count) VALUES (?, ?, ?) '
+                         'ON CONFLICT(day, key) DO UPDATE SET count = count + excluded.count',
+                         (utcnow().strftime('%Y-%m-%d'), key, amount))
+    except sqlite3.Error:
+        pass
+
+
+# --- Kitiltás, némítás, belépési napló ---
+
+PERMANENT_UNTIL = '9999-12-31 23:59:59'   # végleges kitiltás: ennyi a lejárat
+_SESSION_SEEN_INTERVAL = 300             # mp: a munkamenet „utoljára látva” ideje ennyi időnként frissül
+
+
+def _until_active(stamp):
+    """Igaz, ha a lejárati időbélyeg még a jövőben van (a hiányzó érték nem aktív)."""
+    moment = parse_ts(stamp)
+    return moment is not None and moment > utcnow()
+
+
+def ban_from_row(row):
+    """A sor (felhasználó) aktív kitiltása: {'reason', 'until' (None = végleges), 'permanent'}, vagy None."""
+    if not row or not _until_active(row['banned_until']):
+        return None
+    permanent = row['banned_until'] == PERMANENT_UNTIL
+    return {'reason': row['ban_reason'] or '', 'until': None if permanent else row['banned_until'],
+            'permanent': permanent}
+
+
+def get_ban(user_id):
+    """A felhasználó aktív kitiltása (lásd `ban_from_row`), vagy None."""
+    if not user_id:
+        return None
+    with _db() as conn:
+        row = conn.execute('SELECT banned_until, ban_reason FROM users WHERE id = ?', (user_id,)).fetchone()
+    return ban_from_row(row)
+
+
+def is_chat_muted(user_id):
+    """Igaz, ha a felhasználó chat némítása még érvényben van."""
+    if not user_id:
+        return False
+    with _db() as conn:
+        row = conn.execute('SELECT chat_muted_until FROM users WHERE id = ?', (user_id,)).fetchone()
+    return bool(row) and _until_active(row['chat_muted_until'])
+
+
+def is_review_blocked(user_id):
+    """Igaz, ha a felhasználó nem szavazhat a szótár-építőben."""
+    if not user_id:
+        return False
+    with _db() as conn:
+        row = conn.execute('SELECT review_blocked FROM users WHERE id = ?', (user_id,)).fetchone()
+    return bool(row and row['review_blocked'])
+
+
+def record_login_event(email, success, ip=None, user_agent=None, user_id=None, reason=''):
+    """Belépési kísérlet naplózása (sikeres és sikertelen is). A napló hibája sosem akadályozza a belépést."""
+    try:
+        with _db() as conn:
+            conn.execute(
+                'INSERT INTO login_events (user_id, email, ip, user_agent, success, reason) VALUES (?, ?, ?, ?, ?, ?)',
+                (user_id, (email or '')[:254], ip, (user_agent or '')[:300] or None, 1 if success else 0, reason))
+            if success and user_id:
+                conn.execute('UPDATE users SET last_login_at = ?, last_login_ip = ? WHERE id = ?',
+                             (format_ts(utcnow()), ip, user_id))
+    except sqlite3.Error as exc:
+        print(f'[auth] A belépési napló nem írható: {exc}')
 
 
 # --- Verification codes ---
@@ -382,28 +620,31 @@ def clear_email_verification(email):
 
 # --- Sessions ---
 
-def create_session(user_id):
+def create_session(user_id, ip=None, user_agent=None):
     """Új session token létrehozása. Visszaadja a tokent."""
     token = secrets.token_urlsafe(48)
     expires_at = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=SESSION_MAX_AGE_DAYS)).strftime('%Y-%m-%d %H:%M:%S')
+    now = datetime.now(timezone.utc).replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')
 
     with _db() as conn:
         conn.execute(
-            'INSERT INTO sessions (user_id, token, expires_at) VALUES (?, ?, ?)',
-            (user_id, token, expires_at)
+            'INSERT INTO sessions (user_id, token, expires_at, ip, user_agent, last_seen) VALUES (?, ?, ?, ?, ?, ?)',
+            (user_id, token, expires_at, ip, (user_agent or '')[:300] or None, now)
         )
     return token
 
 
 def validate_session(token):
-    """Session token ellenőrzés. Visszaad user dict-et vagy None-t."""
+    """Session token ellenőrzés. Visszaad user dict-et vagy None-t.
+
+    Kitiltott vagy törölt (anonimizált) fiók munkamenete sem érvényes."""
     if not token:
         return None
 
     with _db() as conn:
         row = conn.execute(
             'SELECT s.*, u.id as uid, u.email, u.display_name, u.games_played, u.games_won, u.total_score, u.reconnect_token, '
-            'u.rating, u.rated_games '
+            'u.rating, u.rated_games, u.banned_until, u.ban_reason, u.deleted_at '
             'FROM sessions s JOIN users u ON s.user_id = u.id '
             'WHERE s.token = ?',
             (token,)
@@ -416,6 +657,14 @@ def validate_session(token):
         if datetime.now(timezone.utc).replace(tzinfo=None) > expires_at:
             conn.execute('DELETE FROM sessions WHERE id = ?', (row['id'],))
             return None
+
+        if row['deleted_at'] or ban_from_row(row):
+            return None
+
+        # Az „utoljára látva” idő ritkított frissítése (a legtöbb kérésnél nincs írás)
+        seen = parse_ts(row['last_seen'])
+        if seen is None or (utcnow() - seen).total_seconds() > _SESSION_SEEN_INTERVAL:
+            conn.execute('UPDATE sessions SET last_seen = ? WHERE id = ?', (format_ts(utcnow()), row['id']))
 
         return {
             'id': row['uid'],
@@ -436,6 +685,80 @@ def delete_session(token):
         return
     with _db() as conn:
         conn.execute('DELETE FROM sessions WHERE token = ?', (token,))
+
+
+# --- Admin ---
+
+_TS_FORMAT = '%Y-%m-%d %H:%M:%S'
+
+
+def transaction():
+    """Egy adatbázis-tranzakció (commit / hiba esetén rollback / lezárás) más modulok számára."""
+    return _db()
+
+
+def utcnow():
+    """Az aktuális UTC idő időzóna nélkül (az adatbázis időbélyegeivel azonos ábrázolás)."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def format_ts(moment):
+    return moment.strftime(_TS_FORMAT)
+
+
+def parse_ts(value):
+    """Adatbázis-időbélyeg → datetime (hibás vagy hiányzó érték → None)."""
+    try:
+        return datetime.strptime(value, _TS_FORMAT)
+    except (TypeError, ValueError):
+        return None
+
+
+def is_admin_user(user):
+    """Igaz, ha a felhasználó admin: az e-mail címe szerepel a szerveren beállított `ADMIN_EMAILS`-ben.
+
+    Szándékosan nem adatbázis-oszlop és nem a megjelenítési névhez kötött: adminná válni csak a szerver
+    környezeti változójával lehet. Vendég (nincs felhasználó) soha nem admin.
+    """
+    if not user or not config.ADMIN_EMAILS:
+        return False
+    try:
+        email = user['email']
+    except (KeyError, IndexError, TypeError):
+        return False
+    return isinstance(email, str) and email.strip().lower() in config.ADMIN_EMAILS
+
+
+def get_admin_session(token):
+    """Az admin munkamenet állapota: {'admin_seen_at', 'sudo_until'} (nincs ilyen session → None)."""
+    if not token:
+        return None
+    with _db() as conn:
+        row = conn.execute('SELECT admin_seen_at, sudo_until FROM sessions WHERE token = ?',
+                           (token,)).fetchone()
+        return dict(row) if row else None
+
+
+def touch_admin_session(token, conn=None):
+    """Az utolsó admin-kérés idejének frissítése (a tétlenségi időkorlát innen számolódik)."""
+    stamp = format_ts(utcnow())
+    if conn is not None:
+        conn.execute('UPDATE sessions SET admin_seen_at = ? WHERE token = ?', (stamp, token))
+        return
+    with _db() as own:
+        own.execute('UPDATE sessions SET admin_seen_at = ? WHERE token = ?', (stamp, token))
+
+
+def set_admin_sudo(token, until, conn=None):
+    """A sudo mód lejáratának beállítása (None → lezárás). Frissíti a tétlenségi időzítőt is."""
+    sudo_until = format_ts(until) if until else None
+    stamp = format_ts(utcnow())
+    sql = 'UPDATE sessions SET sudo_until = ?, admin_seen_at = ? WHERE token = ?'
+    if conn is not None:
+        conn.execute(sql, (sudo_until, stamp, token))
+        return
+    with _db() as own:
+        own.execute(sql, (sudo_until, stamp, token))
 
 
 def get_or_create_user_reconnect_token(user_id):
@@ -895,10 +1218,20 @@ def get_word_review_votes(word):
     """Egy szó szavazatai: (rendes szó, nem szó) darabszám."""
     with _db() as conn:
         row = conn.execute(
-            'SELECT COALESCE(SUM(verdict), 0) AS good, COALESCE(SUM(1 - verdict), 0) AS bad '
-            'FROM word_reviews WHERE word = ?', (word,)).fetchone()
+            'SELECT COALESCE(SUM(r.verdict), 0) AS good, COALESCE(SUM(1 - r.verdict), 0) AS bad '
+            'FROM word_reviews r JOIN users u ON u.id = r.user_id AND u.review_blocked = 0 '
+            'WHERE r.word = ?', (word,)).fetchone()
     return row['good'], row['bad']
 
+
+
+def get_admin_word_lists():
+    """Az admin szótári felülbírálatai és saját szavai: (allow, reject, additions) kisbetűs halmazok."""
+    with _db() as conn:
+        rows = conn.execute('SELECT word, verdict FROM word_overrides').fetchall()
+        additions = {r['word'] for r in conn.execute('SELECT word FROM word_additions')}
+    return ({r['word'] for r in rows if r['verdict'] == 'allow'},
+            {r['word'] for r in rows if r['verdict'] == 'reject'}, additions)
 
 
 def get_reviewed_words():
@@ -912,8 +1245,8 @@ def get_voted_rejected_words(threshold):
     „rendes szó” szavazatoké."""
     with _db() as conn:
         rows = conn.execute(
-            'SELECT word FROM word_reviews GROUP BY word '
-            'HAVING SUM(1 - verdict) - SUM(verdict) >= ?', (threshold,)).fetchall()
+            'SELECT r.word AS word FROM word_reviews r JOIN users u ON u.id = r.user_id AND u.review_blocked = 0 '
+            'GROUP BY r.word HAVING SUM(1 - r.verdict) - SUM(r.verdict) >= ?', (threshold,)).fetchall()
     return {row['word'] for row in rows}
 
 
@@ -1025,7 +1358,8 @@ def get_daily_leaderboard(puzzle_date, limit=20, user_id=None):
         rows = conn.execute(
             'SELECT ds.user_id AS user_id, u.display_name AS display_name, ds.best_score AS best_score, '
             'ds.attempts AS attempts FROM daily_scores ds JOIN users u ON u.id = ds.user_id '
-            f'WHERE ds.puzzle_date = ? AND ds.attempts > 0 ORDER BY {_DAILY_ORDER}', (puzzle_date,)
+            f'WHERE ds.puzzle_date = ? AND ds.attempts > 0 AND u.deleted_at IS NULL ORDER BY {_DAILY_ORDER}',
+            (puzzle_date,)
         ).fetchall()
     entries, me = [], None
     for rank, row in enumerate(rows, start=1):
@@ -1088,6 +1422,13 @@ def get_game_players(game_id):
             (game_id,)
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def set_game_status(game_id, status):
+    """Egy mentett játék állapotának átállítása (az `updated_at` nem változik: az értékszám-újraszámolás a
+    befejezés idejéből dolgozik)."""
+    with _db() as conn:
+        conn.execute('UPDATE saved_games SET status = ? WHERE id = ?', (status, game_id))
 
 
 def abandon_game(room_id):
@@ -1251,7 +1592,7 @@ def search_users(query, exclude_user_id, limit=10):
             "SELECT id, display_name "
             "FROM users "
             "WHERE (py_lower(display_name) LIKE ? ESCAPE '\\' OR email_lower = ?) "
-            "  AND id != ? "
+            "  AND id != ? AND deleted_at IS NULL "
             "ORDER BY display_name "
             "LIMIT ?",
             (f"%{escaped}%", query.lower(), exclude_user_id, limit)
@@ -1295,7 +1636,7 @@ def _leaderboard_entry(row, rank):
     }
 
 
-def get_leaderboard(metric='wins', limit=50, user_id=None):
+def get_leaderboard(metric='wins', limit=50, user_id=None, ignore_min=False):
     """Regisztrált játékosok ranglistája (csak befejezett, robot nélküli játékokból).
 
     metric: 'rating' | 'wins' | 'win_rate' | 'avg_score' | 'best_game'
@@ -1305,10 +1646,11 @@ def get_leaderboard(metric='wins', limit=50, user_id=None):
     if metric not in LEADERBOARD_METRICS:
         metric = 'wins'
     limit = max(1, min(int(limit), LEADERBOARD_MAX_LIMIT))
-    min_games = LEADERBOARD_MIN_GAMES[metric]
+    min_games = 1 if ignore_min else LEADERBOARD_MIN_GAMES[metric]
     # Az értékszám-ranglistára csak elég sok értékelt (regisztráltak közti) játék után lehet kerülni
+    rated_min = 0 if ignore_min else min_games
     rated_only = 'AND u.rated_games >= ? ' if metric == 'rating' else ''
-    params = (min_games, min_games) if metric == 'rating' else (min_games,)
+    params = (rated_min, min_games) if metric == 'rating' else (min_games,)
 
     with _db() as conn:
         rows = conn.execute(
@@ -1318,7 +1660,7 @@ def get_leaderboard(metric='wins', limit=50, user_id=None):
             'u.rating AS rating, u.rated_games AS rated_games '
             'FROM game_players gp '
             "JOIN saved_games sg ON sg.id = gp.game_id AND sg.status = 'finished' AND sg.has_bots = 0 "
-            'JOIN users u ON u.id = gp.user_id '
+            'JOIN users u ON u.id = gp.user_id AND u.deleted_at IS NULL '
             'WHERE gp.user_id IS NOT NULL '
             f'{rated_only}'
             'GROUP BY gp.user_id '

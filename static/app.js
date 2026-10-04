@@ -44,6 +44,11 @@ document.addEventListener('click', (e) => {
         if (typeof ExitGame !== 'undefined') ExitGame.showDialog();
         return;
     }
+
+    if (e.target.closest('.btn-report')) {
+        if (typeof Report !== 'undefined') Report.show();
+        return;
+    }
 });
 
 // ===== CONSTANTS =====
@@ -454,6 +459,8 @@ const Auth = {
                 AppState.currentUser = data.user;
                 AppState.isGuest = false;
                 Lobby.enter(data.user.display_name);
+            } else if (data.banned) {
+                showAuthError(errorEl, bannedMessage(data.banned));
             } else {
                 showAuthError(errorEl, tServer(data.message));
             }
@@ -624,6 +631,8 @@ const Auth = {
         AppState.currentUser = null;
         AppState.isGuest = true;
         AppState.displayName = null;
+        AdminEntry.sync();
+        Announcements.refresh();
         AppState.reset();
         ChallengeUI.stopCountdown(); TurnTimerUI._stop();
         // Reset regisztráció
@@ -789,6 +798,9 @@ const Lobby = {
         if (createTab) createTab.classList.toggle('hidden', AppState.isGuest);
         if (savedTab) savedTab.classList.toggle('hidden', AppState.isGuest);
         if (friendsTab) friendsTab.classList.toggle('hidden', AppState.isGuest);
+
+        AdminEntry.sync();
+        Announcements.refresh();
 
         // Hide history section for guests
         const historySection = document.getElementById('home-history-section');
@@ -1501,6 +1513,7 @@ const GameBoard = {
         AppState.gameState = state;
         AppState.myPlayerId = socket.id;
         AppState.isSpectator = !!state.spectator;
+        Report.sync();
         Daily.onGameState(state);
         AsyncGames.onGameState(state);
 
@@ -2791,7 +2804,7 @@ const Chat = {
 
     _appendMsg(container, msg) {
         const msgEl = document.createElement('div');
-        msgEl.className = 'chat-msg';
+        msgEl.className = 'chat-msg' + (msg.system ? ' chat-msg-system' : '');
 
         const nameSpan = document.createElement('span');
         nameSpan.className = 'chat-name';
@@ -5258,6 +5271,58 @@ const Badges = {
 
 // ===== PROFILE =====
 
+// ===== ADMIN BELÉPÉSI PONT =====
+// Csak a szerver által adminnak jelölt felhasználónál (`is_admin` a /api/auth/me és a belépés válaszában)
+// jelenik meg: az Admin gombot futásidőben szúrjuk be, az index.html-ben nincs statikus admin elem.
+// A panel maga külön oldal (/admin), amelyet a szerver minden más kérésre 404-gyel utasít el.
+const AdminEntry = {
+    _open() {
+        // Új lapon, hogy a folyamatban lévő játék kapcsolata ne szakadjon meg
+        const opened = window.open('/admin', '_blank', 'noopener');
+        if (!opened) location.href = '/admin';
+    },
+
+    _icon() {
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('class', 'icon');
+        svg.setAttribute('viewBox', '0 0 24 24');
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z');
+        svg.appendChild(path);
+        return svg;
+    },
+
+    // A beszúrt elemek mindig az aktuális bejelentkezéshez igazodnak (belépés / kijelentkezés után is)
+    sync() {
+        document.querySelectorAll('.admin-entry').forEach(node => node.remove());
+        if (!(AppState.currentUser && AppState.currentUser.is_admin)) return;
+
+        document.querySelectorAll('.app-topbar .topbar-right').forEach(bar => {
+            const btn = makeEl('button', 'topbar-btn admin-entry');
+            btn.type = 'button';
+            btn.title = 'Admin';
+            btn.setAttribute('aria-label', 'Admin');
+            btn.appendChild(this._icon());
+            btn.addEventListener('click', () => this._open());
+            // A felhasználónév után, az első ikongomb elé
+            bar.insertBefore(btn, bar.querySelector('.topbar-btn'));
+        });
+
+        const settings = document.getElementById('layout-settings');
+        if (settings && settings.parentNode) {
+            const group = makeEl('div', 'settings-group admin-entry');
+            const row = makeEl('div', 'setting-row');
+            row.appendChild(makeEl('span', 'toggle-name', 'Admin'));
+            const open = makeEl('button', 'small-btn tinted', 'Admin');
+            open.type = 'button';
+            open.addEventListener('click', () => this._open());
+            row.appendChild(open);
+            group.appendChild(row);
+            settings.parentNode.insertBefore(group, settings);
+        }
+    },
+};
+
 const Profile = {
     init() {
         document.getElementById('btn-profile').addEventListener('click', () => this.show());
@@ -6393,7 +6458,8 @@ const Friends = {
 
 const Dialogs = {
     // A háttérre koppintással / Esc-szel bezárható lapok
-    SHEETS: ['blank-dialog', 'exit-dialog', 'dictionary-dialog', 'tracker-dialog', 'hint-dialog', 'async-new-dialog'],
+    SHEETS: ['blank-dialog', 'exit-dialog', 'dictionary-dialog', 'tracker-dialog', 'hint-dialog', 'async-new-dialog',
+        'report-dialog'],
 
     init() {
         for (const id of this.SHEETS) {
@@ -6739,6 +6805,186 @@ const PWA = {
     },
 };
 
+// ===== KÖZLEMÉNYEK (banner) =====
+
+// A kitiltás üzenete a bejelentkezésnél és a kapcsolat bontásakor: indoklás és (ha van) lejárat
+function bannedMessage(info) {
+    const reason = info.reason || '';
+    if (info.until) {
+        const date = new Date(/(Z|[+-]\d{2}:?\d{2})$/.test(info.until) ? info.until : info.until.replace(' ', 'T') + 'Z');
+        const until = isNaN(date.getTime()) ? info.until : date.toLocaleString(I18N.locale());
+        return t('auth.banned_until', { until, reason });
+    }
+    return t('auth.banned_forever', { reason });
+}
+
+const Announcements = {
+    items: [],
+    timer: null,
+    STORAGE_KEY: 'scrabble-dismissed-announcements',
+
+    init() {
+        socket.on('announcement', (data) => {
+            this.items = (AppState.currentUser ? data.registered : data.guests) || [];
+            this.render();
+        });
+        window.addEventListener('langchange', () => this.render());
+        this.refresh();
+    },
+
+    async refresh() {
+        try {
+            const res = await fetch('/api/announcements', { credentials: 'same-origin' });
+            const data = await res.json();
+            this.items = data.success ? data.items : [];
+        } catch {
+            this.items = [];
+        }
+        this.render();
+    },
+
+    _dismissed() {
+        try { return JSON.parse(localStorage.getItem(this.STORAGE_KEY) || '[]'); } catch { return []; }
+    },
+
+    _dismiss(key) {
+        try {
+            const list = this._dismissed().filter(k => k !== key).concat(key).slice(-30);
+            localStorage.setItem(this.STORAGE_KEY, JSON.stringify(list));
+        } catch { /* localStorage tiltva */ }
+    },
+
+    _remaining(item) {
+        if (!item.ends_at) return null;
+        return Math.max(0, Math.round((new Date(item.ends_at).getTime() - Date.now()) / 1000));
+    },
+
+    render() {
+        const bar = document.getElementById('announcement-bar');
+        if (!bar) return;
+        bar.replaceChildren();
+        const dismissed = this._dismissed();
+        const visible = this.items.filter(item => !dismissed.includes(item.id + ':' + item.stamp));
+        for (const item of visible) {
+            const row = makeEl('div', 'announcement announcement-' + item.kind);
+            const text = makeEl('span', 'announcement-text', I18N.lang === 'en' ? item.text_en : item.text_hu);
+            row.appendChild(text);
+            if (item.kind === 'maintenance' && item.ends_at) {
+                const counter = makeEl('span', 'announcement-countdown');
+                counter.dataset.endsAt = item.ends_at;
+                row.appendChild(counter);
+            }
+            const close = makeEl('button', 'announcement-close', '×');
+            close.type = 'button';
+            close.setAttribute('aria-label', t('announce.close'));
+            close.title = t('announce.close');
+            close.addEventListener('click', () => { this._dismiss(item.id + ':' + item.stamp); this.render(); });
+            row.appendChild(close);
+            bar.appendChild(row);
+        }
+        bar.classList.toggle('hidden', visible.length === 0);
+        document.body.classList.toggle('has-announcement', visible.length > 0);
+        this._tick();
+        clearInterval(this.timer);
+        if (bar.querySelector('.announcement-countdown')) this.timer = setInterval(() => this._tick(), 1000);
+    },
+
+    _tick() {
+        let expired = false;
+        document.querySelectorAll('.announcement-countdown').forEach((el) => {
+            const left = Math.max(0, Math.round((new Date(el.dataset.endsAt).getTime() - Date.now()) / 1000));
+            el.textContent = t('announce.countdown', { time: Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0') });
+            if (left === 0) expired = true;
+        });
+        if (expired) { clearInterval(this.timer); this.refresh(); }
+    },
+};
+
+// ===== BEJELENTÉS (játékos vagy chat üzenet a moderátoroknak) =====
+
+const Report = {
+    init() {
+        document.getElementById('btn-close-report').addEventListener('click', () => this.hide());
+        document.getElementById('btn-report-cancel').addEventListener('click', () => this.hide());
+        document.getElementById('btn-report-submit').addEventListener('click', () => this.submit());
+        document.getElementById('report-kind').addEventListener('change', () => this.fillMessages());
+        document.getElementById('report-player').addEventListener('change', () => this.fillMessages());
+        socket.on('report_result', (data) => {
+            showMessage(tServer(data.message), !data.success);
+            if (data.success) this.hide();
+        });
+    },
+
+    // Csak regisztrált játékosnak, ha van másik ember a játékban
+    available() {
+        const state = AppState.gameState;
+        if (!state || !AppState.currentUser || AppState.isSpectator) return false;
+        return (state.players || []).some(p => !p.is_bot && p.id !== socket.id);
+    },
+
+    sync() {
+        document.querySelectorAll('.btn-report').forEach(btn => btn.classList.toggle('hidden', !this.available()));
+    },
+
+    others() {
+        return ((AppState.gameState || {}).players || []).filter(p => !p.is_bot && p.id !== socket.id);
+    },
+
+    show() {
+        if (!this.available()) return;
+        const select = document.getElementById('report-player');
+        select.replaceChildren();
+        for (const p of this.others()) {
+            const option = document.createElement('option');
+            option.value = p.name;
+            option.textContent = p.name;
+            select.appendChild(option);
+        }
+        document.getElementById('report-kind').value = 'player';
+        document.getElementById('report-reason').value = '';
+        this.fillMessages();
+        document.getElementById('report-dialog').classList.remove('hidden');
+    },
+
+    hide() {
+        document.getElementById('report-dialog').classList.add('hidden');
+    },
+
+    fillMessages() {
+        const kind = document.getElementById('report-kind').value;
+        const wrap = document.getElementById('report-message-wrap');
+        wrap.classList.toggle('hidden', kind !== 'chat');
+        const select = document.getElementById('report-message');
+        select.replaceChildren();
+        if (kind !== 'chat') return;
+        const name = document.getElementById('report-player').value;
+        const messages = AppState.chatMessages.filter(m => m.name === name).slice(-10);
+        if (!messages.length) {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = t('report.no_messages');
+            select.appendChild(option);
+            return;
+        }
+        for (const m of messages) {
+            const option = document.createElement('option');
+            option.value = m.message;
+            option.textContent = m.message.length > 80 ? m.message.slice(0, 80) + '…' : m.message;
+            select.appendChild(option);
+        }
+    },
+
+    submit() {
+        const kind = document.getElementById('report-kind').value;
+        const name = document.getElementById('report-player').value;
+        const message = kind === 'chat' ? document.getElementById('report-message').value : '';
+        if (!name || (kind === 'chat' && !message)) return;
+        socket.emit('report_content', {
+            kind, name, message, reason: document.getElementById('report-reason').value.trim(),
+        });
+    },
+};
+
 // ===== INITIALIZATION =====
 
 SoundManager.init();
@@ -6771,6 +7017,13 @@ Replay.init();
 GameOver.init();
 Reconnection.init();
 Friends.init();
+Announcements.init();
+Report.init();
+socket.on('account_banned', (info) => {
+    // A szerver kitiltás miatt bontja a kapcsolatot: vissza a bejelentkezéshez, az indoklással
+    Auth._doLogout();
+    showMessage(bannedMessage(info || {}), true, 9000);
+});
 
 // Auto-login on page load
 Auth.checkSession();

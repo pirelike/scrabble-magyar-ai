@@ -38,6 +38,8 @@ _RISK_POSS = 4          # birtokos személyjel / birtokjel (is:POSS..., is:POSSE
 _RISK_DERIVED = 8       # ugyanabban a szabályban képző + az előbbiek kockázatos párosítása
 _RISK_DERIVATION = 16   # -né képző (ORVOSNÉ, SÓGORNÉ, de ALMÁNÉ)
 _RISK_ALWAYS = _RISK_FAMILIAR | _RISK_DERIVED | _RISK_DERIVATION
+_RISK_NAMES = ((_RISK_FAMILIAR, 'familiar'), (_RISK_ESSIVE, 'essive'), (_RISK_POSS, 'possessive'),
+               (_RISK_DERIVED, 'derived'), (_RISK_DERIVATION, 'derivation'))
 _RISKY_DERIVATIONS = (b'ds:n\xc3\xa9_MRS_',)
 # Képzők, amelyek után a szó birtokos személyjellel melléknévként kezelendő (kockázatos): a -s
 # foglalkozásnév (GITÁROSOK rendben, de DOMBOSOM, BODZÁSUNK) — illetve főnévként (rendben): a
@@ -452,6 +454,96 @@ class AffixChecker:
     def needs_attestation(self, word):
         """Igaz, ha a szó csak kockázatos levezetéssel érvényes (a használati listán múlik)."""
         return not self._compute(word, False) and self._compute(word, True)
+
+    # ---------- levezetések (a szó-vizsgáló eszköznek) ----------
+
+    def _matching_kind(self, stem, rule, pfx=None, outer_flag=None, need_flag=None):
+        """Mint a `_stem_ok`, de a szócikk fajtáját adja vissza (None, ha nincs találat)."""
+        for flags, kind in self._usable_entries(stem):
+            if rule.flag not in flags and not (pfx is not None and pfx.cont and rule.flag in pfx.cont):
+                continue
+            if pfx is not None and pfx.flag not in flags and not (rule.cont and pfx.flag in rule.cont):
+                continue
+            if outer_flag is not None and not (rule.cont and outer_flag in rule.cont):
+                continue
+            if need_flag is not None and need_flag not in flags and not (rule.cont and need_flag in rule.cont):
+                continue
+            return kind
+        return None
+
+    def _suffix_hits(self, word, pfx=None, outer_flag=None):
+        """A `_suffix_check` találatai: (szabály, szótő, szócikk-fajta)."""
+        for add, rules in self._suffix_candidates(word):
+            base = word[:len(word) - len(add)]
+            for rule in rules:
+                if outer_flag is not None and not rule.cont:
+                    continue
+                if rule.only_in_compound:
+                    continue
+                if outer_flag is None and rule.need_affix and not (pfx is not None and not pfx.need_affix):
+                    continue
+                if pfx is not None and not (rule.cross and pfx.cross):
+                    continue
+                stem = base + rule.strip
+                if not self._cond_ok(rule, stem):
+                    continue
+                kind = self._matching_kind(stem, rule, pfx, outer_flag)
+                if kind is not None:
+                    yield rule, stem, kind
+
+    @staticmethod
+    def _risk_names(rule):
+        return [name for bit, name in _RISK_NAMES if rule is not None and rule.risk & bit]
+
+    def explain(self, word, limit=12):
+        """A (kisbetűs) szó levezetései a szótár szabályaiból: [{'stem', 'prefix', 'suffixes', 'risky', 'risk',
+        'adjective', 'derived'}]. A tiltott / csak összetételben álló szócikkek nélkül. A kockázatos levezetések
+        (`risky`) csak a használati listán szereplő alakoknál érvényesek. Nem a döntéshez való (azt a `check`
+        adja), hanem a szó-vizsgáló eszköz magyarázatához."""
+        found = []
+
+        def add(stem, prefix, suffixes, rules, kind, outer=None):
+            if len(found) >= limit:
+                return
+            rule = rules[0] if rules else None
+            risky = bool(rule is not None and _is_risky(kind, rule, outer))
+            risk = self._risk_names(rule) + (self._risk_names(outer) if outer is not None else [])
+            entry = {'stem': stem, 'prefix': prefix, 'suffixes': suffixes, 'risky': risky,
+                     'risk': sorted(set(risk)), 'adjective': bool(kind & _KIND_ADJ),
+                     'derived': (rules[0].derived if rules and rules[0].derived else None)}
+            if entry not in found:
+                found.append(entry)
+
+        if self.has_stem(word):
+            add(word, None, [], [], 0)
+        for add_text, prules in self._prefix_candidates(word):
+            rest = word[len(add_text):]
+            for prule in prules:
+                if prule.only_in_compound:
+                    continue
+                stem = prule.strip + rest
+                if not self._cond_ok(prule, stem):
+                    continue
+                for flags, kind in self._usable_entries(stem):
+                    if prule.flag in flags:
+                        add(stem, add_text, [], [prule], kind)
+                        break
+                if prule.cross:
+                    for srule, sstem, kind in self._suffix_hits(stem, prule):
+                        add(sstem, add_text, [srule.add], [srule], kind)
+        for srule, stem, kind in self._suffix_hits(word):
+            add(stem, None, [srule.add], [srule], kind)
+        for add_text, orules in self._suffix_candidates(word):
+            base = word[:len(word) - len(add_text)]
+            for orule in orules:
+                if orule.flag not in self._cont_flags or orule.only_in_compound:
+                    continue
+                inner = base + orule.strip
+                if not self._cond_ok(orule, inner):
+                    continue
+                for irule, stem, kind in self._suffix_hits(inner, None, orule.flag):
+                    add(stem, None, [irule.add, orule.add], [irule], kind, orule)
+        return found
 
     # ---------- ragozott alakok előállítása ----------
 

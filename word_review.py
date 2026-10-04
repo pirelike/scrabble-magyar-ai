@@ -18,6 +18,7 @@ import auth
 import config
 import dictionary
 import practice
+import settings
 from tiles import tokenize_word
 
 BATCH_SIZE = 20
@@ -28,9 +29,16 @@ MIN_LENGTH, MAX_LENGTH = 2, 15
 _pools = None        # (a szókincs, a tőszavak, a ragozott alakok): a szókincshez kötve, egyszer épül fel
 
 
+def threshold():
+    """A kizáráshoz szükséges „nem szó” többlet: az admin panelről állítható, felülbírálat nélkül a konfiguráció."""
+    return settings.get('word_reject_threshold')
+
+
 def refresh():
-    """A szavazatok alapján elutasított szavak betöltése az adatbázisból (szerverindításkor)."""
-    dictionary.set_voted_rejected(auth.get_voted_rejected_words(config.WORD_REJECT_THRESHOLD))
+    """A szavazatok alapján elutasított szavak és az admin szótári felülbírálatai (engedélyezések, tiltások, saját
+    szavak) betöltése az adatbázisból (szerverindításkor és az admin módosításai után)."""
+    dictionary.set_voted_rejected(auth.get_voted_rejected_words(threshold()))
+    dictionary.set_admin_lists(*auth.get_admin_word_lists())
 
 
 def normalize(word):
@@ -47,7 +55,7 @@ def _apply(word):
     """A szó elutasított állapotának újraszámolása a szavazatokból (a szótárba is átvezetve).
     Visszatér: elutasított-e most a szó."""
     good, bad = auth.get_word_review_votes(word.lower())
-    rejected = bad - good >= config.WORD_REJECT_THRESHOLD
+    rejected = bad - good >= threshold()
     dictionary.mark_voted_rejected(word, rejected)
     return rejected
 

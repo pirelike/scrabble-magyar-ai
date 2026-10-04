@@ -9,26 +9,35 @@ import uuid
 import os
 import re
 import sys
-from flask import Flask, request
+from flask import Flask, abort, request
 from flask_socketio import SocketIO, emit, join_room, leave_room
 
 import achievements
 import ai_player
+import auth
 import async_games
 import daily
 import dictionary
 import practice
 import word_review
 import push_service
+import settings
+import admin_comm
+import admin_live
+import admin_mod
+import admin_security
+import admin_system
+import routes as public_routes
 from game import Game, CHALLENGE_TIMEOUT, ALLOWED_HINT_LIMITS, DEFAULT_HINT_LIMIT
 from room import Room
+import config
 from config import AUTH_RATE_LIMITS
 from auth import (
     init_db, save_game, finish_game, add_game_move,
     load_active_games, abandon_game, abandon_game_by_id,
     is_user_in_game, get_game_by_id, get_game_moves, get_game_players,
     get_daily_puzzle, get_daily_entry, mark_daily_revealed, get_active_async_games,
-    get_user_by_id, grant_achievements, get_game_rating_changes,
+    get_user_by_id, grant_achievements, get_game_rating_changes, is_admin_user, ban_from_row, get_ban,
     send_friend_request as auth_send_friend_request,
     accept_friend_request as auth_accept_friend_request,
     decline_friend_request as auth_decline_friend_request,
@@ -38,6 +47,7 @@ from auth import (
 from state import ServerState
 from rate_limiter import RateLimiter
 from routes import main_bp, auth_bp, game_bp, public_bp, init_routes
+from admin_routes import admin_bp, admin_pages_bp
 from tunnel import start_tunnel
 from socket_auth import verify_socket_token
 
@@ -45,6 +55,14 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(32).hex())
 socketio = SocketIO(app, cors_allowed_origins='*', async_mode='gevent',
                     ping_timeout=120, ping_interval=25)
+
+
+@app.before_request
+def _ip_ban_guard():
+    """Kitiltott IP-címről semmilyen kérés nem szolgálható ki (a Socket.IO csatlakozás elején is ellenőrizve).
+    Minden útvonalra ugyanaz a válasz, így nem árul el semmit."""
+    if admin_security.is_ip_banned(public_routes._get_client_ip()):
+        abort(403)
 
 # Adatbázis inicializálása
 init_db()
@@ -85,6 +103,9 @@ _SOCKET_RATE_LIMITS = {
     'reveal_daily': (5, 30),
     'spectate_room': (5, 10),
     'leave_spectate': (5, 10),
+    'admin_subscribe': (5, 10),
+    'admin_watch_room': (20, 10),
+    'report_content': (3, 60),
 }
 
 rate_limiter = RateLimiter(_SOCKET_RATE_LIMITS, AUTH_RATE_LIMITS)
@@ -109,6 +130,8 @@ app.register_blueprint(main_bp)
 app.register_blueprint(auth_bp)
 app.register_blueprint(game_bp)
 app.register_blueprint(public_bp)
+app.register_blueprint(admin_bp)
+app.register_blueprint(admin_pages_bp)
 
 # --- Grace period ---
 _DISCONNECT_GRACE_PERIOD = 120
@@ -117,6 +140,18 @@ _DISCONNECT_GRACE_PERIOD = 120
 # kapcsolatot, ezért ez hosszabb, mint a játék közbeni türelmi idő.
 _WAITING_OWNER_GRACE_PERIOD = 600
 ALLOWED_TURN_TIME_LIMITS = {0, 60, 90, 120, 180, 300}
+
+
+def _disconnect_grace():
+    """A türelmi idő a játékban (mp); az admin panelről állítható (felülbírálat nélkül az alapérték)."""
+    return settings.get('grace_disconnect', _DISCONNECT_GRACE_PERIOD)
+
+
+def _waiting_owner_grace():
+    """A várakozó szoba tulajdonosának türelmi ideje (mp); az admin panelről állítható."""
+    return settings.get('grace_waiting_owner', _WAITING_OWNER_GRACE_PERIOD)
+
+
 # A visszavont lerakás után legalább ennyi idő marad a körből (mp)
 _MIN_TIME_AFTER_WITHDRAW = 10
 MAX_BOTS = 3
@@ -242,6 +277,11 @@ def _advance_turn_if_needed(room_id, room, game):
         _schedule_bot_turn(room_id)
 
 
+def _notify_removed(sid):
+    """A szobából eltávolított játékos értesítése."""
+    socketio.emit('error', {'message': 'Eltávolítottak a szobából.'}, room=sid)
+
+
 def _find_room_of(game, room_id=None):
     """A játékhoz tartozó szoba (azonosító alapján, ennek híján a játék objektum alapján)."""
     if room_id and room_id in state.rooms:
@@ -259,6 +299,8 @@ def _emit_all_states(game, room_id=None):
     is hívható.
     """
     room = _find_room_of(game, room_id)
+    if room:
+        room.touch()
     expires_at = room.turn_timer_expires_at if room else None
     spectator_count = len(room.spectators) if room else 0
     # A lecsatlakozott / kilépett játékos SID-je még élhet (a lobbyban van, pl. levelezős játékból
@@ -278,6 +320,29 @@ def _emit_all_states(game, room_id=None):
             socketio.emit('game_state', spectator_state, room=sid)
     _persist_async(room)
     _maybe_push_turn(room, game)
+    _notify_admins(room)
+
+
+def _admin_room_members():
+    """Van-e az `admin` Socket.IO szobában kapcsolat (élő admin események küldésének feltétele)."""
+    try:
+        return bool(socketio.server.manager.rooms.get('/', {}).get(ADMIN_ROOM))
+    except Exception:
+        return False
+
+
+def _notify_admins(room):
+    """Élő szoba-változás az admin panelnek: összegzés az `admin` szobának, teljes állapot a szobát figyelőknek.
+    Csak akkor számol, ha van, aki kapja."""
+    if not room:
+        return
+    try:
+        if _admin_room_members():
+            socketio.emit('admin_room_update', admin_live.room_summary(room), room=ADMIN_ROOM)
+        for watcher in list(room.admin_watchers):
+            socketio.emit('admin_room_state', admin_live.room_detail(None, room.id), room=watcher)
+    except Exception as e:     # az admin értesítés hibája sosem akaszthatja meg a játékot
+        print(f"[admin] Hiba az élő szoba-frissítésnél: {e}")
 
 
 def _persist_async(room):
@@ -411,6 +476,7 @@ def _start_turn_timer(room_id, seconds=None):
     if room.game.pending_challenge:
         return  # challenge fut, nem indítunk kör timert
 
+    room.timer_paused_left = None
     timer_id = room.invalidate_turn_timer()
     limit = seconds if seconds is not None else room.game.turn_time_limit
     room.turn_timer_expires_at = time.time() + limit
@@ -504,7 +570,9 @@ def _schedule_bot_turn(room_id):
     bot = game.current_player()
     turn_id = room.invalidate_bot_turn()
     turn_number = game.turn_number
-    delay = random.uniform(*_BOT_THINK_DELAY[_bot_tier(bot.difficulty)])
+    delay = (random.uniform(*_BOT_THINK_DELAY[_bot_tier(bot.difficulty)])
+             * settings.get('bot_think_multiplier', 1.0))
+    room.bot_scheduled_at = time.time()
 
     def run():
         socketio.sleep(delay)
@@ -547,7 +615,8 @@ def _play_bot_turn(room_id, turn_id=None, turn_number=None):
 
     try:
         action = ai_player.choose_action(
-            game.board, list(bot.hand), game.bot_level(bot) or ai_player.DEFAULT_DIFFICULTY,
+            game.board, list(bot.hand),
+            game.bot_level(bot) or settings.get('default_bot_level', ai_player.DEFAULT_DIFFICULTY),
             game.bag.remaining(), yield_fn=lambda: socketio.sleep(0),
             avoid=game.rejected_placements)
     except Exception as e:  # a robot hibája ne akassza meg a játékot
@@ -728,12 +797,16 @@ def get_rooms_list():
 
 @socketio.on('connect')
 def handle_connect():
-    pass
+    if admin_security.is_ip_banned(public_routes._get_client_ip()):
+        return False    # kitiltott IP: a kapcsolat el sem jön létre
 
 
 @socketio.on('disconnect')
 def handle_disconnect():
     sid = request.sid
+    state.admin_sids.pop(sid, None)
+    for watched in list(state.rooms.values()):
+        watched.admin_watchers.discard(sid)
     spectated_room = state.remove_spectator(sid)
     if spectated_room and spectated_room in state.rooms:
         _emit_all_states(state.rooms[spectated_room].game, spectated_room)
@@ -763,8 +836,8 @@ def handle_disconnect():
             # Aktív játék és várakozó szoba: türelmi idő, a játékos a tokenjével visszatérhet
             kept_for_grace = True
             was_owner = room.owner == sid or (room.owner_token is not None and room.owner_token == token)
-            grace = (_DISCONNECT_GRACE_PERIOD if game.started or not was_owner
-                     else _WAITING_OWNER_GRACE_PERIOD)
+            grace = (_disconnect_grace() if game.started or not was_owner
+                     else _waiting_owner_grace())
 
             game.mark_disconnected(sid)
             leave_room(room_id)
@@ -904,16 +977,27 @@ def handle_set_name(data):
     if not isinstance(data, dict):
         return
     name = _sanitize_name(data.get('name', ''))
-    if not name:
+    if not name or name.casefold() == 'rendszer':   # a rendszerüzenetek neve nem foglalható le
         name = 'Névtelen'
 
     user_id = None
     is_guest = True
+    if data.get('is_guest', True) is True and not settings.get('guest_allowed', True):
+        emit('error', {'message': 'A vendég mód jelenleg ki van kapcsolva.'})
+        return
+    if data.get('is_guest', True) is not False and admin_mod.contains_banned(name):
+        emit('error', {'message': 'Ez a név nem engedélyezett.'})
+        name = 'Névtelen'
     if data.get('is_guest', True) is False:
         # Regisztrált felhasználónak csak aláírt tokennel adhatja ki magát valaki:
         # a kliens által küldött user_id önmagában nem bizonyít semmit.
         verified_id = verify_socket_token(app.config['SECRET_KEY'], data.get('auth_token'))
         user_row = get_user_by_id(verified_id) if verified_id else None
+        ban = ban_from_row(user_row) if user_row else None
+        if user_row and (ban or user_row['deleted_at']):
+            emit('account_banned', {'reason': ban['reason'] if ban else '', 'until': ban['until'] if ban else None})
+            emit('error', {'message': 'A fiókod ki van tiltva.'})
+            return
         if user_row:
             user_id = user_row['id']
             is_guest = False
@@ -923,6 +1007,8 @@ def handle_set_name(data):
 
     previous_user_id = state.get_user_id_for_sid(sid)
     was_online = bool(user_id and state.is_user_online(user_id))
+    if previous_user_id != user_id:
+        _sio_leave_room(sid, ADMIN_ROOM)  # másik azonosság → az admin feliratkozás megszűnik
 
     state.register_player(sid, name, {
         'user_id': user_id,
@@ -936,10 +1022,73 @@ def handle_set_name(data):
         _notify_friends_presence_change(user_id, True)
 
 
+# --- Admin (Socket.IO) ---
+
+ADMIN_ROOM = 'admin'
+
+
+def _is_admin_sid(sid):
+    """Igaz, ha a kapcsolat bejelentkezett, admin e-mail című felhasználóé (a kliens állításában nem bízunk:
+    a user_id a `set_name` aláírt tokenjéből jön)."""
+    if sid in state.admin_sids:
+        return True
+    user_id = state.get_user_id_for_sid(sid)
+    return bool(user_id and is_admin_user(get_user_by_id(user_id)))
+
+
+def _admin_user_id_for_sid(sid, data=None):
+    """Az admin felhasználó azonosítója a kapcsolathoz, vagy None. Vagy bejelentkezett játékos kapcsolata
+    (`set_name`), vagy külön aláírt token (az admin panel oldala nem regisztrálja magát online játékosként)."""
+    user_id = state.get_user_id_for_sid(sid)
+    if user_id and is_admin_user(get_user_by_id(user_id)):
+        return user_id
+    token = data.get('auth_token') if isinstance(data, dict) else None
+    verified = verify_socket_token(app.config['SECRET_KEY'], token)
+    row = get_user_by_id(verified) if verified else None
+    if row and is_admin_user(row) and not ban_from_row(row) and not row['deleted_at']:
+        state.admin_sids[sid] = row['id']
+        return row['id']
+    return None
+
+
+@socketio.on('admin_subscribe')
+def handle_admin_subscribe(data=None):
+    """Belépés az `admin` szobába (élő admin események). Nem adminnak csendben nem történik semmi:
+    sem hibaüzenet, sem visszaigazolás, hogy ne derüljön ki, hogy ilyen esemény létezik."""
+    sid = request.sid
+    if not rate_limiter.check_socket(sid, 'admin_subscribe'):
+        return
+    if not _admin_user_id_for_sid(sid, data):
+        return
+    join_room(ADMIN_ROOM)
+    emit('admin_subscribed', {})
+    emit('admin_overview', admin_live.overview_light())
+
+
+@socketio.on('admin_watch_room')
+def handle_admin_watch_room(data):
+    """Egy élő szoba figyelése az admin panelről: a szoba minden változásáról `admin_room_state` érkezik.
+    Nem megfigyelő a játék szempontjából (nem számít bele a nézők számába és korlátjába). Nem adminnak csendben semmi."""
+    sid = request.sid
+    if not rate_limiter.check_socket(sid, 'admin_watch_room') or not _is_admin_sid(sid):
+        return
+    key = data.get('room_id') if isinstance(data, dict) else None
+    for watched in state.rooms.values():     # egyszerre egy szobát figyel
+        watched.admin_watchers.discard(sid)
+    room = state.rooms.get(key) if isinstance(key, str) else None
+    if room is None and isinstance(key, str):
+        room = state.rooms.get(state.join_codes.get(key))
+    if room is None:
+        return
+    room.admin_watchers.add(sid)
+    emit('admin_room_state', admin_live.room_detail(None, room.id))
+
+
 @socketio.on('logout')
 def handle_logout():
     """Kijelentkezés: kilépés a szobából és az online azonosság törlése."""
     sid = request.sid
+    _sio_leave_room(sid, ADMIN_ROOM)  # a kijelentkezett kapcsolat ne kapjon több admin eseményt
     if state.player_rooms.get(sid):
         handle_leave_room()
     if state.get_spectated_room(sid):
@@ -980,6 +1129,11 @@ def handle_rejoin_room(data):
 
     if not dc_info or not token_info:
         emit('rejoin_failed', {'message': 'Érvénytelen vagy lejárt token.'})
+        return
+
+    token_auth = token_info.get('auth_info') or {}
+    if token_auth.get('user_id') and not token_auth.get('is_guest') and get_ban(token_auth['user_id']):
+        emit('rejoin_failed', {'message': 'A fiókod ki van tiltva.'})
         return
 
     room_id = dc_info['room_id']
@@ -1079,6 +1233,20 @@ def handle_get_rooms():
     emit('live_games', state.get_live_games())
 
 
+def _maintenance_block(sid):
+    """Karbantartási módban új játék nem indítható (az admin kivétel). Visszatér: hibaüzenet vagy None."""
+    if settings.maintenance() and not _is_admin_sid(sid):
+        return 'A szerver karbantartás alatt van, új játék most nem indítható.'
+    return None
+
+
+def _feature_block(sid, feature):
+    """Kikapcsolt funkció (napi feladvány, levelezős játék...) vagy karbantartás miatti tiltás üzenete, vagy None."""
+    if not settings.get(feature, True) and not _is_admin_sid(sid):
+        return 'Ez a funkció jelenleg ki van kapcsolva.'
+    return _maintenance_block(sid)
+
+
 @socketio.on('create_room')
 def handle_create_room(data):
     sid = request.sid
@@ -1089,6 +1257,19 @@ def handle_create_room(data):
         return
     if state.player_rooms.get(sid) in state.rooms:
         emit('error', {'message': 'Már egy szobában vagy. Előbb lépj ki belőle.'})
+        return
+    blocked = _maintenance_block(sid)
+    policy = settings.get('room_creation', 'everyone')
+    if not blocked and policy == 'none' and not _is_admin_sid(sid):
+        blocked = 'Új szoba létrehozása jelenleg le van tiltva.'
+    if not blocked and policy == 'registered' and not _registered_user_id(sid):
+        blocked = 'Szobát csak regisztrált felhasználó hozhat létre.'
+    if blocked:
+        emit('error', {'message': blocked})
+        return
+    raw_name = data.get('name', '')
+    if isinstance(raw_name, str) and admin_mod.contains_banned(raw_name):
+        emit('error', {'message': 'Ez a szobanév nem engedélyezett.'})
         return
 
     name = _sanitize_room_name(data.get('name', '')) or 'Szoba'
@@ -1105,19 +1286,19 @@ def handle_create_room(data):
     if turn_time_limit not in ALLOWED_TURN_TIME_LIMITS:
         turn_time_limit = 0
     try:
-        hint_limit = int(data.get('hint_limit', DEFAULT_HINT_LIMIT))
+        hint_limit = int(data.get('hint_limit', settings.get('default_hint_limit', DEFAULT_HINT_LIMIT)))
     except (ValueError, TypeError):
-        hint_limit = DEFAULT_HINT_LIMIT
+        hint_limit = settings.get('default_hint_limit', DEFAULT_HINT_LIMIT)
     if hint_limit not in ALLOWED_HINT_LIMITS:
-        hint_limit = DEFAULT_HINT_LIMIT
+        hint_limit = settings.get('default_hint_limit', DEFAULT_HINT_LIMIT)
     player_name = state.player_names.get(sid, 'Névtelen')
 
     # Számítógépes ellenfelek: a nehézségek listája; a robotok is férőhelyet foglalnak
     ai_levels = data.get('ai_players', [])
-    if not isinstance(ai_levels, list):
+    if not isinstance(ai_levels, list) or not settings.get('bots_enabled', True):
         ai_levels = []
     ai_levels = [ai_player.parse_difficulty(lv) for lv in ai_levels]
-    ai_levels = [lv for lv in ai_levels if lv is not None][:MAX_BOTS]
+    ai_levels = [lv for lv in ai_levels if lv is not None][:min(MAX_BOTS, settings.get('max_bots', MAX_BOTS))]
     ai_levels = ai_levels[:max_players - 1]
 
     room_id = str(uuid.uuid4())[:8]
@@ -1546,6 +1727,10 @@ def handle_restore_game(data):
     if state.player_rooms.get(sid) in state.rooms:
         emit('error', {'message': 'Már egy szobában vagy. Előbb lépj ki belőle.'})
         return
+    blocked = _maintenance_block(sid)
+    if blocked:
+        emit('error', {'message': blocked})
+        return
 
     # Auth ellenőrzés
     auth_info = state.player_auth.get(sid, {})
@@ -1789,14 +1974,58 @@ def handle_send_chat(data):
     if not isinstance(message, str):
         return
     message = message.strip()
-    if not message or len(message) > 200:
+    if not message or len(message) > settings.get('chat_max_length', 200):
         return
 
+    user_id = _registered_user_id(sid)
+    if user_id and auth.is_chat_muted(user_id):
+        return    # a némított felhasználó üzenete csendben eldobódik
+    message, flagged = admin_mod.filter_chat(message)
+    if message is None:
+        return    # tiltott szó, „eldobás” beállítással
     player_name = state.player_names.get(sid, '?')
     chat_msg = {'name': player_name, 'message': message, 'sid': sid}
-    room.add_chat_message(player_name, message)
+    room.add_chat_message(player_name, message, user_id=user_id)
+    admin_mod.log_chat(room, user_id, player_name, message)
 
     emit('chat_message', chat_msg, room=room_id)
+    if flagged and _admin_room_members():
+        socketio.emit('admin_alert', {'code': 'banned_word', 'room': room.name, 'name': player_name}, room=ADMIN_ROOM)
+
+
+# --- Bejelentés (játékos vagy chat üzenet) ---
+
+@socketio.on('report_content')
+def handle_report_content(data):
+    """Egy játékos vagy chat üzenet bejelentése a moderációnak (csak regisztrált, a szobában lévő játékos)."""
+    sid = request.sid
+    if not rate_limiter.check_socket(sid, 'report_content'):
+        emit('report_result', {'success': False, 'message': 'Túl sok kérés, várj egy kicsit.'})
+        return
+    if not isinstance(data, dict):
+        return
+    room_id, room, game = state.get_room_for_player(sid)
+    reporter_id = _registered_user_id(sid)
+    if not room:
+        emit('report_result', {'success': False, 'message': 'Nem vagy szobában.'})
+        return
+    if not reporter_id:
+        emit('report_result', {'success': False, 'message': 'Bejelentést csak regisztrált felhasználó tehet.'})
+        return
+    target = next((p for p in game.players if not p.is_bot and p.name == data.get('name')), None)
+    if target is None or target.id == sid:
+        emit('report_result', {'success': False, 'message': 'Érvénytelen bejelentés.'})
+        return
+    report_id = admin_mod.create_report(
+        reporter_id, state.player_names.get(sid, '?'), _user_id_for_player(room, target), target.name,
+        data.get('kind'), data.get('message'), data.get('reason'), room)
+    if report_id is None:
+        emit('report_result', {'success': False, 'message': 'Érvénytelen bejelentés.'})
+        return
+    emit('report_result', {'success': True, 'message': 'Bejelentés elküldve. Köszönjük!'})
+    if _admin_room_members():
+        socketio.emit('admin_report', {'id': report_id, 'room': room.name, 'reported': target.name}, room=ADMIN_ROOM)
+    admin_mod.notify_admins_of_report(room.name)
 
 
 # --- Előnézet és tipp ---
@@ -1915,6 +2144,10 @@ def handle_start_daily():
         return
     if state.player_rooms.get(sid) in state.rooms:
         emit('error', {'message': 'Már egy szobában vagy. Előbb lépj ki belőle.'})
+        return
+    blocked = _feature_block(sid, 'feature_daily')
+    if blocked:
+        emit('error', {'message': blocked})
         return
     try:
         puzzle = daily.ensure_puzzle(yield_fn=lambda: socketio.sleep(0))
@@ -2079,8 +2312,9 @@ def _async_sweeper():
     while True:
         socketio.sleep(60)
         try:
-            _expire_async_turns()
+            admin_system.job_ran('async_sweeper', True, _expire_async_turns())
         except Exception as e:
+            admin_system.job_ran('async_sweeper', False, str(e)[:200])
             print(f"[async] Hiba a határidők ellenőrzésénél: {e}")
 
 
@@ -2099,6 +2333,10 @@ def handle_create_async_game(data):
         return
     if state.player_rooms.get(sid) in state.rooms:
         emit('error', {'message': 'Már egy szobában vagy. Előbb lépj ki belőle.'})
+        return
+    blocked = _feature_block(sid, 'feature_async')
+    if blocked:
+        emit('error', {'message': blocked})
         return
 
     ids = data.get('friend_ids')
@@ -2266,7 +2504,7 @@ def handle_spectate_room(data):
     if not game.started or game.finished:
         emit('error', {'message': 'Csak folyamatban lévő játékot lehet megfigyelni.'})
         return
-    if len(room.spectators) >= Room.MAX_SPECTATORS:
+    if len(room.spectators) >= settings.get('max_spectators', Room.MAX_SPECTATORS):
         emit('error', {'message': 'A szobának nem fér több megfigyelője.'})
         return
 
@@ -2517,6 +2755,55 @@ def handle_respond_invite(data):
         emit('invite_declined', {'success': True})
 
 
+# ===== Futásidejű beállítások és háttérfeladatok (admin panel) =====
+
+def apply_runtime_settings():
+    """A beállításokból a futás közben érvényesülő részek újraalkalmazása: forgalomkorlátok (a chat sebességkorlátja
+    is), a szótár-építő kizárási küszöbe. Szerverindításkor és minden beállítás-módosítás után hívódik."""
+    settings.invalidate()
+    http = dict(settings.get('rate_limits_http') or {})
+    sock = dict(settings.get('rate_limits_socket') or {})
+    if settings.is_overridden('chat_rate_count') or settings.is_overridden('chat_rate_window'):
+        sock.setdefault('send_chat', [settings.get('chat_rate_count'), settings.get('chat_rate_window')])
+    rate_limiter.set_overrides(http, sock)
+    admin_mod.invalidate_banned_words()
+    word_review.refresh()
+
+
+def broadcast_announcements():
+    """A közlemények élő frissítése minden kliensnek: a bejelentkezetteknek és a vendégeknek szóló lista is megy,
+    a kliens a sajátját választja."""
+    socketio.emit('announcement', {'registered': admin_comm.active_announcements(True),
+                                   'guests': admin_comm.active_announcements(False)})
+
+
+def _admin_broadcaster():
+    """Háttérfeladat: ötmásodpercenként elküldi az élő számlálókat az `admin` szoba tagjainak."""
+    while True:
+        socketio.sleep(5)
+        try:
+            if _admin_room_members():
+                socketio.emit('admin_overview', admin_live.overview_light(), room=ADMIN_ROOM)
+            admin_system.job_ran('admin_broadcaster', True)
+        except Exception as e:
+            admin_system.job_ran('admin_broadcaster', False, str(e)[:200])
+
+
+def _maintenance_loop():
+    """Háttérfeladat: óránként napi mentés (ha be van kapcsolva) és a régi chat napló törlése."""
+    while True:
+        socketio.sleep(3600)
+        try:
+            admin_system.job_ran('maintenance_tasks', True, ','.join(admin_system.run_scheduled_maintenance()) or None)
+        except Exception as e:
+            admin_system.job_ran('maintenance_tasks', False, str(e)[:200])
+            print(f"[admin] Hiba az ütemezett karbantartásnál: {e}")
+
+
+admin_live.bind(sys.modules[__name__])
+admin_system.install_log_capture()
+
+
 # ===== Main =====
 
 if __name__ == '__main__':
@@ -2528,7 +2815,8 @@ if __name__ == '__main__':
     cleanup_expired()
     _cleanup_finished_saves()
     dictionary.warm_up()  # a szótár betöltése indításkor (az első lerakásnál ne kelljen várni)
-    word_review.refresh()  # a szótár-építőn elutasított szavak kizárása (az adatbázisból)
+    apply_runtime_settings()  # beállítások (forgalomkorlátok...) + a szótár-építőn elutasított szavak kizárása
+    admin_system.capture_output()  # a print üzenetek az admin panel naplónézetében is látszanak
     ai_player.get_vocabulary()  # a robot szókincse (a ragozott alakokkal ~2 mp) is előre épüljön fel
     practice.warm_up()  # gyakorló módok: tőszavak, a 2–3 zsetonos szavak listái
     try:
@@ -2537,6 +2825,13 @@ if __name__ == '__main__':
         print(f"[daily] A mai feladvány előállítása nem sikerült: {e}")
     print(f"[async] {restore_async_games()} levelezős játék visszaállítva")
     socketio.start_background_task(_async_sweeper)
+    socketio.start_background_task(_admin_broadcaster)
+    socketio.start_background_task(_maintenance_loop)
+    if config.ADMIN_EMAILS:  # csak a szerver konzoljára: a webes felület semmit sem árul el
+        print(f"[admin] Admin panel bekapcsolva ({len(config.ADMIN_EMAILS)} admin cím"
+              f"{', IP-lista aktív' if config.ADMIN_IP_ALLOWLIST else ''})")
+        if not config.SMTP_CONFIGURED:
+            print("[admin] Figyelem: SMTP nincs beállítva — az admin cím regisztrációs kódja csak ezen a konzolon jelenik meg.")
 
     if use_tunnel:
         start_tunnel(port)

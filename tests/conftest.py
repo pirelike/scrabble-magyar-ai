@@ -26,7 +26,7 @@ def clean_state():
     from server import state as st
     for attr in ['rooms', 'player_names', 'player_rooms', 'player_auth',
                  '_reconnect_tokens', '_sid_to_token', '_disconnected_players',
-                 '_online_users', '_sid_to_user_id', '_pending_invites']:
+                 '_online_users', '_sid_to_user_id', '_pending_invites', 'admin_sids']:
         d = getattr(st, attr, None)
         if isinstance(d, dict):
             d.clear()
@@ -50,3 +50,44 @@ def clean_rejected_words():
     import dictionary
     if dictionary._rejected_voted:
         dictionary.set_voted_rejected([])
+
+
+@pytest.fixture
+def admin_env(monkeypatch):
+    """Az admin panel bekapcsolva: az `ADMIN_EMAILS` a teszt admin címét tartalmazza, nincs IP-lista."""
+    import config
+    import server
+    from helpers import ADMIN_EMAIL
+    monkeypatch.setattr(config, 'ADMIN_EMAILS', frozenset({ADMIN_EMAIL}))
+    monkeypatch.setattr(config, 'ADMIN_IP_ALLOWLIST', frozenset())
+    server._ip_rate_limits.clear()
+    yield
+    server._ip_rate_limits.clear()
+
+
+@pytest.fixture
+def api(admin_env):
+    """Bejelentkezett admin API-kliens (a munkamenet frissen használt, a sudo nincs bekapcsolva)."""
+    import auth
+    from helpers import ADMIN_EMAIL, ADMIN_PASSWORD, AdminApi, create_user_with_session
+    user_id, token = create_user_with_session(ADMIN_EMAIL, 'Főnök', ADMIN_PASSWORD)
+    auth.touch_admin_session(token)
+    return AdminApi(token, user_id)
+
+
+@pytest.fixture
+def isolated_dictionary(monkeypatch, tmp_path):
+    """A szótár tartós listája (hu_rejected.txt) egy ideiglenes másolat: a teszt nem írja a repó fájlját.
+    A teszt végén a szótár állapota visszaáll."""
+    import shutil
+    import dictionary
+    path = tmp_path / 'hu_rejected.txt'
+    shutil.copy(dictionary._REJECTED_PATH, path)
+    monkeypatch.setattr(dictionary, '_REJECTED_PATH', str(path))
+    import admin_dict
+    monkeypatch.setattr(admin_dict, '_baseline', {'path': None, 'text': None})
+    dictionary.reload_rejected()
+    yield path
+    monkeypatch.undo()
+    dictionary.set_admin_lists([], [], [])
+    dictionary.reload_rejected()

@@ -1,4 +1,5 @@
 import secrets
+import time
 
 from room import generate_join_code
 
@@ -35,6 +36,8 @@ class ServerState:
         self.spectator_rooms = {}
         # Háttérbe került (nem látható) böngészőlapok: a push értesítés ilyenkor is elmegy
         self.hidden_sids = set()
+        # Az admin panel élő kapcsolatai: {sid: user_id} (nem számítanak online felhasználónak)
+        self.admin_sids = {}
 
         # Online tracking és meghívók
         self._online_users = {}        # {user_id: set(sid, ...)} — online regisztrált felhasználók
@@ -136,6 +139,7 @@ class ServerState:
             'player_name': player_name,
             'auth_info': auth_info,
             'seq': self._disconnect_seq,
+            'at': time.time(),
         }
         return self._disconnect_seq
 

@@ -395,7 +395,7 @@ class TestClientTranslator:
                                          'vowels', 'consonants', 'blanks', 'played', 'won', 'rate',
                                          'rating', 'change', 'done', 'lost', 'missed', 'optimal', 'turns',
                                          'rank', 'best', 'date', 'correct', 'd', 'h', 'm', 'time', 'room',
-                                         'letters', 'len', 'got', 'tiles', 'pct', 'solved', 'streak')}
+                                         'letters', 'len', 'got', 'tiles', 'pct', 'solved', 'streak', 'reason', 'until')}
         for key in keys:
             cases.append({'op': 't', 'key': key, 'params': params})
         for lang in ('hu', 'en'):

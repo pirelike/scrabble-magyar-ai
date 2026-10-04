@@ -1,0 +1,1071 @@
+/* ==========================================================================
+   ADMIN PANEL — a fő alkalmazás stíluskészletére (static/style.css: tokenek, gombok, párbeszédek,
+   űrlapmezők) épül, ez csak az admin-specifikus elrendezést adja. Csak az adminnak kiszolgált fájl.
+   ========================================================================== */
+
+.admin-sprite {
+    position: absolute;
+}
+
+.admin-app {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    min-height: var(--vh);
+}
+
+.admin-title {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.admin-title .icon {
+    color: var(--accent);
+}
+
+.admin-menu-btn {
+    display: none;
+}
+
+.admin-exit {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    color: var(--text-secondary);
+    background: var(--color-fill);
+}
+
+/* Sudo állapot: szürke, amíg nincs megerősítés; figyelmeztető szín, amíg él */
+.admin-sudo-chip {
+    --btn-bg: var(--color-fill);
+    --btn-bg-hover: var(--color-fill-strong);
+    --btn-fg: var(--text-secondary);
+    min-height: var(--topbar-btn);
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-pill);
+    font-size: var(--text-sm);
+    font-variant-numeric: tabular-nums;
+}
+
+.admin-sudo-chip .icon {
+    width: 14px;
+    height: 14px;
+}
+
+.admin-sudo-chip.active {
+    --btn-bg: var(--gold-subtle);
+    --btn-bg-hover: var(--gold-subtle);
+    --btn-fg: var(--gold-text);
+}
+
+/* ===== Elrendezés ===== */
+
+.admin-layout {
+    display: flex;
+    flex: 1;
+    align-items: flex-start;
+    min-width: 0;
+}
+
+.admin-nav {
+    position: sticky;
+    top: var(--topbar-total);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    flex: 0 0 240px;
+    width: 240px;
+    max-height: calc(var(--vh) - var(--topbar-total));
+    padding: var(--space-4) var(--space-3);
+    overflow-y: auto;
+    border-right: 1px solid var(--border-primary);
+}
+
+.admin-nav-item {
+    --btn-bg: transparent;
+    --btn-bg-hover: var(--color-fill);
+    --btn-fg: var(--text-secondary);
+    justify-content: flex-start;
+    width: 100%;
+    min-height: 40px;
+    padding: 0 var(--space-3);
+    font-size: var(--text-base);
+    font-weight: 500;
+    text-align: left;
+}
+
+.admin-nav-item.active {
+    --btn-bg: var(--accent-tint);
+    --btn-bg-hover: var(--accent-tint);
+    --btn-fg: var(--accent);
+}
+
+.admin-nav-backdrop {
+    display: none;
+}
+
+.admin-main {
+    flex: 1;
+    min-width: 0;
+    max-width: 1280px;
+    padding: var(--space-6) max(var(--space-6), var(--safe-right)) calc(var(--space-8) + var(--safe-bottom))
+             var(--space-6);
+}
+
+.admin-view-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-4);
+    margin-bottom: var(--space-4);
+}
+
+.admin-view-header > button {
+    flex-shrink: 0;
+}
+
+/* ===== Szűrők ===== */
+
+.admin-filters {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: var(--space-3);
+    align-items: end;
+    margin-bottom: var(--space-4);
+    padding: var(--space-4);
+    background: var(--bg-card);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+}
+
+.admin-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+}
+
+.admin-field input {
+    margin-bottom: 0;
+}
+
+/* A közös stíluskészlet a dátummezőt nem fedi le: ugyanúgy néz ki, mint a szövegmezők */
+.admin-field input[type="date"] {
+    display: block;
+    width: 100%;
+    min-height: var(--control-h);
+    padding: 0 var(--space-4);
+    border: 1px solid var(--border-input);
+    border-radius: var(--radius-md);
+    background-color: var(--bg-input);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: var(--text-base);
+    outline: none;
+    transition: border-color var(--t-fast), box-shadow var(--t-fast);
+}
+
+.admin-field input[type="date"]:focus {
+    border-color: var(--accent);
+    box-shadow: var(--focus-ring);
+}
+
+.admin-field-label {
+    font-size: var(--text-sm);
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.admin-filter-actions {
+    display: flex;
+    gap: var(--space-2);
+}
+
+/* ===== Eszköztár, lapozó ===== */
+
+.admin-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+    min-height: 36px;
+}
+
+.admin-toolbar-actions {
+    display: flex;
+    gap: var(--space-2);
+}
+
+/* Hivatkozás, amely kis másodlagos gombnak látszik (letöltés) */
+.admin-link-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 36px;
+    padding: 0 var(--space-4);
+    border-radius: var(--radius-md);
+    background: var(--color-fill);
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    text-decoration: none;
+    transition: background-color var(--t-fast);
+}
+
+@media (hover: hover) {
+    .admin-link-btn:hover {
+        background: var(--color-fill-strong);
+    }
+}
+
+.admin-pager {
+    display: flex;
+    justify-content: center;
+    gap: var(--space-2);
+    margin-top: var(--space-4);
+}
+
+/* ===== Táblázat ===== */
+
+.admin-table-wrap {
+    overflow-x: auto;
+    background: var(--bg-card);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+}
+
+.admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-sm);
+}
+
+.admin-table th {
+    padding: var(--space-3) var(--space-4);
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    border-bottom: 1px solid var(--color-separator);
+}
+
+.admin-table td {
+    padding: var(--space-3) var(--space-4);
+    vertical-align: top;
+    overflow-wrap: anywhere;
+    border-bottom: 1px solid var(--color-separator);
+}
+
+.admin-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.admin-table-clickable tbody tr {
+    cursor: pointer;
+}
+
+.admin-table-clickable tbody tr:focus-visible {
+    outline: none;
+    box-shadow: inset var(--focus-ring);
+}
+
+@media (hover: hover) {
+    .admin-table-clickable tbody tr:hover {
+        background: var(--accent-subtle);
+    }
+}
+
+.admin-action {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--accent);
+}
+
+.admin-table-compact th,
+.admin-table-compact td {
+    padding: var(--space-2) var(--space-3);
+}
+
+.admin-diff-old { color: var(--danger-text); }
+.admin-diff-new { color: var(--success-text); }
+
+/* ===== Naplósor részletei ===== */
+
+.admin-detail {
+    max-width: 640px;
+    text-align: left;
+}
+
+.admin-detail h2 {
+    text-align: center;
+}
+
+.admin-kv {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: var(--space-2) var(--space-4);
+    font-size: var(--text-sm);
+}
+
+.admin-kv dt {
+    color: var(--text-secondary);
+}
+
+.admin-kv dd {
+    overflow-wrap: anywhere;
+}
+
+.admin-json {
+    max-height: 260px;
+    padding: var(--space-3);
+    overflow: auto;
+    background: var(--bg-card-alt);
+    border-radius: var(--radius-md);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+/* Zároláskor a naplóadat sem marad olvasható a háttérben */
+.admin-locked .admin-main,
+.admin-locked .admin-nav {
+    visibility: hidden;
+}
+
+/* A zárolás minden más párbeszéd fölött áll */
+.admin-lock {
+    z-index: calc(var(--z-dialog) + 10);
+    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(18px);
+}
+
+/* ===== Keskeny képernyő: a menü oldalról csúszó lap, a táblázat sorai kártyák ===== */
+
+@media (max-width: 900px) {
+    .admin-menu-btn {
+        display: inline-flex;
+    }
+
+    .admin-nav {
+        position: fixed;
+        top: var(--topbar-total);
+        bottom: 0;
+        left: 0;
+        z-index: var(--z-sticky);
+        max-height: none;
+        width: min(280px, 82vw);
+        padding-bottom: calc(var(--space-4) + var(--safe-bottom));
+        background: var(--bg-card);
+        box-shadow: var(--shadow-lg);
+        transform: translateX(-105%);
+        transition: transform var(--t-normal);
+    }
+
+    .admin-nav-open .admin-nav {
+        transform: translateX(0);
+    }
+
+    .admin-nav-backdrop {
+        position: fixed;
+        inset: var(--topbar-total) 0 0 0;
+        z-index: calc(var(--z-sticky) - 1);
+        background: var(--bg-overlay);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity var(--t-normal);
+    }
+
+    .admin-nav-open .admin-nav-backdrop {
+        display: block;
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    .admin-main {
+        padding: var(--space-4) max(var(--space-4), var(--safe-right)) calc(var(--space-6) + var(--safe-bottom))
+                 max(var(--space-4), var(--safe-left));
+    }
+
+    .admin-topbar {
+        padding-left: max(var(--space-4), var(--safe-left));
+        padding-right: max(var(--space-4), var(--safe-right));
+    }
+
+    .admin-topbar .topbar-user-name {
+        display: none;
+    }
+}
+
+@media (max-width: 520px) {
+    /* Telefonon a cím szövege helyett csak az ikon marad: a gomboknak kell a hely */
+    .admin-title span {
+        display: none;
+    }
+}
+
+@media (max-width: 700px) {
+    .admin-table-wrap {
+        background: none;
+        border: none;
+        box-shadow: none;
+    }
+
+    .admin-table-cards thead {
+        display: none;
+    }
+
+    .admin-table-cards,
+    .admin-table-cards tbody,
+    .admin-table-cards tr,
+    .admin-table-cards td {
+        display: block;
+    }
+
+    .admin-table-cards tbody tr {
+        margin-bottom: var(--space-3);
+        background: var(--bg-card);
+        border: 1px solid var(--border-primary);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-card);
+    }
+
+    .admin-table-cards td {
+        display: flex;
+        gap: var(--space-3);
+        justify-content: space-between;
+        padding: var(--space-2) var(--space-4);
+        border-bottom: none;
+        text-align: right;
+    }
+
+    .admin-table-cards td:empty {
+        display: none;
+    }
+
+    .admin-table-cards td::before {
+        content: attr(data-label);
+        flex-shrink: 0;
+        color: var(--text-secondary);
+        text-align: left;
+    }
+
+    .admin-kv {
+        grid-template-columns: 1fr;
+        gap: 0;
+    }
+
+    .admin-kv dd {
+        margin-bottom: var(--space-2);
+    }
+}
+
+/* ==========================================================================
+   Az admin panel további elemei: jelvények, kártyák, számlálók, fülek, űrlap, grafikonok, tábla, napló…
+   ========================================================================== */
+
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}
+
+.admin-sudo-layer { z-index: calc(var(--z-dialog) + 5); }
+
+.admin-view { min-width: 0; }
+
+.admin-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    justify-content: flex-end;
+    align-items: flex-end;
+}
+
+.admin-breadcrumb {
+    margin-bottom: var(--space-2);
+    font-size: var(--text-sm);
+}
+
+.admin-inline-link {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+@media (hover: hover) {
+    .admin-inline-link:hover { text-decoration: underline; }
+}
+
+/* ----- Felső sáv: kereső gomb, karbantartási sáv, menü-jelvény ----- */
+
+.admin-search-btn {
+    --btn-bg: var(--color-fill);
+    --btn-bg-hover: var(--color-fill-strong);
+    --btn-fg: var(--text-secondary);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: var(--topbar-btn);
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-pill);
+    font-size: var(--text-sm);
+}
+
+.admin-search-btn .icon { width: 14px; height: 14px; }
+
+.admin-kbd {
+    padding: 1px 6px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-card);
+    border: 1px solid var(--border-primary);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+}
+
+.admin-banner {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-4);
+    background: var(--danger-subtle);
+    color: var(--danger-text);
+    font-size: var(--text-sm);
+    font-weight: 600;
+}
+
+.admin-banner .icon { width: 16px; height: 16px; flex-shrink: 0; }
+
+.admin-nav-item { position: relative; }
+
+.admin-nav-badge {
+    margin-left: auto;
+    min-width: 20px;
+    padding: 1px 6px;
+    border-radius: var(--radius-pill);
+    background: var(--danger);
+    color: #fff;
+    font-size: var(--text-xs);
+    font-weight: 700;
+    text-align: center;
+}
+
+@media (max-width: 700px) {
+    .admin-search-label, .admin-kbd { display: none; }
+}
+
+/* ----- Kereső párbeszéd ----- */
+
+.admin-search-box { max-width: 560px; text-align: left; }
+.admin-search-results { max-height: 50vh; overflow-y: auto; margin: var(--space-3) 0; }
+
+.admin-search-group {
+    margin-top: var(--space-3);
+    font-size: var(--text-xs);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+}
+
+.admin-search-row {
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    text-decoration: none;
+}
+
+.admin-search-row.active,
+.admin-search-row:focus-visible { background: var(--accent-tint); outline: none; }
+
+@media (hover: hover) {
+    .admin-search-row:hover { background: var(--color-fill); }
+}
+
+.admin-search-sub { font-size: var(--text-sm); color: var(--text-secondary); }
+
+/* ----- Jelvények, kártyák, számlálók ----- */
+
+.admin-badge {
+    display: inline-block;
+    padding: 1px 8px;
+    margin: 1px 2px 1px 0;
+    border-radius: var(--radius-pill);
+    background: var(--color-fill);
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.badge-ok { background: var(--success-subtle); color: var(--success-text); }
+.badge-warn { background: var(--gold-subtle); color: var(--gold-text); }
+.badge-danger { background: var(--danger-subtle); color: var(--danger-text); }
+.badge-info { background: var(--accent-tint); color: var(--accent); }
+
+.admin-badge-row, .admin-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
+}
+
+.admin-chip { padding: 2px 10px; background: var(--color-fill); border-radius: var(--radius-pill); }
+
+.admin-card {
+    margin-bottom: var(--space-4);
+    padding: var(--space-4);
+    background: var(--bg-card);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+}
+
+.admin-card-title {
+    margin-bottom: var(--space-3);
+    font-size: var(--text-lg);
+    font-weight: 600;
+}
+
+.admin-card > .admin-table-wrap { border: none; box-shadow: none; margin-top: var(--space-2); }
+
+.admin-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+}
+
+.admin-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: var(--space-3) var(--space-4);
+    background: var(--bg-card);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-lg);
+    color: var(--text-primary);
+    text-decoration: none;
+}
+
+.admin-stat-value { font-size: var(--text-2xl); font-weight: 700; font-variant-numeric: tabular-nums; }
+.admin-stat-label { font-size: var(--text-sm); color: var(--text-secondary); }
+.admin-stat-hint { font-size: var(--text-xs); color: var(--text-muted); }
+.stat-warn { border-color: var(--gold); }
+
+@media (hover: hover) {
+    a.admin-stat:hover { border-color: var(--accent); }
+}
+
+.admin-alerts { display: grid; gap: var(--space-2); margin-bottom: var(--space-4); }
+
+.admin-alert {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-lg);
+    color: var(--text-primary);
+    text-decoration: none;
+    font-size: var(--text-sm);
+}
+
+.admin-alert .icon { width: 18px; height: 18px; flex-shrink: 0; margin-top: 1px; }
+.alert-red { background: var(--danger-subtle); color: var(--danger-text); }
+.alert-yellow { background: var(--gold-subtle); color: var(--gold-text); }
+.alert-green { background: var(--success-subtle); color: var(--success-text); }
+.admin-alert-detail { font-weight: 400; opacity: 0.85; }
+
+/* ----- Betöltés, hiba ----- */
+
+.admin-skeleton { display: grid; gap: var(--space-3); padding: var(--space-4) 0; }
+
+.skeleton-line {
+    height: 14px;
+    border-radius: var(--radius-sm);
+    background: linear-gradient(90deg, var(--color-fill) 25%, var(--color-fill-strong) 50%, var(--color-fill) 75%);
+    background-size: 200% 100%;
+    animation: admin-shimmer 1.2s linear infinite;
+}
+
+.skeleton-line.short { width: 55%; }
+
+@keyframes admin-shimmer { to { background-position: -200% 0; } }
+
+@media (prefers-reduced-motion: reduce) { .skeleton-line { animation: none; } }
+
+.admin-error-box { display: grid; gap: var(--space-3); justify-items: start; padding: var(--space-3) 0; }
+
+/* ----- Fülek, rendezés, jelzések ----- */
+
+.admin-tabs {
+    display: flex;
+    gap: var(--space-1);
+    margin-bottom: var(--space-4);
+    padding: 3px;
+    overflow-x: auto;
+    background: var(--color-fill);
+    border-radius: var(--radius-md);
+    scrollbar-width: none;
+}
+
+.admin-tabs::-webkit-scrollbar { display: none; }
+
+.admin-tab {
+    --btn-bg: transparent;
+    --btn-bg-hover: var(--color-fill-strong);
+    --btn-fg: var(--text-secondary);
+    flex: 0 0 auto;
+    min-height: 34px;
+    padding: 0 var(--space-4);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.admin-tab.active {
+    --btn-bg: var(--bg-card);
+    --btn-bg-hover: var(--bg-card);
+    --btn-fg: var(--text-primary);
+    box-shadow: var(--shadow-sm);
+}
+
+.admin-sort {
+    all: unset;
+    cursor: pointer;
+    font-weight: 600;
+    color: inherit;
+    white-space: nowrap;
+}
+
+.admin-sort.active { color: var(--accent); }
+.admin-sort:focus-visible { outline: 2px solid var(--accent); border-radius: 3px; }
+
+.row-alert { background: var(--danger-subtle); }
+
+.admin-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-muted);
+}
+
+.admin-dot.on { background: var(--success); }
+
+.admin-action-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
+}
+
+.admin-table .admin-action-row { margin-top: 0; }
+
+.admin-code-wrap { word-break: break-all; font-size: var(--text-xs); }
+
+.admin-details summary { cursor: pointer; padding: var(--space-2) 0; color: var(--accent); font-weight: 600; }
+
+/* ----- Űrlap-párbeszéd ----- */
+
+.admin-form-box { max-width: 520px; text-align: left; }
+.admin-form-box h2 { text-align: center; }
+.admin-form-wide { max-width: 680px; }
+#admin-form-dialog .dialog-content:has(.admin-form-wide) { max-width: 700px; }
+
+.admin-form-fields { display: grid; gap: var(--space-3); margin: var(--space-3) 0; }
+.admin-form-field { display: grid; gap: var(--space-1); }
+.admin-form-field textarea, .admin-form-field select { width: 100%; }
+.admin-field-error { color: var(--danger-text); font-size: var(--text-sm); }
+.invalid { border-color: var(--danger) !important; }
+
+.admin-check-list { display: grid; gap: var(--space-2); }
+
+.admin-check-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-base);
+}
+
+.admin-check-row input { width: auto; margin: 0; }
+
+.admin-form-inline { display: grid; gap: var(--space-3); }
+.admin-form-inline textarea, .admin-form-inline select, .admin-form-inline input { width: 100%; }
+
+.admin-field-check { flex-direction: row; align-items: center; gap: var(--space-2); }
+.admin-field-check input { width: auto; margin: 0; }
+.admin-filters-inline { margin-bottom: var(--space-3); }
+
+.admin-note-form { display: grid; gap: var(--space-2); margin-top: var(--space-2); }
+.admin-note-form textarea { width: 100%; }
+.admin-note { padding: var(--space-3) 0; border-bottom: 1px solid var(--color-separator); }
+
+.admin-note-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+}
+
+.admin-note-text { margin-top: var(--space-1); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.admin-detail-wide { max-width: 860px; }
+
+/* ----- Grafikonok ----- */
+
+.admin-chart-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+}
+
+.admin-chart-grid > .admin-card { margin-bottom: 0; }
+.admin-figure figcaption { margin-bottom: var(--space-2); font-weight: 600; }
+.admin-chart { display: block; width: 100%; height: auto; }
+.chart-grid { stroke: var(--color-separator); stroke-width: 1; }
+.chart-axis { fill: var(--text-muted); font-size: 11px; stroke: none; }
+.chart-hit { fill: transparent; }
+.chart-line { fill: none; stroke-width: 2; stroke-linejoin: round; }
+.chart-s0 { fill: var(--accent); stroke: var(--accent); }
+.chart-s1 { fill: var(--gold); stroke: var(--gold); }
+.chart-s2 { fill: var(--success); stroke: var(--success); }
+.chart-s3 { fill: var(--danger); stroke: var(--danger); }
+.chart-s4 { fill: var(--info); stroke: var(--info); }
+.chart-s5 { fill: var(--text-muted); stroke: var(--text-muted); }
+.chart-bar { stroke: none; }
+.chart-line.chart-s0, .chart-line.chart-s1, .chart-line.chart-s2, .chart-line.chart-s3, .chart-line.chart-s4, .chart-line.chart-s5 { fill: none; }
+.admin-legend { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-2); font-size: var(--text-xs); color: var(--text-secondary); }
+.admin-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.legend-swatch { width: 10px; height: 10px; border-radius: 2px; }
+
+.admin-heatmap {
+    display: grid;
+    grid-template-columns: 34px repeat(24, minmax(0, 1fr));
+    gap: 2px;
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+}
+
+.heat-cell { aspect-ratio: 1; border-radius: 3px; background: var(--color-fill); }
+.heat-hour { text-align: center; }
+.heat-day { display: flex; align-items: center; }
+.heat-1 { background: color-mix(in srgb, var(--accent) 20%, var(--color-fill)); }
+.heat-2 { background: color-mix(in srgb, var(--accent) 40%, var(--color-fill)); }
+.heat-3 { background: color-mix(in srgb, var(--accent) 60%, var(--color-fill)); }
+.heat-4 { background: color-mix(in srgb, var(--accent) 80%, var(--color-fill)); }
+.heat-5 { background: var(--accent); }
+
+.admin-hbars { display: grid; gap: 6px; }
+.hbar-row { display: grid; grid-template-columns: minmax(70px, 28%) 1fr 48px; align-items: center; gap: var(--space-2); font-size: var(--text-sm); }
+.hbar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hbar-track { height: 10px; border-radius: 5px; background: var(--color-fill); overflow: hidden; }
+.hbar-fill { height: 100%; border-radius: 5px; background: var(--accent); }
+.hbar-value { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+
+/* ----- Tábla és zsetonok ----- */
+
+.admin-tile {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.7em;
+    height: 1.7em;
+    margin: 1px;
+    border-radius: 3px;
+    background: var(--cell-tile-bg, #f5e6c8);
+    color: var(--cell-tile-text, #3a2a10);
+    font-size: var(--text-sm);
+    font-weight: 700;
+    line-height: 1;
+}
+
+.admin-tile.long { font-size: var(--text-xs); }
+.admin-tile.blank { box-shadow: inset 0 0 0 2px var(--accent); }
+
+.admin-board {
+    display: grid;
+    grid-template-columns: repeat(15, 1fr);
+    gap: 1px;
+    width: 100%;
+    max-width: 560px;
+    aspect-ratio: 1;
+    padding: 2px;
+    background: var(--board-border, var(--border-primary));
+    border-radius: var(--radius-md);
+}
+
+.admin-bc {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    background: var(--cell-empty, var(--color-fill));
+    border-radius: 2px;
+    container-type: inline-size;
+}
+
+.admin-bc .admin-tile { width: 100%; height: 100%; margin: 0; border-radius: 2px; font-size: 55cqw; }
+.admin-bc .admin-tile.long { font-size: 38cqw; }
+.bc-tw { background: var(--premium-tw); }
+.bc-dw, .bc-st { background: var(--premium-dw); }
+.bc-tl { background: var(--premium-tl); }
+.bc-dl { background: var(--premium-dl); }
+.bc-last { box-shadow: inset 0 0 0 2px var(--gold); }
+
+.admin-room-layout {
+    display: grid;
+    grid-template-columns: minmax(280px, 560px) minmax(0, 1fr);
+    gap: var(--space-4);
+    align-items: start;
+}
+
+.admin-room-left, .admin-room-right { min-width: 0; }
+.admin-bag { display: flex; flex-wrap: wrap; gap: 2px var(--space-2); font-size: var(--text-xs); color: var(--text-secondary); }
+.admin-bag-item { display: inline-flex; align-items: center; }
+.admin-kv-inline { margin: var(--space-3) 0; font-size: var(--text-sm); color: var(--text-secondary); }
+.admin-timer { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--text-primary); }
+.admin-racks { display: grid; gap: var(--space-2); margin-top: var(--space-3); }
+.admin-rack { display: flex; align-items: center; gap: var(--space-3); }
+.admin-rack-tiles { display: inline-flex; flex-wrap: wrap; }
+.admin-message-row { display: grid; grid-template-columns: 1fr auto; gap: var(--space-2); }
+.admin-message-row input { margin: 0; }
+.admin-player-list { display: inline-flex; flex-wrap: wrap; gap: var(--space-2); }
+.admin-player-chip { white-space: nowrap; }
+
+.admin-chat-log { max-height: 280px; overflow-y: auto; font-size: var(--text-sm); }
+.admin-chat-line { padding: 2px 0; overflow-wrap: anywhere; }
+.admin-chat-line.system { color: var(--accent); }
+.admin-chat-time { margin-right: var(--space-2); font-size: var(--text-xs); color: var(--text-muted); }
+
+.admin-replay-controls { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3); }
+.admin-replay-slider { flex: 1; margin: 0; }
+.admin-replay-info { margin-bottom: var(--space-3); font-size: var(--text-sm); color: var(--text-secondary); }
+.admin-replay-stage { max-width: 560px; }
+
+.admin-word-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); margin-bottom: var(--space-4); }
+.admin-word-head .admin-tile { font-size: var(--text-lg); }
+
+@media (max-width: 900px) {
+    .admin-room-layout { grid-template-columns: 1fr; }
+}
+
+/* ----- Szerver napló ----- */
+
+.admin-log {
+    max-height: 340px;
+    overflow: auto;
+    padding: var(--space-2);
+    background: var(--bg-card-alt);
+    border-radius: var(--radius-md);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+}
+
+.admin-log-line { display: flex; gap: var(--space-2); padding: 1px 0; }
+.admin-log-time { color: var(--text-muted); flex-shrink: 0; }
+.admin-log-level { flex-shrink: 0; width: 64px; font-weight: 700; }
+.admin-log-msg { overflow-wrap: anywhere; white-space: pre-wrap; }
+.log-warning .admin-log-level { color: var(--gold-text); }
+.log-error .admin-log-level, .log-critical .admin-log-level { color: var(--danger-text); }
+
+/* ----- Beállítások ----- */
+
+.admin-setting {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--color-separator);
+}
+
+.admin-setting:last-child { border-bottom: none; }
+.admin-setting-text { flex: 1; min-width: 0; }
+.admin-setting-meta { margin-top: 2px; font-size: var(--text-xs); color: var(--text-muted); }
+.admin-setting-control { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
+.admin-setting-control input[type="number"], .admin-setting-control select { width: 150px; margin: 0; }
+.admin-toggle { width: 22px; height: 22px; margin: 0; accent-color: var(--accent); }
+
+@media (max-width: 700px) {
+    .admin-setting { flex-direction: column; align-items: stretch; }
+    .admin-setting-control { justify-content: flex-start; }
+    .admin-view-header { flex-direction: column; }
+    .admin-header-actions { justify-content: flex-start; }
+    .hbar-row { grid-template-columns: 90px 1fr 40px; }
+}
+
+.admin-table td { white-space: normal; }
+.admin-table td .admin-action-row { flex-wrap: nowrap; }
+.admin-table td .admin-action-row button, .admin-table td button { white-space: nowrap; }
+
+/* A közös stíluskészlet csak a szöveg-, e-mail- és jelszómezőt fedi le: az admin többi mezője (szám, keresés, dátum,
+   időpont, többsoros) ugyanúgy néz ki */
+.admin-main input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.admin-main select,
+.admin-main textarea,
+.admin-form-box input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.admin-form-box select,
+.admin-form-box textarea,
+.admin-search-box input {
+    display: block;
+    width: 100%;
+    min-height: var(--control-h);
+    margin-bottom: 0;
+    padding: 0 var(--space-4);
+    border: 1px solid var(--border-input);
+    border-radius: var(--radius-md);
+    background-color: var(--bg-input);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: var(--text-base);
+    text-transform: none;
+    outline: none;
+    transition: border-color var(--t-fast), box-shadow var(--t-fast);
+}
+
+.admin-main textarea,
+.admin-form-box textarea {
+    min-height: 76px;
+    padding: var(--space-3) var(--space-4);
+    line-height: 1.4;
+    resize: vertical;
+}
+
+.admin-main input:focus,
+.admin-main select:focus,
+.admin-main textarea:focus,
+.admin-form-box input:focus,
+.admin-form-box select:focus,
+.admin-form-box textarea:focus,
+.admin-search-box input:focus {
+    border-color: var(--accent);
+    box-shadow: var(--focus-ring);
+}
+
+.admin-main select,
+.admin-form-box select { padding-right: 40px; }
+
+.admin-form-box input[type="checkbox"], .admin-main input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--accent);
+}
+
+.admin-main input[type="range"] { width: 100%; accent-color: var(--accent); }
+
+.admin-setting-control input[type="number"], .admin-setting-control select { width: 150px; }
+.admin-search-box input { margin-bottom: var(--space-2); }

@@ -7,12 +7,15 @@ from flask import (
     Blueprint, render_template, request, jsonify, make_response, current_app, send_from_directory,
 )
 
+import admin_comm
+import admin_mod
 import analysis
 import async_games
 import daily
 import dictionary
 import practice
 import push_service
+import settings
 import word_review
 from config import SMTP_CONFIGURED
 from tiles import tokenize_word, word_base_score, TILE_VALUES
@@ -30,6 +33,7 @@ from auth import (
     get_user_async_games,
     get_user_active_games, abandon_game_by_id, is_user_in_game,
     get_friends, get_pending_requests, get_sent_requests, search_users,
+    is_admin_user, touch_admin_session, ban_from_row, record_login_event, is_review_blocked, bump_counter,
 )
 from email_service import send_verification_email
 from socket_auth import create_socket_token
@@ -109,6 +113,14 @@ def _set_session_cookie(response, token):
     return response
 
 
+def _with_admin_flag(payload, user):
+    """Csak az adminnál kerül a válaszba az `is_admin` jelző; másnál a kulcs sem szerepel
+    (egy `false` érték is elárulná, hogy admin panel létezik)."""
+    if is_admin_user(user):
+        payload['is_admin'] = True
+    return payload
+
+
 def _str_field(data, key):
     """Biztonságosan kiolvas egy szöveges mezőt a JSON törzsből (nem szöveg → '')."""
     value = data.get(key, '')
@@ -162,6 +174,9 @@ def request_code():
     if not _rate_limiter.check_ip(ip, 'request_code'):
         return jsonify({'success': False, 'message': 'Túl sok kérés. Próbáld újra 5 perc múlva.'}), 429
 
+    if not settings.get('registration_open', True):
+        return jsonify({'success': False, 'message': 'A regisztráció jelenleg le van zárva.'}), 403
+
     data = request.get_json(silent=True)
     if not data or not isinstance(data, dict) or not isinstance(data.get('email'), str):
         return jsonify({'success': False, 'message': 'Email cím megadása kötelező.'}), 400
@@ -178,8 +193,11 @@ def request_code():
 
     response = {'success': True, 'message': 'Verifikációs kód elküldve.'}
     if not SMTP_CONFIGURED:
-        response['dev_code'] = code
         response['message'] = 'Fejlesztői mód: SMTP nincs konfigurálva.'
+        # Admin címnél a kód nem kerülhet a válaszba (a szerver konzolján olvasható): SMTP nélkül különben
+        # bárki "megerősíthetné" az admin címet, és a regisztrációval admin lenne.
+        if not is_admin_user({'email': email}):
+            response['dev_code'] = code
     return jsonify(response)
 
 
@@ -208,6 +226,9 @@ def register():
     if not _rate_limiter.check_ip(ip, 'register'):
         return jsonify({'success': False, 'message': 'Túl sok regisztráció. Próbáld újra később.'}), 429
 
+    if not settings.get('registration_open', True):
+        return jsonify({'success': False, 'message': 'A regisztráció jelenleg le van zárva.'}), 403
+
     data = request.get_json(silent=True)
     if not data or not isinstance(data, dict):
         return jsonify({'success': False, 'message': 'Érvénytelen kérés.'}), 400
@@ -233,6 +254,8 @@ def register():
     name = _sanitize_name(display_name)
     if not name:
         return jsonify({'success': False, 'message': 'Érvénytelen megjelenítési név (1-20 karakter, betűk és számok).'}), 400
+    if admin_mod.contains_banned(name):
+        return jsonify({'success': False, 'message': 'Ez a név nem engedélyezett.'}), 400
 
     if get_user_by_email(email):
         return jsonify({'success': False, 'message': 'Ez az email cím már regisztrálva van.'}), 409
@@ -249,16 +272,19 @@ def register():
     clear_email_verification(email)
 
     user_id = result
-    token = create_session(user_id)
+    token = create_session(user_id, ip, request.headers.get('User-Agent', ''))
+    record_login_event(email, True, ip, request.headers.get('User-Agent', ''), user_id, 'register')
+    if is_admin_user({'email': email}):
+        touch_admin_session(token)  # a jelszó most hangzott el: az admin panel azonnal nyitható
 
     resp = make_response(jsonify({
         'success': True,
         'message': 'Fiók létrehozva!',
-        'user': {
+        'user': _with_admin_flag({
             'id': user_id,
             'email': email,
             'display_name': name,
-        }
+        }, {'email': email})
     }))
     return _set_session_cookie(resp, token)
 
@@ -281,21 +307,30 @@ def login():
     if not email or not password:
         return jsonify({'success': False, 'message': 'Email és jelszó megadása kötelező.'}), 400
 
+    user_agent = request.headers.get('User-Agent', '')
     success, result = verify_password(email, password)
     if not success:
+        record_login_event(email, False, ip, user_agent, reason='bad_credentials')
         return jsonify({'success': False, 'message': result}), 401
 
     user = result
-    token = create_session(user['id'])
+    ban = ban_from_row(user)
+    if ban:
+        record_login_event(email, False, ip, user_agent, user['id'], 'banned')
+        return jsonify({'success': False, 'message': 'A fiókod ki van tiltva.', 'banned': ban}), 403
+    token = create_session(user['id'], ip, user_agent)
+    record_login_event(email, True, ip, user_agent, user['id'])
+    if is_admin_user(user):
+        touch_admin_session(token)  # a jelszó most hangzott el: az admin panel azonnal nyitható
 
     resp = make_response(jsonify({
         'success': True,
         'message': 'Sikeres bejelentkezés!',
-        'user': {
+        'user': _with_admin_flag({
             'id': user['id'],
             'email': user['email'],
             'display_name': user['display_name'],
-        }
+        }, user)
     }))
     return _set_session_cookie(resp, token)
 
@@ -319,14 +354,14 @@ def me():
 
     return jsonify({
         'success': True,
-        'user': {
+        'user': _with_admin_flag({
             'id': user['id'],
             'email': user['email'],
             'display_name': user['display_name'],
             'games_played': user['games_played'],
             'games_won': user['games_won'],
             'total_score': user['total_score'],
-        }
+        }, user)
     })
 
 
@@ -500,6 +535,8 @@ def daily_info():
     A feladvány legjobb pontszáma csak azoknak látszik, akik már beküldtek egy lépést."""
     if not _rate_limiter.check_ip(_get_client_ip(), 'daily'):
         return jsonify({'success': False, 'message': 'Túl sok kérés. Próbáld újra később.'}), 429
+    if not settings.get('feature_daily', True):
+        return jsonify({'success': False, 'message': 'Ez a funkció jelenleg ki van kapcsolva.'}), 503
     user = validate_session(request.cookies.get('session_token'))
     user_id = user['id'] if user else None
     today = daily.today_str()
@@ -543,6 +580,15 @@ def daily_leaderboard():
     for entry in entries:
         entry['is_me'] = entry['user_id'] == user_id
     return jsonify({'success': True, 'date': date_str, 'entries': entries, 'me': me})
+
+
+@public_bp.route('/api/announcements', methods=['GET'])
+def announcements():
+    """A most érvényes közlemények (banner) és a karbantartási mód — nyilvános; a célcsoport a bejelentkezéstől függ."""
+    if not _rate_limiter.check_ip(_get_client_ip(), 'announcements'):
+        return jsonify({'success': False, 'message': 'Túl sok kérés. Próbáld újra később.'}), 429
+    user = validate_session(request.cookies.get('session_token'))
+    return jsonify({'success': True, 'items': admin_comm.active_announcements(bool(user))})
 
 
 @auth_bp.route('/api/push/public-key', methods=['GET'])
@@ -595,12 +641,17 @@ def push_unsubscribe():
     return jsonify({'success': True})
 
 
-def _practice_guard():
-    """Közös ellenőrzés a gyakorló végpontokhoz: rate limit + szótár. Hibaválasz, vagy None."""
+def _practice_guard(counter=None):
+    """Közös ellenőrzés a gyakorló végpontokhoz: kapcsoló, rate limit + szótár. Hibaválasz, vagy None.
+    `counter`: a használati statisztika kulcsa (naponta számolva)."""
+    if not settings.get('feature_practice', True):
+        return jsonify({'success': False, 'message': 'Ez a funkció jelenleg ki van kapcsolva.'}), 503
     if not _rate_limiter.check_ip(_get_client_ip(), 'practice'):
         return jsonify({'success': False, 'message': 'Túl sok kérés. Próbáld újra később.'}), 429
     if not dictionary.is_available():
         return jsonify({'success': False, 'message': 'A szótár nem érhető el.'}), 503
+    if counter:
+        bump_counter(counter)
     return None
 
 
@@ -610,7 +661,7 @@ def practice_quiz():
     mode = request.args.get('mode', 'mixed')
     if mode not in practice.QUIZ_MODES:
         return jsonify({'success': False, 'message': 'Érvénytelen kvízmód.'}), 400
-    blocked = _practice_guard()
+    blocked = _practice_guard('quiz')
     if blocked:
         return blocked
     try:
@@ -629,7 +680,7 @@ def practice_answer():
     word = data.get('word')
     if not isinstance(word, str) or not isinstance(data.get('answer'), bool):
         return jsonify({'success': False, 'message': 'Érvénytelen kérés.'}), 400
-    blocked = _practice_guard()
+    blocked = _practice_guard('answer')
     if blocked:
         return blocked
     result = practice.check_answer(word, data['answer'])
@@ -647,7 +698,7 @@ def practice_short_words():
         length = 0
     if length not in practice.SHORT_LENGTHS:
         return jsonify({'success': False, 'message': 'Érvénytelen szóhossz.'}), 400
-    blocked = _practice_guard()
+    blocked = _practice_guard('short_words')
     if blocked:
         return blocked
     return jsonify({'success': True, 'length': length, 'words': practice.short_words(length)})
@@ -659,7 +710,7 @@ def practice_rack():
     kind = request.args.get('kind', 'hunt')
     if kind not in practice.RACK_KINDS:
         return jsonify({'success': False, 'message': 'Érvénytelen gyakorlás.'}), 400
-    blocked = _practice_guard()
+    blocked = _practice_guard('rack')
     if blocked:
         return blocked
     return jsonify({'success': True, **practice.make_rack(kind)})
@@ -674,7 +725,7 @@ def practice_rack_word():
                   and all(isinstance(t, str) and t in practice.LETTERS for t in rack))
     if not valid_rack or not isinstance(word, str):
         return jsonify({'success': False, 'message': 'Érvénytelen kérés.'}), 400
-    blocked = _practice_guard()
+    blocked = _practice_guard('rack_word')
     if blocked:
         return blocked
     return jsonify({'success': True, **practice.check_rack_word(rack, word)})
@@ -688,6 +739,11 @@ def _word_review_user():
     user = validate_session(request.cookies.get('session_token'))
     if not user:
         return None, (jsonify({'success': False, 'message': 'Bejelentkezés szükséges.'}), 401)
+    if not settings.get('feature_word_review', True):
+        return None, (jsonify({'success': False, 'message': 'Ez a funkció jelenleg ki van kapcsolva.'}), 503)
+    if is_review_blocked(user['id']):
+        return None, (jsonify({'success': False,
+                               'message': 'A szótár-építő használata le van tiltva a fiókodnál.'}), 403)
     if not _rate_limiter.check_ip(_get_client_ip(), 'word_review'):
         return None, (jsonify({'success': False, 'message': 'Túl sok kérés. Próbáld újra később.'}), 429)
     if not dictionary.is_available():
@@ -706,6 +762,7 @@ def word_review_next():
     except ValueError:
         count = word_review.BATCH_SIZE
     words = word_review.next_words(count)
+    bump_counter('word_review')
     return jsonify({'success': True, 'words': words, 'tiles': [tokenize_word(w) for w in words],
                     'stats': word_review.stats(user['id'])})
 
@@ -721,6 +778,7 @@ def word_review_vote():
     if word is None or not isinstance(data.get('valid'), bool):
         return jsonify({'success': False, 'message': 'Érvénytelen kérés.'}), 400
     rejected = word_review.record_vote(user['id'], word, data['valid'])
+    bump_counter('word_review_vote')
     if rejected is None:
         return jsonify({'success': False, 'message': 'Ez a szó már nincs a szótárban.'}), 409
     return jsonify({'success': True, 'word': word, 'rejected': rejected,
@@ -977,6 +1035,8 @@ def async_games_list():
     user = validate_session(request.cookies.get('session_token'))
     if not user:
         return jsonify({'success': False, 'message': 'Bejelentkezés szükséges.'}), 401
+    if not settings.get('feature_async', True):
+        return jsonify({'success': False, 'message': 'Ez a funkció jelenleg ki van kapcsolva.'}), 503
     games = [g for g in (async_games.summarize(r) for r in get_user_async_games(user['id'])) if g]
     games.sort(key=lambda g: not g['my_turn'])   # a rendezés stabil: a többi az utolsó lépés szerinti
     return jsonify({'success': True, 'games': games,

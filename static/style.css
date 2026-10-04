@@ -5459,3 +5459,87 @@ label.pick-row.is-locked { opacity: 0.45; cursor: not-allowed; }
 @media (max-width: 600px) {
     .wb-play .word-tiles { margin-top: var(--space-3); }
 }
+
+/* ============================================================
+   19. Közlemények (banner), rendszerüzenet a chatben, bejelentés
+   ============================================================ */
+
+.announcement-bar {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-toast, 900);
+    display: flex;
+    flex-direction: column;
+}
+
+.announcement {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-4);
+    padding-top: max(var(--space-2), env(safe-area-inset-top));
+    font-size: 0.9rem;
+    line-height: 1.35;
+    color: var(--text-primary);
+    background: var(--accent-tint);
+    border-bottom: 1px solid var(--color-separator);
+    backdrop-filter: blur(12px);
+}
+
+.announcement-warning {
+    background: var(--gold-subtle);
+}
+
+.announcement-maintenance {
+    background: var(--danger-subtle);
+}
+
+.announcement-text {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.announcement-countdown {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.announcement-close {
+    flex: none;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-pill);
+    font-size: 1.2rem;
+    line-height: 1;
+    color: var(--text-secondary);
+    background: var(--color-fill);
+    cursor: pointer;
+}
+
+.chat-msg-system {
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    color: var(--gold-text);
+    background: var(--gold-subtle);
+}
+
+.chat-msg-system .chat-name {
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+#report-dialog select,
+#report-dialog textarea {
+    width: 100%;
+    margin-bottom: var(--space-3);
+}
+
+#report-dialog textarea {
+    resize: vertical;
+    font: inherit;
+}

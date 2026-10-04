@@ -102,7 +102,7 @@ const el = { classList: { contains: () => false, add() {}, remove() {}, toggle()
 const stubs = {
     socket: { id: 'me' },
     Chat: { clear() {} }, Badges: { newInGame: [] }, Daily: { reset() {}, onGameState() {} },
-    AsyncGames: { onGameState() {} },
+    AsyncGames: { onGameState() {} }, Report: { sync() {} },
     Preview: { cleared: 0, clear() { this.cleared++; } },
     document: { getElementById: () => el },
     localStorage: { removeItem() {} },

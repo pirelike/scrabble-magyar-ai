@@ -25,9 +25,15 @@ TTL_SECONDS = 6 * 3600   # ennyi ideig őrzi a push szolgáltatás a kézbesíte
 
 MESSAGES = {
     'hu': {'title': 'Magyar Scrabble', 'turn': 'Te jössz! · {room}',
-           'invite': 'Meghívtak egy levelezős játékba: {room}'},
+           'invite': 'Meghívtak egy levelezős játékba: {room}',
+           'report': 'Új bejelentés érkezett · {room}',
+           'reminder': 'Emlékeztető: rád vár a lépés · {room}',
+           'test': 'Teszt értesítés: az értesítések működnek.'},
     'en': {'title': 'Hungarian Scrabble', 'turn': "It's your turn! · {room}",
-           'invite': "You've been invited to a correspondence game: {room}"},
+           'invite': "You've been invited to a correspondence game: {room}",
+           'report': 'A new report has arrived · {room}',
+           'reminder': 'Reminder: your move is waiting · {room}',
+           'test': 'Test notification: notifications are working.'},
 }
 DEFAULT_LANG = 'hu'
 
@@ -163,3 +169,33 @@ def notify_turn(user_id, room_name, room_id, kind='turn'):
     else:
         task()
     return True
+
+
+def notify_background(user_id, kind, **params):
+    """Értesítés a felhasználó eszközeinek, háttérben (nem blokkol). Visszatér: igaz, ha volt feliratkozás."""
+    if not is_available() or not auth.count_push_subscriptions(user_id):
+        return False
+    task = lambda: notify_user(user_id, kind, **params)   # noqa: E731
+    if _spawn is not None:
+        _spawn(task)
+    else:
+        task()
+    return True
+
+
+def send_custom(user_id, title, body, url='/'):
+    """Egyedi (admin által írt) értesítés a felhasználó minden eszközére. Visszatér: {'sent', 'removed', 'failed'}
+    (a megszűnt feliratkozások törlődnek)."""
+    result = {'sent': 0, 'removed': 0, 'failed': 0}
+    if not is_available():
+        return result
+    for sub in auth.get_push_subscriptions(user_id):
+        outcome = _send_one(sub, {'title': title, 'body': body, 'tag': 'broadcast', 'url': url})
+        if outcome == 'ok':
+            result['sent'] += 1
+        elif outcome == 'gone':
+            auth.delete_push_subscription(sub['endpoint'])
+            result['removed'] += 1
+        else:
+            result['failed'] += 1
+    return result

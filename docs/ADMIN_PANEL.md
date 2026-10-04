@@ -567,14 +567,17 @@ A szerverüzenetek magyarul, a kliens `tServer`-rel fordítja (az admin fordít�
 ## 19. Fájlok
 
 Új:
-- `admin.py` — az admin logika (lekérdezések, műveletek, `audit()`), a Flask kéréstől független,
-  így tesztelhető
-- `admin_routes.py` (vagy a `routes.py`-ban `admin_bp`) — HTTP réteg, őr
+- `admin.py` — az admin logika (napló, munkamenet, közös segédek), a Flask kéréstől független, így tesztelhető;
+  funkciónként külön modul: `admin_users.py`, `admin_live.py`, `admin_games.py`, `admin_dict.py`, `admin_comm.py`,
+  `admin_stats.py`, `admin_mod.py`, `admin_security.py`, `admin_system.py`
+- `admin_routes.py` — HTTP réteg és őr; a végpontok `admin_api_users.py`, `admin_api_game.py`, `admin_api_dict.py`,
+  `admin_api_comm.py`, `admin_api_system.py` fájlokban (ugyanazon a blueprinten)
 - `settings.py` — futásidejű beállítások (`app_settings` gyorsítótárral)
-- `templates/admin.html`, `admin_assets/admin.js`, `admin_assets/admin.css`,
-  `admin_assets/admin-i18n.js`
-- `tests/test_admin_access.py`, `tests/test_admin_users.py`, `tests/test_admin_rooms.py`,
-  `tests/test_admin_dictionary.py`, `tests/test_admin_misc.py`
+- `templates/admin.html`, `admin_assets/` (`admin.js` mag, `admin-ui.js` komponensek, `admin-views-a|b|c.js`
+  menüpontok, `admin-main.js` útvonalválasztó / élő kapcsolat / kereső, `admin.css`, `admin-i18n.js`, `admin-boot.js`)
+- `tests/test_admin_access.py`, `test_admin_audit.py`, `test_admin_users.py`, `test_admin_rooms.py`,
+  `test_admin_games.py`, `test_admin_dictionary.py`, `test_admin_comm.py`, `test_admin_system.py`,
+  `test_admin_moderation.py`, `test_admin_client.py`, `test_admin_browser.py` (valódi böngésző)
 
 Módosul: `config.py`, `auth.py` (migrációk, `is_admin_user`, kitiltás ellenőrzése, belépési
 napló), `server.py` (kitiltás / némítás / karbantartás ellenőrzése az eseményekben, admin
@@ -615,15 +618,20 @@ API útvonalak léteznek; `test_i18n.py` mintájára az admin fordítások telje
 
 ## 21. Megvalósítási sorrend
 
-1. **Alapok**: `ADMIN_EMAILS`, őr (404), `/admin` oldal + őrzött assetek, `is_admin` a `/me`-ben,
-   admin gomb, `admin_audit`, sudo mód, hozzáférési tesztek.
-2. **Áttekintés + Felhasználók** (lista, részletek, kitiltás, némítás, kijelentkeztetés, név).
-3. **Élő szobák** (lista, részletek, megfigyelés, rendszerüzenet, kirúgás, feloszlatás, lezárás).
-4. **Szótár** (szó-vizsgáló, kizárt szavak, felülbírálás, szavazatok, gyorsítótárak).
-5. **Játékok, levelezős, ranglista** (érvénytelenítés, ELO újraszámolás).
-6. **Kommunikáció** (közlemény, karbantartási mód, push).
-7. **Biztonság, rendszer, beállítások** (belépési napló, IP tiltás, mentés, naplók, kapcsolók).
-8. **Statisztika, moderáció** (bejelentések, tiltott szavak), napi feladvány.
+1. **Alapok** *(kész)*: `ADMIN_EMAILS`, őr (404), `/admin` oldal + őrzött assetek, `is_admin` a `/me`-ben,
+   admin gomb, `admin_audit`, sudo mód, hozzáférési tesztek. Az „Admin napló” nézet is elkészült (a napló
+   ellenőrzéséhez kellett); a leírás és az eltérések a CLAUDE.md „Admin panel” szakaszában vannak.
+2. **Áttekintés + Felhasználók** *(kész)* (lista, részletek, kitiltás, némítás, kijelentkeztetés, név, e-mail,
+   jelszó-visszaállítás, értékszám, kitüntetések, push, export, törlés / anonimizálás, belső jegyzetek).
+3. **Élő szobák** *(kész)* (lista, élő tábla, kezek naplózva, megfigyelés, rendszerüzenet, kirúgás, tulajdonjog,
+   kör átugrása, időzítő, szavazás lezárása, mentés, befejezés, érvénytelenítés, feloszlatás).
+4. **Szótár** *(kész)* (szó-vizsgáló, kizárt szavak, felülbírálás, saját szavak, szavazatok, bírálók, gyorsítótárak).
+5. **Játékok, levelezős, ranglista** *(kész)* (archívum, visszajátszás, érvénytelenítés, ELO újraszámolás,
+   gyanús minták, levelezős beavatkozások).
+6. **Kommunikáció** *(kész)* (közlemény, karbantartási mód, push, e-mail).
+7. **Biztonság, rendszer, beállítások** *(kész)* (belépési napló, IP tiltás, forgalomkorlátok, kódok, munkamenetek,
+   mentés, takarítás, naplók, folyamatok, tunnel, kapcsolók).
+8. **Statisztika, moderáció** *(kész)* (bejelentések, tiltott szavak, chat napló, nevek), napi feladvány.
 
 Minden lépés után: teljes tesztsor zöld, a CLAUDE.md frissítve (fájlstruktúra, végpontok, rate
 limitek, tesztszám), és a panel telefonon is használható.
@@ -638,3 +646,5 @@ limitek, tesztszám), és a panel telefonon is használható.
 - Minden módosítás nyoma ott van az admin naplóban, indoklással.
 - A futó játékokban egyetlen admin beavatkozás sem okoz elakadást vagy zsetonvesztést.
 - A teljes tesztsor (a régi 1458 + az újak) zöld.
+
+**Állapot: mind a nyolc lépés kész.** A megvalósítás részletei és az eltérések a CLAUDE.md „Admin panel” szakaszában vannak.
