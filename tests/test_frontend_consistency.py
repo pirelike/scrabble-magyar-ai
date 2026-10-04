@@ -183,3 +183,53 @@ class TestInviteLinkOrdering:
         assert 'const identityReady = this.sendIdentity();' in app_js
         assert 'identityReady.then(() => this.handleUrlActions());' in app_js
         assert app_js.count('this.handleUrlActions()') == 1
+
+
+class TestProfileNavigation:
+    """A profil képernyő felső sora a lobby navigációjának másolata."""
+
+    @staticmethod
+    def _tabs(html, nav_id):
+        nav = re.search(rf'<nav[^>]*id="{nav_id}".*?</nav>', html, re.S).group(0)
+        return re.findall(r'data-lobby-tab="(\w+)"', nav)
+
+    def test_profile_has_the_same_tabs_in_the_same_order(self, index_html):
+        assert self._tabs(index_html, 'profile-nav') == self._tabs(index_html, 'lobby-nav')
+
+    def test_profile_topbar_uses_the_lobby_layout(self, index_html):
+        header = re.search(r'<div id="profile-screen".*?</header>', index_html, re.S).group(0)
+        assert 'app-topbar app-topbar-lobby' in header and 'id="profile-nav"' in header
+
+    def test_lobby_tab_handlers_are_scoped_to_the_lobby_row(self, app_js):
+        # különben a profil fülei is a lobby paneljét váltanák, képernyőváltás nélkül
+        assert "document.querySelectorAll('.lobby-nav-tab')" not in app_js
+        assert "'#lobby-nav .lobby-nav-tab'" in app_js and "'#profile-nav .lobby-nav-tab'" in app_js
+
+
+class TestHandLayoutCss:
+    @staticmethod
+    def _rule(css, selector):
+        match = re.search(re.escape(selector) + r'\s*\{(.*?)\n    \}', css, re.S)
+        assert match, selector
+        return match.group(1)
+
+    def test_tile_size_does_not_depend_on_the_board_size(self):
+        """A zseton mérete a betűtartó szélességét adja, az pedig a tábla méretét: ha a zseton a tábla méretéből
+        számolódna, a CSS változók körkörösen függnének egymástól (érvénytelen érték)."""
+        css = _read('static', 'style.css')
+        rule = self._rule(css, ':root[data-hand="right"] .game-layout')
+        tile = re.search(r'--tile:(.*?);\s*--hand-w', rule, re.S).group(1)
+        assert '--board-size' not in tile and '--hand-w' not in tile
+        board = re.search(r'--board-size:(.*?);\s*$', rule.strip(), re.S).group(1)
+        assert '--hand-w' in board
+
+    def test_right_layout_is_limited_to_wide_landscape_windows(self):
+        css = _read('static', 'style.css')
+        marker = ':root[data-hand="right"] .game-layout'
+        start = css.rindex('@media', 0, css.index(marker))
+        assert css[start:css.index('{', start)].strip() == \
+            '@media (orientation: landscape) and (min-height: 541px) and (min-width: 820px)'
+
+    def test_selector_and_toolbar_button_exist(self, index_html):
+        assert 'id="hand-position"' in index_html and 'data-position="right"' in index_html
+        assert 'data-position="bottom"' in index_html and 'id="btn-hand-position"' in index_html

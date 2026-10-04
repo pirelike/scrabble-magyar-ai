@@ -11,7 +11,8 @@ from itertools import product
 
 import ai_player
 import dictionary
-from tiles import LETTERS, TILE_COUNTS, TILE_DISTRIBUTION, TILE_VALUES, VOWELS, tokenize_word, word_base_score
+from tiles import (LETTERS, TILE_COUNTS, TILE_DISTRIBUTION, TILE_VALUES, VOWELS, forms_digraph, tokenize_word,
+                   word_base_score)
 
 QUESTION_COUNT = 10
 MAX_QUESTIONS = 30
@@ -220,12 +221,13 @@ def rack_words(rack):
     """Az összes szó, amely a kéz zsetonjaiból kirakható (legalább 2 zseton).
 
     Visszatér: [{'word', 'score', 'tiles'}] pontszám (majd ábécé) szerint; a pont a zsetonértékek összege
-    (+50, ha mind a hét zseton fogy). Egy szó legjobb kirakását számoljuk (S+Z helyett SZ is lehet)."""
+    (+50, ha mind a hét zseton fogy). Egy szó legjobb kirakását számoljuk. A kétjegyű betű csak a saját
+    zsetonjával rakható ki: külön S és Z zsetonból nem lesz SZ."""
     vocab = ai_player.get_vocabulary()
     counts = Counter(rack)
     best = {}
 
-    def walk(prefix, used, score):
+    def walk(prefix, used, score, last):
         if used >= 2 and prefix in vocab:
             total = score + (BINGO_BONUS if used == RACK_SIZE else 0)
             if prefix not in best or total > best[prefix][0]:
@@ -233,16 +235,16 @@ def rack_words(rack):
         if used >= len(rack):
             return
         for tile in list(counts):
-            if counts[tile] <= 0:
+            if counts[tile] <= 0 or forms_digraph(last, tile):
                 continue
             nxt = prefix + tile
             if not vocab.has_prefix(nxt):
                 continue
             counts[tile] -= 1
-            walk(nxt, used + 1, score + TILE_VALUES[tile])
+            walk(nxt, used + 1, score + TILE_VALUES[tile], tile)
             counts[tile] += 1
 
-    walk('', 0, 0)
+    walk('', 0, 0, '')
     valid = dictionary.filter_valid(set(best)) if best else set()
     words = [{'word': w, 'score': best[w][0], 'tiles': best[w][1]} for w in valid]
     words.sort(key=lambda e: (-e['score'], e['word']))
@@ -307,18 +309,19 @@ def make_rack(kind='hunt', rng=None):
     return {'kind': kind, 'rack': rack, 'words': words, 'total_score': sum(w['score'] for w in words)}
 
 
-def _assign(word, counts, score=0):
-    """A szó kirakása a kéz zsetonjaiból (a kétjegyű betű egy vagy két zseton is lehet):
-    (legjobb pontszám, felhasznált zsetonok) vagy None."""
+def _assign(word, counts, score=0, last='', split_ok=False):
+    """A szó kirakása a kéz zsetonjaiból: (legjobb pontszám, felhasznált zsetonok) vagy None.
+    A kétjegyű betű (SZ, CS...) csak a saját zsetonjával rakható ki, külön S + Z zsetonból nem
+    (`split_ok`: csak annak eldöntésére, hogy ez volt-e az akadály)."""
     if not word:
         return score, []
     best = None
     for size in (1, 2):
         piece = word[:size]
-        if len(piece) != size or counts.get(piece, 0) <= 0:
+        if len(piece) != size or counts.get(piece, 0) <= 0 or (not split_ok and forms_digraph(last, piece)):
             continue
         counts[piece] -= 1
-        rest = _assign(word[size:], counts, score + TILE_VALUES[piece])
+        rest = _assign(word[size:], counts, score + TILE_VALUES[piece], piece, split_ok)
         counts[piece] += 1
         if rest is not None and (best is None or rest[0] > best[0]):
             best = (rest[0], [piece] + rest[1])
@@ -329,7 +332,8 @@ def check_rack_word(rack, word):
     """Egy beírt szó bírálata a kézhez.
 
     Visszatér: {'ok', 'reason', 'word', 'tiles', 'score', 'bingo'}; a `reason`: `too_short`,
-    `invalid_chars`, `not_in_rack`, `not_a_word` (ok=False esetén)."""
+    `invalid_chars`, `not_in_rack`, `split_digraph` (a kétjegyű betű külön zsetonokból állna), `not_a_word`
+    (ok=False esetén)."""
     word = (word or '').strip().upper()
     result = {'ok': False, 'reason': None, 'word': word, 'tiles': [], 'score': 0, 'bingo': False}
     if len(word) < 2:
@@ -340,7 +344,8 @@ def check_rack_word(rack, word):
         return result
     assigned = _assign(word, dict(Counter(rack)))
     if assigned is None:
-        result['reason'] = 'not_in_rack'
+        split = _assign(word, dict(Counter(rack)), split_ok=True)
+        result['reason'] = 'split_digraph' if split is not None else 'not_in_rack'
         return result
     if not _is_valid(word):
         result['reason'] = 'not_a_word'

@@ -27,7 +27,7 @@ Böngészőben: http://localhost:5000
 - `practice.py` — Gyakorló módok motorja: szókvíz (`make_quiz`, módok: vegyes / 2 / 3 zsetonos / hosszú–rövid csapdák), betűvadász és bingó-edző (`make_rack`, `rack_words`, `check_rack_word`), a rövid (2–3 zsetonos) szavak listája; állapotmentes
 - `word_review.py` — Szótár-építő: véletlen szavak átnézésre (`next_words`, `sample_words`), szavazat és visszavonás (`record_vote`, `undo_vote`), a szavazatokból kizárt szavak betöltése (`refresh`), összesítő (`stats`); lásd „Szótár-építő”
 - `push_service.py` — Web Push: VAPID kulcsok, feliratkozások, „Te jössz!” üzenet (opcionális `pywebpush`)
-- `tiles.py` — Magyar betűkészlet (100 zseton), TileBag osztály, `tokenize_word` (szó → zsetonok)
+- `tiles.py` — Magyar betűkészlet (100 zseton), TileBag osztály, `tokenize_word` (szó → zsetonok), `forms_digraph` (két külön zseton kétjegyű betűt adna-e: S+Z, C+S, Z+S… — nem megengedett; lásd „Kétjegyű betűk”)
 - `challenge.py` — Challenge (megtámadás) logika, szavazási állapotgép, vote resolution
 - `room.py` — Room osztály (szoba állapot, owner, beállítások, chat, timer invalidálás, megfigyelők, robotlépés-azonosító)
 - `state.py` — ServerState singleton (szobák, játékosok, tokenek, reconnect tracking, megfigyelők, élő játékok)
@@ -48,7 +48,7 @@ Böngészőben: http://localhost:5000
 - `tools/bot_arena.py` — Robot-aréna: a fokozatok erejének mérése bot–bot játékokkal (`ladder`, `match`, `adapt`; kalibrációhoz, nem része a szervernek)
 - `tools/build_attested.py` — a `dict/hu_attested.txt` előállítása egy szógyakorisági listából (elírás- és névszűrővel; nem része a szervernek)
 - `tools/word_review.py` — a szótár-építő tömeges párja: `sample` (véletlen szavak átnézésre, pl. AI-nak), `apply` (az elutasított szavak felvétele a `dict/hu_rejected.txt`-be), `stats` (nem része a szervernek)
-- `tests/` — Tesztek (pytest, 1408 teszt)
+- `tests/` — Tesztek (pytest, 1458 teszt)
 - `requirements.txt` — Python függőségek (flask, flask-socketio, gevent, gevent-websocket, opcionálisan pywebpush)
 - `.venv/` — Virtual environment
 
@@ -71,7 +71,7 @@ Böngészőben: http://localhost:5000
 - Online multiplayer: lobby, szobák, Cloudflare tunnel automatikus publikus URL
 - **Nyilvános és privát szobák**: privát szoba csak 6-jegyű kóddal csatlakozható, nyilvános szobák a lobbyban listázva
 - Felhasználói fiók rendszer: regisztráció (email verifikáció), bejelentkezés, vendég mód
-- Teljes magyar betűkészlet (SZ, CS, GY, LY, NY, ZS, TY többkarakteres betűk)
+- Teljes magyar betűkészlet (SZ, CS, GY, LY, NY, ZS, TY többkarakteres betűk); a kétjegyű betű **csak a saját zsetonjával** rakható ki (külön S + Z nem; lásd „Kétjegyű betűk”)
 - Standard Scrabble pontozás: DL, TL, DW, TW premium mezők
 - 50 pont bónusz mind a 7 zseton kirakásakor
 - Drag & drop és kattintásos betű elhelyezés
@@ -90,7 +90,7 @@ Böngészőben: http://localhost:5000
 - **Játék mentés / visszatöltés**: manuális mentés (owner-only) a kilépés menüből, lobby-first restore flow
 - **Visszajátszás**: befejezett játékok lépésről lépésre visszanézhetők (board snapshot-okkal)
 - **Kilépés menü**: owner: mentés+kilépés / kilépés mentés nélkül / mégsem; nem-owner: kilépés / mégsem
-- **Profil oldal**: statisztikák (játszott, győzelem, nyerési arány, átl. pontszám, értékszám) + kitüntetések + játékelőzmények (értékszám-változással)
+- **Profil oldal**: statisztikák (játszott, győzelem, nyerési arány, átl. pontszám, értékszám) + kitüntetések + beállítások (betűtartó helye, értesítés) + játékelőzmények (értékszám-változással); a felső sávban a lobby navigációs sora is látszik (egy kattintással bármelyik lobby-fülre)
 
 ## Biztonság
 - `SECRET_KEY`: környezeti változóból (`SECRET_KEY`) vagy futásidőben generált véletlenszerű kulcs
@@ -229,7 +229,7 @@ Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztésh
 | `tests/test_public_api.py` | 52 | Ranglista (DB + route, robotos játékok kizárása), szótár API, PWA végpontok |
 | `tests/test_tiles_dictionary.py` | 30 | `tokenize_word`, `filter_valid`, `suggest_words` |
 | `tests/test_i18n.py` | 27 | Fordítások teljessége, szerverüzenet-lefedettség (AST), HTML lefedettség, a fordító futtatása node-ban |
-| `tests/test_frontend_consistency.py` | 23 | Kliens ↔ szerver: konstansok (TILE_VALUES, premium mezők), elem-azonosítók, robot-fokozat választó, Socket.IO események, API útvonalak, JS szintaxis |
+| `tests/test_frontend_consistency.py` | 29 | Kliens ↔ szerver: konstansok (TILE_VALUES, premium mezők), elem-azonosítók, robot-fokozat választó, Socket.IO események, API útvonalak, JS szintaxis, a profil navigációs sora, a betűtartó CSS-változói (nincs körkörös függés) |
 
 | `tests/test_adaptive_bot.py` | 40 | „Igazodik hozzám”: `parse_difficulty`, fokozat az átlagból, keverés, `Game.recent_stats`/`bot_level`, mentés, szerver |
 | `tests/test_achievements.py` | 27 | Kitüntetések: kiértékelés, összesítők, tárolás, profil, szerver |
@@ -237,13 +237,15 @@ Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztésh
 | `tests/test_replay_share.py` | 11 | Megosztási token, nyilvános replay, jogosultság, rate limit |
 | `tests/test_analysis.py` | 25 | Kezek rögzítése, lépéselemzés, gyorsítótár, háttérszámítás, API |
 | `tests/test_daily.py` | 50 | Napi feladvány: előállítás (determinizmus), játék, ranglista, socket, HTTP |
-| `tests/test_practice.py` | 47 | Szókvíz (csapda mód), rövid szavak, válasz-ellenőrzés, betűvadász / bingó (kéz, szólista, szó-bírálat), API |
+| `tests/test_practice.py` | 50 | Szókvíz (csapda mód), rövid szavak, válasz-ellenőrzés, betűvadász / bingó (kéz, szólista, szó-bírálat), API |
+| `tests/test_digraph_tiles.py` | 30 | Kétjegyű betűk: `forms_digraph`, tábla (új / régi zseton, keresztszó, joker, régi állások), `Game` (lerakás, előnézet, megtámadásos mód), robot, socket |
+| `tests/test_client_logic.py` | 11 | A kliens állapotkezelése node-ban: a félkész lerakás törlése kilépéskor / új játéknál, a kétjegyű betű szabálya a szerverrel egyezik, billentyűzetes gépelés, `HandLayout` (alapérték, mentés, tároló nélkül) |
 | `tests/test_practice_client.py` | 15 | A kliens gyakorló logikája node-ban: zsetonokra bontás a szerverrel egyezik, magyar ábécé-rendezés, napi sorozat, „Hibáim” pakli, tároló |
 | `tests/test_push.py` | 44 | VAPID, feliratkozások, küldés (mockolva), API, „Te jössz!” kiváltása |
 | `tests/test_async_games.py` | 56 | Levelezős játék: játéklogika (határidő, lejárat, feladás), szerver, mentés / visszaállítás, lista, útvonalak |
 | `tests/test_word_review.py` | 48 | Szótár-építő: elutasított szavak a szótárban (lista + szavazatok), szavazás / küszöb / visszavonás, mintavétel, API (belépés, ellenőrzés, rate limit), `tools/word_review.py`, a mellékelt lista épsége |
 
-**Összesen: 1408 teszt**
+**Összesen: 1458 teszt**
 
 Fixture: `tests/conftest.py` — temp_db (auto-applied, ideiglenes SQLite DB minden teszthez)
 Segédek: `tests/helpers.py` — `registered_set_name_payload()` (érvényes socket-tokennel), `verify_email()`
@@ -417,7 +419,7 @@ Minden képernyőn (az auth kivételével) ugyanaz a **sticky felső sáv** (`.a
 ### Játék képernyő elrendezés
 Három elrendezés, CSS media query-kkel (`static/style.css` 11–13. szakasz):
 
-- **Alap (fekvő, asztali gép, fekvő tablet)** — két oszlop: bal oldali `side-panel` (300px, sticky, saját görgetéssel) + tábla és betűtartó. A tábla mérete (`--board-size`) a képernyő magasságából is számolódik, így tábla + betűtartó görgetés nélkül elfér.
+- **Alap (fekvő, asztali gép, fekvő tablet)** — két oszlop: bal oldali `side-panel` (300px, sticky, saját görgetéssel) + tábla és betűtartó. A tábla mérete (`--board-size`) a képernyő magasságából is számolódik, így tábla + betűtartó görgetés nélkül elfér. **A betűtartó helye beállítható** (`HandLayout`, `localStorage('scrabble-hand-position')`, a `<html data-hand="right|bottom">` attribútumon át): alapértelmezés `right` — a betűtartó függőlegesen a tábla jobb oldalán áll (CSS 11b. szakasz; 820px-nél szélesebb, legalább 541px magas fekvő ablakban; a `--tile` itt csak a magasságtól függ, különben körkörös lenne a függés a tábla méretével), `bottom` — a tábla alatt (az alap elrendezés). Választható a profil beállításai között és a játék eszközsorának „Elrendezés” gombjával (ez csak ott látszik, ahol a beállítás hat). Álló nézetben és 820px-nél keskenyebb ablakban a betűtartó mindig alul van, kompakt fekvő telefonon mindig oldalt.
 - **Álló (`orientation: portrait`: telefon, tablet álló)** — fent a tábla és a betűtartó, alul **fix, görgethető panel** (`.side-panel`, lekerekített felső sarkokkal): pontszámok → infó → időzítő → lépés-gombok (**egyetlen sorban**) → menüsor (szobanév + gombok) → chat. Aktív szavazásnál a challenge szekció a panel tetejére kerül (`order: -1`), és új szavazásnál a panel a tetejére görget. **A panel soha nem takarhatja el a táblát vagy a zsetonokat:** előbb a tábla mérete (`--board-size`) számolódik a szélességből és abból, hogy a betűtartóval együtt elférjen a minimális panel (`--panel-min`) fölött; a panel magassága (`--panel-h`) a maradék hely (max. 480px), és a tartalom alatt pontosan ennyi hely van fenntartva. Az oldal így nem is görgethető. A betűtartó mérete (`--tile`) csak a szélességtől függ (nincs körkörös függés).
 - **Fekvő telefon (`orientation: landscape` és `max-height: 540px`)** — kompakt két oszlop, a betűtartó függőlegesen a tábla mellett; érintőképernyős telefonon a menüsor az oldalpanel tetején van (felső sáv nélkül, így nagyobb a tábla).
 - **Chat telefonon**: a chat a panel alján van; ha a chat ablak nem látszik (`Chat._isVisible()`), a másik játékos üzenete értesítésként (toast) is megjelenik.
@@ -553,6 +555,7 @@ A tábla cellái `container-type: inline-size` + `cqw` egységekkel méreteződn
 - Aktív játéknál a kilépés csak `disconnected` állapotba teszi a játékost, nem távolítja el végleg
 
 ### Profil oldal
+- A felső sorban a lobby navigációja (`#profile-nav`, a lobbyé másolata): fülre kattintva `Profile.openLobbyTab` a lobbyba lép és az adott fület nyitja (`Lobby.switchTab`); a jelvények és a „nyitott szoba” fül a lobby állapotát tükrözik (`Profile.syncNav`). A lobby saját fülkezelője csak a `#lobby-nav` gombjaira van kötve, a görgetés-elhalványítás (`LobbyNav`) mindkét sorra működik.
 - `GET /api/auth/profile` — statisztikák + utolsó 20 befejezett játék
 - `GET /api/game/<id>/moves` — lépések listája replay-hez
 - Visszajátszás: lépésenkénti navigáció board snapshot-okkal
@@ -614,6 +617,14 @@ A tábla cellái `container-type: inline-size` + `cqw` egységekkel méreteződn
 - `daily.generate_puzzle(dátum)`: a dátumból indított determinisztikus bot–bot játék néhány lépés után, a soron lévő robot keze a feladvány; a legjobb lépés a robot motorjával (`MIN_BEST_SCORE`…`MAX_BEST_SCORE`). Az első kérésnél (vagy indításkor) készül, a `daily_puzzles` táblában rögzül. A dátum magyar idő szerint értendő.
 - `Game.puzzle`: egyjátékos játék, egyetlen lerakás után vége (nincs passz, csere, végső elszámolás); sosem mentődik az előzményekbe. Szoba: privát, `room.is_puzzle`. Vendég is játszhat, de csak regisztrált kerül a ranglistára (`daily_scores`: legjobb pont → kevesebb próbálkozás → korábbi idő). A megoldás megnézése (`reveal_daily`) lezárja a ranglistás részvételt; ha valaki a legjobbnál többet ér el, az lesz az új legjobb. `daily_best` kitüntetés.
 - `GET /api/daily`: a saját eredmény, top 10, tegnapi megoldás; a feladvány legjobb pontszáma csak a már próbálkozóknak látszik.
+
+## Kétjegyű betűk
+
+A kétjegyű betű (SZ, CS, GY, LY, NY, TY, ZS) egy zseton: **külön zsetonokból nem rakható ki** (pl. S + Z egymás mellett nem ad SZ-t). A szerver a magyar Scrabble szabálya szerint kezeli; a tábla és a gyakorló módok is ezt követik.
+- `tiles.forms_digraph(első, második)`: két szomszédos, egybetűs zseton kétjegyű betűt adna-e. Csak a SZ, CS, ZS pár fordulhat elő valóban (önálló Y zseton nincs, a GY / LY / NY / TY második betűje nem külön zseton), de a szabály általános.
+- `Board._find_split_digraph` (a `_validate_words` hívja a szótár-ellenőrzés **előtt**, `skip_dictionary` esetén — megtámadásos módban, robotnál — is): minden képzett szóban (fő- és keresztszó) megnézi a szomszédos zsetonpárokat. **Csak az újonnan lerakott zsetont érintő párokat** nézi, így a régi, megengedőbb szabállyal indult állások folytathatók. A Z + SZ (vízszint) és S + SZ (asszony) rendben van, mert a második zseton kétjegyű. A joker a választott betűjével számít. A hibaüzenet (`Kétjegyű betű (SZ) csak a saját zsetonjával rakható ki, S + Z külön zsetonnal nem.`) a lerakásnál és az élő előnézetben is megjelenik; az angol fordítás a `server.patterns` között van.
+- A robot a `validate_placement`-en át szűr (a generátor eldobja az ilyen lépéseket), így a napi feladvány, a tipp és az elemzés is követi; a szabály bevezetésekor az `analysis.ANALYSIS_VERSION` nőtt (6).
+- Gyakorló módok: `practice.rack_words` és `practice.check_rack_word` (`_assign`) sem használja külön zsetonokból a kétjegyű betűt; a `check_rack_word` külön `split_digraph` okot ad, ha csak ez volt az akadály (a kliens `hunt.reason_split_digraph`). A kliensben a `huntSubmit` is elutasítja, a `huntType` (billentyűzet) pedig az S után gépelt Z-t a szabad SZ zsetonnal váltja fel (`formsDigraph` a szerver mása; a `tests/test_client_logic.py` összeveti).
 
 ## Furcsa szavak szűrése
 

@@ -217,6 +217,7 @@ window.I18N_DATA = {
   "hunt.reason_too_short": "Legalább két zseton kell.",
   "hunt.reason_invalid_chars": "Ez nem rakható ki zsetonokkal.",
   "hunt.reason_not_in_rack": "Ehhez nincs elég zsetonod.",
+  "hunt.reason_split_digraph": "A kétjegyű betűhöz (SZ, CS, GY…) a saját zsetonja kell, külön betűkből nem rakható ki.",
   "hunt.reason_not_a_word": "Nincs ilyen szó a szótárban.",
   "hunt.progress_chip": "{len} zseton: {got}/{total}",
   "hunt.rank_master": "Szómester",
@@ -416,6 +417,12 @@ window.I18N_DATA = {
   "game.tracker_title": "Mi van még a zsákban?",
   "game.hint": "Tipp",
   "game.hint_title": "Tipp kérése (csak egyedül, robotok ellen)",
+  "game.layout": "Elrendezés",
+  "game.layout_title": "Betűtartó áthelyezése (a tábla mellé / alá)",
+  "layout.hand_name": "Betűtartó helye",
+  "layout.hand_desc": "Asztali gépen és fekvő tableten a tábla mellett vagy alatt áll. Telefonon álló nézetben mindig alul, fekvő nézetben mindig oldalt van.",
+  "layout.hand_right": "Jobb oldalt",
+  "layout.hand_bottom": "Alul",
   "game.hint_n": "Tipp ({n})",
   "game.hint_none_left": "Elfogytak a tippjeid",
   "game.history": "Lépések",
@@ -813,6 +820,7 @@ window.I18N_DATA = {
   "hunt.reason_too_short": "You need at least two tiles.",
   "hunt.reason_invalid_chars": "That can't be built from tiles.",
   "hunt.reason_not_in_rack": "You don't have the tiles for that.",
+  "hunt.reason_split_digraph": "A two-letter tile (SZ, CS, GY…) must be played as its own tile, not as separate letters.",
   "hunt.reason_not_a_word": "That word isn't in the dictionary.",
   "hunt.progress_chip": "{len} tiles: {got}/{total}",
   "hunt.rank_master": "Word master",
@@ -1012,6 +1020,12 @@ window.I18N_DATA = {
   "game.tracker_title": "What's left in the bag?",
   "game.hint": "Hint",
   "game.hint_title": "Get a hint (solo games against robots only)",
+  "game.layout": "Layout",
+  "game.layout_title": "Move the tile rack (beside / below the board)",
+  "layout.hand_name": "Tile rack position",
+  "layout.hand_desc": "On desktop and landscape tablets the rack sits beside or below the board. On phones it is always below the board in portrait and beside it in landscape.",
+  "layout.hand_right": "On the right",
+  "layout.hand_bottom": "Below",
   "game.hint_n": "Hint ({n})",
   "game.hint_none_left": "No hints left",
   "game.history": "Moves",
@@ -1381,6 +1395,10 @@ window.I18N_DATA = {
     [
      "^Érvénytelen betű: (.+)$",
      "Invalid letter: $1"
+    ],
+    [
+     "^Kétjegyű betű \\((\\w+)\\) csak a saját zsetonjával rakható ki, (\\w) \\+ (\\w) külön zsetonnal nem\\.$",
+     "The two-letter tile ($1) must be played as its own tile, not as separate $2 + $3 tiles."
     ],
     [
      "^A \\((-?\\d+),(-?\\d+)\\) mező már foglalt\\.$",

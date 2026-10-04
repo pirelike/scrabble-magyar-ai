@@ -1,6 +1,6 @@
 from contextlib import contextmanager
 
-from tiles import TILE_VALUES
+from tiles import TILE_VALUES, forms_digraph
 from dictionary import check_words
 
 BOARD_SIZE = 15
@@ -234,6 +234,21 @@ class Board:
 
         return formed_words
 
+    def _find_split_digraph(self, formed_words, new_positions):
+        """Kétjegyű betű két külön zsetonból (pl. S + Z a SZ helyett): az első ilyen betű (SZ, CS...), vagy None.
+
+        A kétjegyű betűt (SZ, CS, GY, LY, NY, TY, ZS) csak a saját zsetonjával lehet kirakni. Csak az újonnan
+        lerakott zsetont érintő párokat nézi, így a régi, még megengedőbb szabállyal indult állások
+        folytathatók maradnak."""
+        for _word, positions, _score in formed_words:
+            for (r1, c1), (r2, c2) in zip(positions, positions[1:]):
+                if (r1, c1) not in new_positions and (r2, c2) not in new_positions:
+                    continue
+                first, second = self.cells[r1][c1][0], self.cells[r2][c2][0]
+                if forms_digraph(first, second):
+                    return first + second
+        return None
+
     @contextmanager
     def _temporary_placement(self, tiles_placed):
         """Ideiglenes betű elhelyezés validáláshoz. Finally-ben visszaállít."""
@@ -275,6 +290,11 @@ class Board:
 
         if not formed_words:
             return False, [], "Legalább egy szót kell alkotni."
+
+        digraph = self._find_split_digraph(formed_words, new_positions)
+        if digraph:
+            return False, [], (f"Kétjegyű betű ({digraph}) csak a saját zsetonjával rakható ki, "
+                               f"{digraph[0]} + {digraph[1]} külön zsetonnal nem.")
 
         if not skip_dictionary:
             word_strings = [w for w, _, _ in formed_words]

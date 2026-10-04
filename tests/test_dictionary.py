@@ -248,9 +248,9 @@ class TestBoardUsesTheRealDictionary:
 
     def test_nonsense_word_is_rejected(self, real_dictionary):
         from board import Board
-        valid, _words, error = Board().validate_placement(self._row('SALYT'))
+        valid, _words, error = Board().validate_placement(self._row('SALKT'))
         assert valid is False
-        assert 'SALYT' in error
+        assert 'SALKT' in error
 
     def test_real_word_is_accepted(self, real_dictionary):
         from board import Board
