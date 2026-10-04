@@ -134,7 +134,7 @@ const OverviewView = {
                     ? h('span', null, UI.badge(t('admin.on'), 'ok'), ' ', services.tunnel.url)
                     : UI.badge((services.tunnel && services.tunnel.state) || '–', 'muted')]);
         }
-        if (versions) rows.push([t('admin.srv_assets'), String(versions.asset_version)], [t('admin.srv_git'), versions.git]);
+        if (versions) rows.push([t('admin.srv_assets'), String(versions.asset_version)], [t('admin.srv_git'), versions.git, { wide: true }]);
         box.replaceChildren(UI.subtitle(t('admin.server_title')), UI.card(null, UI.kv(rows)));
     },
 
@@ -249,31 +249,32 @@ const UserDetailView = {
     overview(box, data) {
         const user = data.user;
         const ban = user.ban;
-        box.appendChild(UI.card(t('admin.card_account'), UI.kv([
+        const accountCard = UI.card(t('admin.card_account'), UI.kv([
             [t('admin.col_id'), '#' + user.id], [t('admin.col_email'), user.email], [t('admin.col_name'), user.display_name],
             [t('admin.col_registered'), formatStamp(user.created_at)],
             [t('admin.col_last_login'), formatStamp(user.last_login_at)],
             [t('admin.d_last_ip'), user.last_login_ip],
             [t('admin.col_status'), h('span', null, userStatusBadges(user))],
-            [t('admin.d_ban_reason'), ban ? ban.reason : null],
+            [t('admin.d_ban_reason'), ban ? ban.reason : null, { wide: true }],
             [t('admin.d_ban_until'), ban ? (ban.permanent ? t('admin.dur_opt_permanent') : formatStamp(ban.until)) : null],
             [t('admin.d_muted_until'), user.muted ? formatStamp(user.muted_until) : null],
             [t('admin.d_deleted_at'), user.deleted ? formatStamp(user.deleted_at) : null],
             [t('admin.d_connections'), data.live.online ? t('admin.d_connections_n', { n: data.live.connections }) : null],
-        ])));
-        box.appendChild(UI.card(t('admin.card_stats'), UI.kv([
+        ]));
+        const statsCard = UI.card(t('admin.card_stats'), UI.kv([
             [t('admin.col_games'), `${user.games_played} / ${user.games_won}`],
             [t('admin.d_win_rate'), fmtPercent(user.win_rate)],
             [t('admin.d_avg_score'), fmtNum(user.avg_score, 1)],
             [t('admin.col_rating'), `${user.rating} (${t('admin.d_rated_games', { n: user.rated_games })})`],
-        ])));
-        box.appendChild(UI.card(t('admin.card_friends'),
+        ]));
+        const friendsCard = UI.card(t('admin.card_friends'),
             data.friends.length ? h('div', { class: 'admin-chip-row' }, data.friends.map((f) => UI.userLink(f.id, f.display_name)))
                 : h('p', { class: 'text-muted' }, t('admin.none')),
             data.pending_in.length || data.pending_out.length ? UI.kv([
                 [t('admin.d_pending_in'), data.pending_in.map((f) => f.display_name).join(', ')],
                 [t('admin.d_pending_out'), data.pending_out.map((f) => f.display_name).join(', ')],
-            ]) : null));
+            ]) : null);
+        box.appendChild(UI.cardGrid(accountCard, h('div', { class: 'admin-card-stack' }, statsCard, friendsCard)));
         box.appendChild(UI.card(t('admin.card_history'), data.admin_history.length
             ? UI.table({ compact: true, items: data.admin_history, columns: [
                 { label: t('admin.col_time'), cell: (e) => formatStamp(e.created_at) },
@@ -391,32 +392,35 @@ const UserDetailView = {
         };
 
         if (self) box.appendChild(h('p', { class: 'form-hint' }, t('admin.self_note')));
-        box.appendChild(group(t('admin.grp_account'), [
-            UI.btn(t('admin.act_rename'), rename, { kind: 'secondary', disabled: protectedAccount }),
-            UI.btn(sudoTag(t('admin.act_email')), changeEmail, { kind: 'secondary', disabled: protectedAccount || isAdmin }),
-            UI.btn(sudoTag(t('admin.act_reset_password')), resetPassword, { kind: 'secondary', disabled: protectedAccount || isAdmin }),
-            UI.btn(t('admin.act_logout_all'), logoutAll, { kind: 'secondary', disabled: protectedAccount }),
-            UI.btn(t('admin.act_profile_short'), profile, { kind: 'secondary' }),
-            UI.btn(t('admin.act_export'), () => { location.href = `/api/admin/users/${u.id}/export`; }, { kind: 'secondary' }),
-        ]));
-        box.appendChild(group(t('admin.grp_moderation'), [
-            u.banned ? UI.btn(t('admin.act_unban'), unban, { kind: 'tinted' })
-                : UI.btn(sudoTag(t('admin.act_ban')), ban, { kind: 'danger', disabled: protectedAccount || self || isAdmin }),
-            u.muted ? UI.btn(t('admin.act_unmute'), unmute, { kind: 'tinted' })
-                : UI.btn(t('admin.act_mute'), mute, { kind: 'secondary', disabled: protectedAccount || isAdmin }),
-            u.review_blocked ? UI.btn(t('admin.act_review_unblock'), blockReview(false), { kind: 'tinted' })
-                : UI.btn(t('admin.act_review_block'), blockReview(true), { kind: 'secondary', disabled: protectedAccount }),
-            UI.btn(sudoTag(t('admin.act_review_revert')), revertReviews, { kind: 'secondary', disabled: protectedAccount }),
-        ]));
-        box.appendChild(group(t('admin.grp_game_data'), [
-            UI.btn(sudoTag(t('admin.act_rating')), setRating, { kind: 'secondary', disabled: protectedAccount }),
-            UI.btn(t('admin.act_recompute'), recompute, { kind: 'secondary', disabled: protectedAccount }),
-            UI.btn(t('admin.act_badge'), badge, { kind: 'secondary', disabled: protectedAccount }),
-            UI.btn(t('admin.act_push_test'), pushTest, { kind: 'secondary', disabled: protectedAccount || !data.push.length }),
-        ]));
-        box.appendChild(group(t('admin.grp_danger'), [
-            UI.btn(sudoTag(t('admin.act_delete')), del, { kind: 'danger', disabled: protectedAccount || self || isAdmin }),
-        ]));
+        const groups = [
+            group(t('admin.grp_account'), [
+                UI.btn(t('admin.act_rename'), rename, { kind: 'secondary', disabled: protectedAccount }),
+                UI.btn(sudoTag(t('admin.act_email')), changeEmail, { kind: 'secondary', disabled: protectedAccount || isAdmin }),
+                UI.btn(sudoTag(t('admin.act_reset_password')), resetPassword, { kind: 'secondary', disabled: protectedAccount || isAdmin }),
+                UI.btn(t('admin.act_logout_all'), logoutAll, { kind: 'secondary', disabled: protectedAccount }),
+                UI.btn(t('admin.act_profile_short'), profile, { kind: 'secondary' }),
+                UI.btn(t('admin.act_export'), () => { location.href = `/api/admin/users/${u.id}/export`; }, { kind: 'secondary' }),
+            ]),
+            group(t('admin.grp_moderation'), [
+                u.banned ? UI.btn(t('admin.act_unban'), unban, { kind: 'tinted' })
+                    : UI.btn(sudoTag(t('admin.act_ban')), ban, { kind: 'danger', disabled: protectedAccount || self || isAdmin }),
+                u.muted ? UI.btn(t('admin.act_unmute'), unmute, { kind: 'tinted' })
+                    : UI.btn(t('admin.act_mute'), mute, { kind: 'secondary', disabled: protectedAccount || isAdmin }),
+                u.review_blocked ? UI.btn(t('admin.act_review_unblock'), blockReview(false), { kind: 'tinted' })
+                    : UI.btn(t('admin.act_review_block'), blockReview(true), { kind: 'secondary', disabled: protectedAccount }),
+                UI.btn(sudoTag(t('admin.act_review_revert')), revertReviews, { kind: 'secondary', disabled: protectedAccount }),
+            ]),
+            group(t('admin.grp_game_data'), [
+                UI.btn(sudoTag(t('admin.act_rating')), setRating, { kind: 'secondary', disabled: protectedAccount }),
+                UI.btn(t('admin.act_recompute'), recompute, { kind: 'secondary', disabled: protectedAccount }),
+                UI.btn(t('admin.act_badge'), badge, { kind: 'secondary', disabled: protectedAccount }),
+                UI.btn(t('admin.act_push_test'), pushTest, { kind: 'secondary', disabled: protectedAccount || !data.push.length }),
+            ]),
+            group(t('admin.grp_danger'), [
+                UI.btn(sudoTag(t('admin.act_delete')), del, { kind: 'danger', disabled: protectedAccount || self || isAdmin }),
+            ]),
+        ];
+        box.appendChild(UI.cardGrid(...groups));
     },
 
     games(box, data) {

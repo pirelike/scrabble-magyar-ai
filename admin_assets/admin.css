@@ -74,18 +74,21 @@
     min-width: 0;
 }
 
+/* Az oldalmenü a topbar alatti teljes magasságot kitölti (a határoló vonal és a háttér nem ér véget a menüpontoknál) */
 .admin-nav {
     position: sticky;
     top: var(--topbar-total);
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
-    flex: 0 0 240px;
-    width: 240px;
-    max-height: calc(var(--vh) - var(--topbar-total));
+    flex: 0 0 256px;
+    width: 256px;
+    height: calc(var(--vh) - var(--topbar-total));
     padding: var(--space-4) var(--space-3);
     overflow-y: auto;
+    background: var(--bg-card);
     border-right: 1px solid var(--border-primary);
+    transition: background-color var(--t-normal), border-color var(--t-normal);
 }
 
 .admin-nav-item {
@@ -99,6 +102,7 @@
     font-size: var(--text-base);
     font-weight: 500;
     text-align: left;
+    white-space: nowrap;
 }
 
 .admin-nav-item.active {
@@ -125,26 +129,37 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: var(--space-4);
-    margin-bottom: var(--space-4);
+    margin-bottom: var(--space-5);
 }
 
 .admin-view-header > button {
     flex-shrink: 0;
 }
 
+.admin-view-header .form-hint {
+    margin-top: var(--space-1);
+    margin-bottom: 0;
+}
+
 /* ===== Szűrők ===== */
 
+/* Egy sor: a mezők azonos szélességűek és az aljukhoz igazodnak, a gombok jobbra állnak; szűk helyen új sorba törnek */
 .admin-filters {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-    gap: var(--space-3);
-    align-items: end;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--space-3) var(--space-4);
     margin-bottom: var(--space-4);
-    padding: var(--space-4);
+    padding: var(--space-4) var(--space-5);
     background: var(--bg-card);
     border: 1px solid var(--border-primary);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-card);
+}
+
+.admin-filters > .admin-field {
+    flex: 1 1 160px;
+    max-width: 200px;
 }
 
 .admin-field {
@@ -188,6 +203,46 @@
 .admin-filter-actions {
     display: flex;
     gap: var(--space-2);
+    margin-left: auto;
+}
+
+/* Egyetlen mezős űrlap (szó-vizsgáló, dátum): a gomb a mező mellett áll, nem a sor végén */
+.admin-filters:not(:has(.admin-field ~ .admin-field)) .admin-filter-actions {
+    margin-left: 0;
+}
+
+.admin-filter-actions button {
+    min-height: var(--control-h);
+    padding: 0 var(--space-5);
+}
+
+/* Jelölőnégyzetes szűrő: a többi mezővel azonos magasságú, keretes sor (a felirat a négyzet mellett áll) */
+.admin-filters > .admin-field-check {
+    flex: 0 0 auto;
+    max-width: none;
+    white-space: nowrap;
+}
+
+.admin-field-check {
+    width: fit-content;
+    min-height: var(--control-h);
+    padding: 0 var(--space-4);
+    border: 1px solid var(--border-input);
+    border-radius: var(--radius-md);
+    background: var(--bg-input);
+    cursor: pointer;
+}
+
+.admin-field-check:focus-within {
+    border-color: var(--accent);
+    box-shadow: var(--focus-ring);
+}
+
+.admin-field-check .admin-field-label {
+    color: var(--text-primary);
+    font-size: var(--text-base);
+    font-weight: 400;
+    cursor: pointer;
 }
 
 /* ===== Eszköztár, lapozó ===== */
@@ -205,6 +260,10 @@
     display: flex;
     gap: var(--space-2);
 }
+
+/* Eszköztár választóval (pl. rangsor): a mező és a gomb az aljához igazodik, a mező nem nyúlik szét */
+.admin-toolbar:has(.admin-field) { align-items: flex-end; }
+.admin-toolbar > .admin-field { min-width: 200px; }
 
 /* Hivatkozás, amely kis másodlagos gombnak látszik (letöltés) */
 .admin-link-btn {
@@ -257,14 +316,21 @@
     font-weight: 600;
     color: var(--text-secondary);
     white-space: nowrap;
+    background: var(--bg-card-alt);
     border-bottom: 1px solid var(--color-separator);
 }
 
 .admin-table td {
     padding: var(--space-3) var(--space-4);
-    vertical-align: top;
-    overflow-wrap: anywhere;
+    vertical-align: middle;
+    /* `break-word` (nem `anywhere`): a rövid cellák (időpont, IP-cím) nem törnek szét, a hosszú szöveg igen */
+    overflow-wrap: break-word;
     border-bottom: 1px solid var(--color-separator);
+}
+
+/* A rövid cella (időpont, azonosító, IP-cím, szám) egy sorban marad: a táblázat a hosszú szövegtől nem szűkíti össze */
+.admin-table td.cell-short {
+    white-space: nowrap;
 }
 
 .admin-table tbody tr:last-child td {
@@ -286,7 +352,10 @@
     }
 }
 
-.admin-action {
+/* A jelzőpont és a név együtt marad (a keskeny oszlop ne tegye külön sorba) */
+.admin-table td:has(.admin-dot) { white-space: nowrap; }
+
+td.admin-action {
     font-family: var(--font-mono);
     font-size: var(--text-xs);
     color: var(--accent);
@@ -311,18 +380,31 @@
     text-align: center;
 }
 
+/* Címke–érték lista: sorok, amelyek széles helyen több oszlopba rendeződnek (minden sor azonos címkeszélességű) */
 .admin-kv {
     display: grid;
-    grid-template-columns: max-content 1fr;
-    gap: var(--space-2) var(--space-4);
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 400px), 1fr));
+    column-gap: var(--space-8);
     font-size: var(--text-sm);
 }
+
+.admin-kv-row {
+    display: grid;
+    grid-template-columns: minmax(110px, 220px) minmax(0, 1fr);
+    gap: var(--space-4);
+    align-items: center;
+    min-height: 36px;
+    padding: 4px 0;
+}
+
+.admin-kv-wide { grid-column: 1 / -1; }
 
 .admin-kv dt {
     color: var(--text-secondary);
 }
 
 .admin-kv dd {
+    margin: 0;
     overflow-wrap: anywhere;
 }
 
@@ -461,13 +543,10 @@
         text-align: left;
     }
 
-    .admin-kv {
+    .admin-kv-row {
         grid-template-columns: 1fr;
         gap: 0;
-    }
-
-    .admin-kv dd {
-        margin-bottom: var(--space-2);
+        padding: var(--space-2) 0;
     }
 }
 
@@ -485,6 +564,8 @@
 }
 
 .admin-sudo-layer { z-index: calc(var(--z-dialog) + 5); }
+
+#admin-lock .dialog-text, #admin-sudo-dialog .dialog-text { margin-bottom: var(--space-3); }
 
 .admin-view { min-width: 0; }
 
@@ -630,38 +711,74 @@
 
 .admin-card {
     margin-bottom: var(--space-4);
-    padding: var(--space-4);
+    padding: var(--space-5);
     background: var(--bg-card);
     border: 1px solid var(--border-primary);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-card);
+    transition: background-color var(--t-normal), border-color var(--t-normal);
 }
 
 .admin-card-title {
     margin-bottom: var(--space-3);
     font-size: var(--text-lg);
-    font-weight: 600;
+    font-weight: 700;
 }
 
-.admin-card > .admin-table-wrap { border: none; box-shadow: none; margin-top: var(--space-2); }
+.admin-card > .form-hint:first-child,
+.admin-card-title + .form-hint { margin-top: calc(-1 * var(--space-2)); }
+
+/* Táblázat a kártyán belül: a szöveg a kártya szélével egy vonalban kezdődik, a vonalak végig érnek */
+.admin-card > .admin-table-wrap {
+    margin-top: var(--space-2);
+    background: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+.admin-card .admin-table th { background: none; }
+
+@media (min-width: 701px) {
+    .admin-card .admin-table th:first-child,
+    .admin-card .admin-table td:first-child { padding-left: 0; }
+    .admin-card .admin-table th:last-child,
+    .admin-card .admin-table td:last-child { padding-right: 0; }
+}
+
+/* Egymás melletti kártyák széles képernyőn (azonos magasságú sorok); a táblázatos / grafikonos kártya a teljes sort kapja */
+.admin-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr));
+    gap: var(--space-4);
+    margin-bottom: var(--space-4);
+}
+
+.admin-card-grid > .admin-card { margin-bottom: 0; }
+.admin-card-stack { display: grid; gap: var(--space-4); align-content: start; min-width: 0; }
+.admin-card-stack > .admin-card { margin-bottom: 0; }
+.admin-card-grid > .admin-card:has(.admin-table-wrap, .admin-board, .admin-log, .admin-chart-grid) { grid-column: 1 / -1; }
 
 .admin-stat-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
     gap: var(--space-3);
-    margin-bottom: var(--space-4);
+    margin-bottom: var(--space-5);
 }
 
 .admin-stat {
     display: flex;
     flex-direction: column;
     gap: 2px;
-    padding: var(--space-3) var(--space-4);
+    min-height: 92px;
+    padding: var(--space-4);
     background: var(--bg-card);
     border: 1px solid var(--border-primary);
     border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
     color: var(--text-primary);
     text-decoration: none;
+    transition: border-color var(--t-fast), background-color var(--t-normal);
 }
 
 .admin-stat-value { font-size: var(--text-2xl); font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -680,7 +797,7 @@
     align-items: flex-start;
     gap: var(--space-3);
     padding: var(--space-3) var(--space-4);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-md);
     color: var(--text-primary);
     text-decoration: none;
     font-size: var(--text-sm);
@@ -717,7 +834,9 @@
 .admin-tabs {
     display: flex;
     gap: var(--space-1);
-    margin-bottom: var(--space-4);
+    width: fit-content;
+    max-width: 100%;
+    margin-bottom: var(--space-5);
     padding: 3px;
     overflow-x: auto;
     background: var(--color-fill);
@@ -793,6 +912,7 @@
 }
 
 .admin-table .admin-action-row { margin-top: 0; }
+.admin-action-row:not(:last-child) { margin-bottom: var(--space-3); }
 
 .admin-code-wrap { word-break: break-all; font-size: var(--text-xs); }
 
@@ -822,14 +942,15 @@
 
 .admin-check-row input { width: auto; margin: 0; }
 
-.admin-form-inline { display: grid; gap: var(--space-3); }
+.admin-form-inline { display: grid; gap: var(--space-3); max-width: 720px; }
 .admin-form-inline textarea, .admin-form-inline select, .admin-form-inline input { width: 100%; }
 
 .admin-field-check { flex-direction: row; align-items: center; gap: var(--space-2); }
 .admin-field-check input { width: auto; margin: 0; }
 .admin-filters-inline { margin-bottom: var(--space-3); }
 
-.admin-note-form { display: grid; gap: var(--space-2); margin-top: var(--space-2); }
+.admin-note-form { display: grid; gap: var(--space-3); max-width: 720px; margin-top: var(--space-2); }
+.admin-note-form > button { justify-self: start; }
 .admin-note-form textarea { width: 100%; }
 .admin-note { padding: var(--space-3) 0; border-bottom: 1px solid var(--color-separator); }
 
@@ -850,16 +971,17 @@
 
 .admin-chart-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
-    gap: var(--space-3);
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+    gap: var(--space-4);
     margin-bottom: var(--space-4);
 }
 
 .admin-chart-grid > .admin-card { margin-bottom: 0; }
 .admin-figure figcaption { margin-bottom: var(--space-2); font-weight: 600; }
-.admin-chart { display: block; width: 100%; height: auto; }
+.admin-chart-holder { min-width: 0; }
+.admin-chart { display: block; width: 100%; height: auto; overflow: visible; }
 .chart-grid { stroke: var(--color-separator); stroke-width: 1; }
-.chart-axis { fill: var(--text-muted); font-size: 11px; stroke: none; }
+.chart-axis { fill: var(--text-muted); font-size: var(--text-xs); stroke: none; font-variant-numeric: tabular-nums; }
 .chart-hit { fill: transparent; }
 .chart-line { fill: none; stroke-width: 2; stroke-linejoin: round; }
 .chart-s0 { fill: var(--accent); stroke: var(--accent); }
@@ -882,7 +1004,7 @@
     color: var(--text-muted);
 }
 
-.heat-cell { aspect-ratio: 1; border-radius: 3px; background: var(--color-fill); }
+.heat-cell { aspect-ratio: 2; border-radius: 4px; background: var(--color-fill); }
 .heat-hour { text-align: center; }
 .heat-day { display: flex; align-items: center; }
 .heat-1 { background: color-mix(in srgb, var(--accent) 20%, var(--color-fill)); }
@@ -1010,25 +1132,50 @@
 
 /* ----- Beállítások ----- */
 
+/* Beállítássorok: a szöveg balra, a vezérlő és a „Mentés” gomb fix oszlopban jobbra (minden sorban egy vonalban) */
+.admin-narrow { max-width: 980px; margin-inline: auto; }
+
 .admin-setting {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    justify-content: space-between;
-    gap: var(--space-4);
-    padding: var(--space-3) 0;
+    gap: var(--space-4) var(--space-6);
+    padding: var(--space-4) 0;
     border-bottom: 1px solid var(--color-separator);
 }
 
-.admin-setting:last-child { border-bottom: none; }
-.admin-setting-text { flex: 1; min-width: 0; }
-.admin-setting-meta { margin-top: 2px; font-size: var(--text-xs); color: var(--text-muted); }
-.admin-setting-control { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
-.admin-setting-control input[type="number"], .admin-setting-control select { width: 150px; margin: 0; }
-.admin-toggle { width: 22px; height: 22px; margin: 0; accent-color: var(--accent); }
+.admin-setting:first-child { padding-top: 0; }
+.admin-setting:last-child { padding-bottom: 0; border-bottom: none; }
+.admin-setting-text { min-width: 0; }
+.admin-setting-text strong { font-weight: 600; }
+.admin-setting-text .form-hint { margin-bottom: 0; }
+.admin-setting-meta { margin-top: var(--space-1); font-size: var(--text-xs); color: var(--text-muted); }
+
+.admin-setting-control {
+    display: grid;
+    grid-template-columns: 180px 88px;
+    align-items: center;
+    gap: var(--space-3);
+}
+
+.admin-setting-control .toggle-switch { justify-self: end; }
+.admin-setting-control > .admin-setting-note { grid-column: 1 / -1; text-align: right; }
+.admin-setting-control input[type="number"], .admin-setting-control select { width: 100%; margin: 0; }
+.admin-setting-control > button { width: 100%; }
+.admin-setting .admin-setting-reset { min-height: 0; margin: 0 0 0 var(--space-2); padding: 0 var(--space-1); font-size: var(--text-xs); vertical-align: baseline; }
 
 @media (max-width: 700px) {
-    .admin-setting { flex-direction: column; align-items: stretch; }
-    .admin-setting-control { justify-content: flex-start; }
+    /* Telefon: a szűrőmezők a teljes szélességet kitöltik, a számlálók két oszlopba rendeződnek */
+    .admin-filters { padding: var(--space-4); }
+    .admin-filters > .admin-field { flex: 1 1 100%; max-width: none; }
+    .admin-filters > .admin-field-check { flex: 1 1 100%; }
+    .admin-filter-actions { flex: 1 1 100%; margin-left: 0; }
+    .admin-filter-actions button { flex: 1; }
+    .admin-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .admin-stat { min-height: 0; padding: var(--space-3); }
+    .admin-setting { grid-template-columns: minmax(0, 1fr); }
+    .admin-setting-control { grid-template-columns: minmax(0, 1fr) 88px; }
+    .admin-setting-control > .admin-setting-note { text-align: left; }
     .admin-view-header { flex-direction: column; }
     .admin-header-actions { justify-content: flex-start; }
     .hbar-row { grid-template-columns: 90px 1fr 40px; }
@@ -1094,16 +1241,15 @@
 
 .admin-main input[type="range"] { width: 100%; accent-color: var(--accent); }
 
-.admin-setting-control input[type="number"], .admin-setting-control select { width: 150px; }
 .admin-search-box input { margin-bottom: var(--space-2); }
 
 /* ===== Levelező szerver és frissítés (Rendszer) ===== */
 
 .admin-mail-form {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: var(--space-3);
-    margin: var(--space-3) 0;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: var(--space-4);
+    margin: var(--space-4) 0;
 }
 
 .admin-mail-warning {
@@ -1121,16 +1267,22 @@
 .admin-update-plan { margin-top: var(--space-3); }
 .admin-update-plan .admin-field { max-width: 520px; margin-bottom: var(--space-3); }
 
-/* ===== Nagy képernyő: a tartalom szélesebb és középen áll, a betűk és a tábla is nagyobbak ===== */
+/* Közepes képernyő: szorosabb cellák, hogy a széles táblázat (pl. felhasználók) még elférjen görgetés nélkül */
+@media (min-width: 701px) and (max-width: 1599px) {
+    .admin-table th, .admin-table td { padding-left: var(--space-3); padding-right: var(--space-3); }
+}
+
+/* ===== Nagy képernyő: a tartalom szélesebb és középen áll (nem nyúlik a képernyő széléig), a betűk és a tábla is nagyobbak ===== */
 
 @media (min-width: 1600px) {
     :root { --admin-board-max: 640px; }
-    .admin-main { max-width: 1560px; }
+    .admin-main { max-width: 1400px; }
+    .admin-stat-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 }
 
 @media (min-width: 1920px) {
     :root {
-        --admin-board-max: 720px;
+        --admin-board-max: 700px;
         --text-xs: 12px;
         --text-sm: 14px;
         --text-base: 16px;
@@ -1140,13 +1292,13 @@
         --text-3xl: 30px;
     }
 
-    .admin-nav { flex-basis: 264px; width: 264px; }
-    .admin-main { max-width: 1800px; }
+    .admin-nav { flex-basis: 272px; width: 272px; }
+    .admin-main { max-width: 1560px; padding-top: var(--space-8); }
 }
 
 @media (min-width: 2400px) {
     :root {
-        --admin-board-max: 820px;
+        --admin-board-max: 780px;
         --text-xs: 13px;
         --text-sm: 15px;
         --text-base: 17px;
@@ -1156,6 +1308,6 @@
         --text-3xl: 34px;
     }
 
-    .admin-nav { flex-basis: 288px; width: 288px; }
-    .admin-main { max-width: 2100px; }
+    .admin-nav { flex-basis: 300px; width: 300px; }
+    .admin-main { max-width: 1840px; }
 }
