@@ -82,6 +82,11 @@ function isApiRequest(url) {
     return url.pathname.startsWith('/socket.io/') || url.pathname.startsWith('/api/');
 }
 
+// Az admin felület (oldal és assetek) soha nem kerül gyorsítótárba, és kapcsolat nélkül sem helyettesítjük
+function isAdminRequest(url) {
+    return url.pathname === '/admin' || url.pathname.startsWith('/admin/');
+}
+
 // Hálózat először (friss HTML), kapcsolat nélkül a gyorsítótárazott váz, végső esetben az offline oldal
 async function handleNavigation(request) {
     try {
@@ -117,7 +122,7 @@ self.addEventListener('fetch', (event) => {
     if (request.method !== 'GET') return;
 
     const url = new URL(request.url);
-    if (url.origin === self.location.origin && isApiRequest(url)) return;  // mindig hálózat
+    if (url.origin === self.location.origin && (isApiRequest(url) || isAdminRequest(url))) return;  // mindig hálózat
 
     if (request.mode === 'navigate') {
         event.respondWith(handleNavigation(request));

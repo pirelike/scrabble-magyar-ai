@@ -624,6 +624,7 @@ const Auth = {
         AppState.currentUser = null;
         AppState.isGuest = true;
         AppState.displayName = null;
+        AdminEntry.sync();
         AppState.reset();
         ChallengeUI.stopCountdown(); TurnTimerUI._stop();
         // Reset regisztráció
@@ -789,6 +790,8 @@ const Lobby = {
         if (createTab) createTab.classList.toggle('hidden', AppState.isGuest);
         if (savedTab) savedTab.classList.toggle('hidden', AppState.isGuest);
         if (friendsTab) friendsTab.classList.toggle('hidden', AppState.isGuest);
+
+        AdminEntry.sync();
 
         // Hide history section for guests
         const historySection = document.getElementById('home-history-section');
@@ -5257,6 +5260,58 @@ const Badges = {
 };
 
 // ===== PROFILE =====
+
+// ===== ADMIN BELÉPÉSI PONT =====
+// Csak a szerver által adminnak jelölt felhasználónál (`is_admin` a /api/auth/me és a belépés válaszában)
+// jelenik meg: az Admin gombot futásidőben szúrjuk be, az index.html-ben nincs statikus admin elem.
+// A panel maga külön oldal (/admin), amelyet a szerver minden más kérésre 404-gyel utasít el.
+const AdminEntry = {
+    _open() {
+        // Új lapon, hogy a folyamatban lévő játék kapcsolata ne szakadjon meg
+        const opened = window.open('/admin', '_blank', 'noopener');
+        if (!opened) location.href = '/admin';
+    },
+
+    _icon() {
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('class', 'icon');
+        svg.setAttribute('viewBox', '0 0 24 24');
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z');
+        svg.appendChild(path);
+        return svg;
+    },
+
+    // A beszúrt elemek mindig az aktuális bejelentkezéshez igazodnak (belépés / kijelentkezés után is)
+    sync() {
+        document.querySelectorAll('.admin-entry').forEach(node => node.remove());
+        if (!(AppState.currentUser && AppState.currentUser.is_admin)) return;
+
+        document.querySelectorAll('.app-topbar .topbar-right').forEach(bar => {
+            const btn = makeEl('button', 'topbar-btn admin-entry');
+            btn.type = 'button';
+            btn.title = 'Admin';
+            btn.setAttribute('aria-label', 'Admin');
+            btn.appendChild(this._icon());
+            btn.addEventListener('click', () => this._open());
+            // A felhasználónév után, az első ikongomb elé
+            bar.insertBefore(btn, bar.querySelector('.topbar-btn'));
+        });
+
+        const settings = document.getElementById('layout-settings');
+        if (settings && settings.parentNode) {
+            const group = makeEl('div', 'settings-group admin-entry');
+            const row = makeEl('div', 'setting-row');
+            row.appendChild(makeEl('span', 'toggle-name', 'Admin'));
+            const open = makeEl('button', 'small-btn tinted', 'Admin');
+            open.type = 'button';
+            open.addEventListener('click', () => this._open());
+            row.appendChild(open);
+            group.appendChild(row);
+            settings.parentNode.insertBefore(group, settings);
+        }
+    },
+};
 
 const Profile = {
     init() {

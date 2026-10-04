@@ -22,13 +22,14 @@ import word_review
 import push_service
 from game import Game, CHALLENGE_TIMEOUT, ALLOWED_HINT_LIMITS, DEFAULT_HINT_LIMIT
 from room import Room
+import config
 from config import AUTH_RATE_LIMITS
 from auth import (
     init_db, save_game, finish_game, add_game_move,
     load_active_games, abandon_game, abandon_game_by_id,
     is_user_in_game, get_game_by_id, get_game_moves, get_game_players,
     get_daily_puzzle, get_daily_entry, mark_daily_revealed, get_active_async_games,
-    get_user_by_id, grant_achievements, get_game_rating_changes,
+    get_user_by_id, grant_achievements, get_game_rating_changes, is_admin_user,
     send_friend_request as auth_send_friend_request,
     accept_friend_request as auth_accept_friend_request,
     decline_friend_request as auth_decline_friend_request,
@@ -38,6 +39,7 @@ from auth import (
 from state import ServerState
 from rate_limiter import RateLimiter
 from routes import main_bp, auth_bp, game_bp, public_bp, init_routes
+from admin_routes import admin_bp, admin_pages_bp
 from tunnel import start_tunnel
 from socket_auth import verify_socket_token
 
@@ -85,6 +87,7 @@ _SOCKET_RATE_LIMITS = {
     'reveal_daily': (5, 30),
     'spectate_room': (5, 10),
     'leave_spectate': (5, 10),
+    'admin_subscribe': (5, 10),
 }
 
 rate_limiter = RateLimiter(_SOCKET_RATE_LIMITS, AUTH_RATE_LIMITS)
@@ -109,6 +112,8 @@ app.register_blueprint(main_bp)
 app.register_blueprint(auth_bp)
 app.register_blueprint(game_bp)
 app.register_blueprint(public_bp)
+app.register_blueprint(admin_bp)
+app.register_blueprint(admin_pages_bp)
 
 # --- Grace period ---
 _DISCONNECT_GRACE_PERIOD = 120
@@ -923,6 +928,8 @@ def handle_set_name(data):
 
     previous_user_id = state.get_user_id_for_sid(sid)
     was_online = bool(user_id and state.is_user_online(user_id))
+    if previous_user_id != user_id:
+        _sio_leave_room(sid, ADMIN_ROOM)  # másik azonosság → az admin feliratkozás megszűnik
 
     state.register_player(sid, name, {
         'user_id': user_id,
@@ -936,10 +943,36 @@ def handle_set_name(data):
         _notify_friends_presence_change(user_id, True)
 
 
+# --- Admin (Socket.IO) ---
+
+ADMIN_ROOM = 'admin'
+
+
+def _is_admin_sid(sid):
+    """Igaz, ha a kapcsolat bejelentkezett, admin e-mail című felhasználóé (a kliens állításában nem bízunk:
+    a user_id a `set_name` aláírt tokenjéből jön)."""
+    user_id = state.get_user_id_for_sid(sid)
+    return bool(user_id and is_admin_user(get_user_by_id(user_id)))
+
+
+@socketio.on('admin_subscribe')
+def handle_admin_subscribe():
+    """Belépés az `admin` szobába (élő admin események). Nem adminnak csendben nem történik semmi:
+    sem hibaüzenet, sem visszaigazolás, hogy ne derüljön ki, hogy ilyen esemény létezik."""
+    sid = request.sid
+    if not rate_limiter.check_socket(sid, 'admin_subscribe'):
+        return
+    if not _is_admin_sid(sid):
+        return
+    join_room(ADMIN_ROOM)
+    emit('admin_subscribed', {})
+
+
 @socketio.on('logout')
 def handle_logout():
     """Kijelentkezés: kilépés a szobából és az online azonosság törlése."""
     sid = request.sid
+    _sio_leave_room(sid, ADMIN_ROOM)  # a kijelentkezett kapcsolat ne kapjon több admin eseményt
     if state.player_rooms.get(sid):
         handle_leave_room()
     if state.get_spectated_room(sid):
@@ -2537,6 +2570,11 @@ if __name__ == '__main__':
         print(f"[daily] A mai feladvány előállítása nem sikerült: {e}")
     print(f"[async] {restore_async_games()} levelezős játék visszaállítva")
     socketio.start_background_task(_async_sweeper)
+    if config.ADMIN_EMAILS:  # csak a szerver konzoljára: a webes felület semmit sem árul el
+        print(f"[admin] Admin panel bekapcsolva ({len(config.ADMIN_EMAILS)} admin cím"
+              f"{', IP-lista aktív' if config.ADMIN_IP_ALLOWLIST else ''})")
+        if not config.SMTP_CONFIGURED:
+            print("[admin] Figyelem: SMTP nincs beállítva — az admin cím regisztrációs kódja csak ezen a konzolon jelenik meg.")
 
     if use_tunnel:
         start_tunnel(port)

@@ -22,3 +22,20 @@ def verify_email(email):
     code = auth.create_verification_code(email)
     ok, msg = auth.verify_code(email, code)
     assert ok, msg
+
+
+def create_user_with_session(email, name='Tester', password='secret12'):
+    """Regisztrált felhasználó és érvényes session token (a HTTP bejelentkezés és a forgalomkorlát megkerülésével)."""
+    import auth
+    ok, user_id = auth.create_user(email, name, password)
+    assert ok, user_id
+    return user_id, auth.create_session(user_id)
+
+
+def client_with_session(token):
+    """Flask tesztkliens a megadott session cookie-val (token=None → névtelen)."""
+    from server import app
+    client = app.test_client()
+    if token:
+        client.set_cookie('session_token', token)
+    return client

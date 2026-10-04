@@ -1,0 +1,466 @@
+/* ==========================================================================
+   ADMIN PANEL — a fő alkalmazás stíluskészletére (static/style.css: tokenek, gombok, párbeszédek,
+   űrlapmezők) épül, ez csak az admin-specifikus elrendezést adja. Csak az adminnak kiszolgált fájl.
+   ========================================================================== */
+
+.admin-sprite {
+    position: absolute;
+}
+
+.admin-app {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    min-height: var(--vh);
+}
+
+.admin-title {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.admin-title .icon {
+    color: var(--accent);
+}
+
+.admin-menu-btn {
+    display: none;
+}
+
+.admin-exit {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    color: var(--text-secondary);
+    background: var(--color-fill);
+}
+
+/* Sudo állapot: szürke, amíg nincs megerősítés; figyelmeztető szín, amíg él */
+.admin-sudo-chip {
+    --btn-bg: var(--color-fill);
+    --btn-bg-hover: var(--color-fill-strong);
+    --btn-fg: var(--text-secondary);
+    min-height: var(--topbar-btn);
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-pill);
+    font-size: var(--text-sm);
+    font-variant-numeric: tabular-nums;
+}
+
+.admin-sudo-chip .icon {
+    width: 14px;
+    height: 14px;
+}
+
+.admin-sudo-chip.active {
+    --btn-bg: var(--gold-subtle);
+    --btn-bg-hover: var(--gold-subtle);
+    --btn-fg: var(--gold-text);
+}
+
+/* ===== Elrendezés ===== */
+
+.admin-layout {
+    display: flex;
+    flex: 1;
+    align-items: flex-start;
+    min-width: 0;
+}
+
+.admin-nav {
+    position: sticky;
+    top: var(--topbar-total);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    flex: 0 0 240px;
+    width: 240px;
+    max-height: calc(var(--vh) - var(--topbar-total));
+    padding: var(--space-4) var(--space-3);
+    overflow-y: auto;
+    border-right: 1px solid var(--border-primary);
+}
+
+.admin-nav-item {
+    --btn-bg: transparent;
+    --btn-bg-hover: var(--color-fill);
+    --btn-fg: var(--text-secondary);
+    justify-content: flex-start;
+    width: 100%;
+    min-height: 40px;
+    padding: 0 var(--space-3);
+    font-size: var(--text-base);
+    font-weight: 500;
+    text-align: left;
+}
+
+.admin-nav-item.active {
+    --btn-bg: var(--accent-tint);
+    --btn-bg-hover: var(--accent-tint);
+    --btn-fg: var(--accent);
+}
+
+.admin-nav-backdrop {
+    display: none;
+}
+
+.admin-main {
+    flex: 1;
+    min-width: 0;
+    max-width: 1280px;
+    padding: var(--space-6) max(var(--space-6), var(--safe-right)) calc(var(--space-8) + var(--safe-bottom))
+             var(--space-6);
+}
+
+.admin-view-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-4);
+    margin-bottom: var(--space-4);
+}
+
+.admin-view-header > button {
+    flex-shrink: 0;
+}
+
+/* ===== Szűrők ===== */
+
+.admin-filters {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: var(--space-3);
+    align-items: end;
+    margin-bottom: var(--space-4);
+    padding: var(--space-4);
+    background: var(--bg-card);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+}
+
+.admin-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+}
+
+.admin-field input {
+    margin-bottom: 0;
+}
+
+/* A közös stíluskészlet a dátummezőt nem fedi le: ugyanúgy néz ki, mint a szövegmezők */
+.admin-field input[type="date"] {
+    display: block;
+    width: 100%;
+    min-height: var(--control-h);
+    padding: 0 var(--space-4);
+    border: 1px solid var(--border-input);
+    border-radius: var(--radius-md);
+    background-color: var(--bg-input);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: var(--text-base);
+    outline: none;
+    transition: border-color var(--t-fast), box-shadow var(--t-fast);
+}
+
+.admin-field input[type="date"]:focus {
+    border-color: var(--accent);
+    box-shadow: var(--focus-ring);
+}
+
+.admin-field-label {
+    font-size: var(--text-sm);
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.admin-filter-actions {
+    display: flex;
+    gap: var(--space-2);
+}
+
+/* ===== Eszköztár, lapozó ===== */
+
+.admin-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+    min-height: 36px;
+}
+
+.admin-toolbar-actions {
+    display: flex;
+    gap: var(--space-2);
+}
+
+/* Hivatkozás, amely kis másodlagos gombnak látszik (letöltés) */
+.admin-link-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 36px;
+    padding: 0 var(--space-4);
+    border-radius: var(--radius-md);
+    background: var(--color-fill);
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    text-decoration: none;
+    transition: background-color var(--t-fast);
+}
+
+@media (hover: hover) {
+    .admin-link-btn:hover {
+        background: var(--color-fill-strong);
+    }
+}
+
+.admin-pager {
+    display: flex;
+    justify-content: center;
+    gap: var(--space-2);
+    margin-top: var(--space-4);
+}
+
+/* ===== Táblázat ===== */
+
+.admin-table-wrap {
+    overflow-x: auto;
+    background: var(--bg-card);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+}
+
+.admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-sm);
+}
+
+.admin-table th {
+    padding: var(--space-3) var(--space-4);
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    border-bottom: 1px solid var(--color-separator);
+}
+
+.admin-table td {
+    padding: var(--space-3) var(--space-4);
+    vertical-align: top;
+    overflow-wrap: anywhere;
+    border-bottom: 1px solid var(--color-separator);
+}
+
+.admin-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.admin-table-clickable tbody tr {
+    cursor: pointer;
+}
+
+.admin-table-clickable tbody tr:focus-visible {
+    outline: none;
+    box-shadow: inset var(--focus-ring);
+}
+
+@media (hover: hover) {
+    .admin-table-clickable tbody tr:hover {
+        background: var(--accent-subtle);
+    }
+}
+
+.admin-action {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--accent);
+}
+
+.admin-table-compact th,
+.admin-table-compact td {
+    padding: var(--space-2) var(--space-3);
+}
+
+.admin-diff-old { color: var(--danger-text); }
+.admin-diff-new { color: var(--success-text); }
+
+/* ===== Naplósor részletei ===== */
+
+.admin-detail {
+    max-width: 640px;
+    text-align: left;
+}
+
+.admin-detail h2 {
+    text-align: center;
+}
+
+.admin-kv {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: var(--space-2) var(--space-4);
+    font-size: var(--text-sm);
+}
+
+.admin-kv dt {
+    color: var(--text-secondary);
+}
+
+.admin-kv dd {
+    overflow-wrap: anywhere;
+}
+
+.admin-json {
+    max-height: 260px;
+    padding: var(--space-3);
+    overflow: auto;
+    background: var(--bg-card-alt);
+    border-radius: var(--radius-md);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+/* Zároláskor a naplóadat sem marad olvasható a háttérben */
+.admin-locked .admin-main,
+.admin-locked .admin-nav {
+    visibility: hidden;
+}
+
+/* A zárolás minden más párbeszéd fölött áll */
+.admin-lock {
+    z-index: calc(var(--z-dialog) + 10);
+    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(18px);
+}
+
+/* ===== Keskeny képernyő: a menü oldalról csúszó lap, a táblázat sorai kártyák ===== */
+
+@media (max-width: 900px) {
+    .admin-menu-btn {
+        display: inline-flex;
+    }
+
+    .admin-nav {
+        position: fixed;
+        top: var(--topbar-total);
+        bottom: 0;
+        left: 0;
+        z-index: var(--z-sticky);
+        max-height: none;
+        width: min(280px, 82vw);
+        padding-bottom: calc(var(--space-4) + var(--safe-bottom));
+        background: var(--bg-card);
+        box-shadow: var(--shadow-lg);
+        transform: translateX(-105%);
+        transition: transform var(--t-normal);
+    }
+
+    .admin-nav-open .admin-nav {
+        transform: translateX(0);
+    }
+
+    .admin-nav-backdrop {
+        position: fixed;
+        inset: var(--topbar-total) 0 0 0;
+        z-index: calc(var(--z-sticky) - 1);
+        background: var(--bg-overlay);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity var(--t-normal);
+    }
+
+    .admin-nav-open .admin-nav-backdrop {
+        display: block;
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    .admin-main {
+        padding: var(--space-4) max(var(--space-4), var(--safe-right)) calc(var(--space-6) + var(--safe-bottom))
+                 max(var(--space-4), var(--safe-left));
+    }
+
+    .admin-topbar {
+        padding-left: max(var(--space-4), var(--safe-left));
+        padding-right: max(var(--space-4), var(--safe-right));
+    }
+
+    .admin-topbar .topbar-user-name {
+        display: none;
+    }
+}
+
+@media (max-width: 520px) {
+    /* Telefonon a cím szövege helyett csak az ikon marad: a gomboknak kell a hely */
+    .admin-title span {
+        display: none;
+    }
+}
+
+@media (max-width: 700px) {
+    .admin-table-wrap {
+        background: none;
+        border: none;
+        box-shadow: none;
+    }
+
+    .admin-table-clickable thead {
+        display: none;
+    }
+
+    .admin-table-clickable,
+    .admin-table-clickable tbody,
+    .admin-table-clickable tr,
+    .admin-table-clickable td {
+        display: block;
+    }
+
+    .admin-table-clickable tbody tr {
+        margin-bottom: var(--space-3);
+        background: var(--bg-card);
+        border: 1px solid var(--border-primary);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-card);
+    }
+
+    .admin-table-clickable td {
+        display: flex;
+        gap: var(--space-3);
+        justify-content: space-between;
+        padding: var(--space-2) var(--space-4);
+        border-bottom: none;
+        text-align: right;
+    }
+
+    .admin-table-clickable td:empty {
+        display: none;
+    }
+
+    .admin-table-clickable td::before {
+        content: attr(data-label);
+        flex-shrink: 0;
+        color: var(--text-secondary);
+        text-align: left;
+    }
+
+    .admin-kv {
+        grid-template-columns: 1fr;
+        gap: 0;
+    }
+
+    .admin-kv dd {
+        margin-bottom: var(--space-2);
+    }
+}

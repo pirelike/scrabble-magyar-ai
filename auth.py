@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from werkzeug.security import generate_password_hash, check_password_hash
 
+import config
 import elo
 from config import (
     DB_PATH, SESSION_MAX_AGE_DAYS, VERIFICATION_CODE_EXPIRY_MINUTES,
@@ -203,6 +204,29 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_word_reviews_user ON word_reviews(user_id, created_at);
+
+        -- Admin napló: csak hozzáfűzhető (a triggerek a módosítást és a törlést is megtiltják)
+        CREATE TABLE IF NOT EXISTS admin_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_user_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            target_type TEXT,
+            target_id TEXT,
+            details_json TEXT,
+            ip TEXT,
+            user_agent TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit(created_at);
+        CREATE INDEX IF NOT EXISTS idx_admin_audit_target ON admin_audit(target_type, target_id);
+        CREATE TRIGGER IF NOT EXISTS admin_audit_no_update BEFORE UPDATE ON admin_audit
+        BEGIN
+            SELECT RAISE(ABORT, 'admin_audit is append-only');
+        END;
+        CREATE TRIGGER IF NOT EXISTS admin_audit_no_delete BEFORE DELETE ON admin_audit
+        BEGIN
+            SELECT RAISE(ABORT, 'admin_audit is append-only');
+        END;
     ''')
     # Migráció: owner_name oszlop hozzáadása ha nem létezik
     try:
@@ -243,6 +267,12 @@ def init_db():
     except sqlite3.OperationalError:
         conn.execute("ALTER TABLE game_players ADD COLUMN rating_before INTEGER")
         conn.execute("ALTER TABLE game_players ADD COLUMN rating_after INTEGER")
+    try:
+        conn.execute('SELECT admin_seen_at FROM sessions LIMIT 1')
+    except sqlite3.OperationalError:
+        # Admin panel: az utolsó admin-kérés ideje (tétlenségi időkorlát) és a sudo mód lejárata
+        conn.execute("ALTER TABLE sessions ADD COLUMN admin_seen_at TEXT")
+        conn.execute("ALTER TABLE sessions ADD COLUMN sudo_until TEXT")
     conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_saved_games_share_token '
                  'ON saved_games(share_token) WHERE share_token IS NOT NULL')
     conn.commit()
@@ -436,6 +466,80 @@ def delete_session(token):
         return
     with _db() as conn:
         conn.execute('DELETE FROM sessions WHERE token = ?', (token,))
+
+
+# --- Admin ---
+
+_TS_FORMAT = '%Y-%m-%d %H:%M:%S'
+
+
+def transaction():
+    """Egy adatbázis-tranzakció (commit / hiba esetén rollback / lezárás) más modulok számára."""
+    return _db()
+
+
+def utcnow():
+    """Az aktuális UTC idő időzóna nélkül (az adatbázis időbélyegeivel azonos ábrázolás)."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def format_ts(moment):
+    return moment.strftime(_TS_FORMAT)
+
+
+def parse_ts(value):
+    """Adatbázis-időbélyeg → datetime (hibás vagy hiányzó érték → None)."""
+    try:
+        return datetime.strptime(value, _TS_FORMAT)
+    except (TypeError, ValueError):
+        return None
+
+
+def is_admin_user(user):
+    """Igaz, ha a felhasználó admin: az e-mail címe szerepel a szerveren beállított `ADMIN_EMAILS`-ben.
+
+    Szándékosan nem adatbázis-oszlop és nem a megjelenítési névhez kötött: adminná válni csak a szerver
+    környezeti változójával lehet. Vendég (nincs felhasználó) soha nem admin.
+    """
+    if not user or not config.ADMIN_EMAILS:
+        return False
+    try:
+        email = user['email']
+    except (KeyError, IndexError, TypeError):
+        return False
+    return isinstance(email, str) and email.strip().lower() in config.ADMIN_EMAILS
+
+
+def get_admin_session(token):
+    """Az admin munkamenet állapota: {'admin_seen_at', 'sudo_until'} (nincs ilyen session → None)."""
+    if not token:
+        return None
+    with _db() as conn:
+        row = conn.execute('SELECT admin_seen_at, sudo_until FROM sessions WHERE token = ?',
+                           (token,)).fetchone()
+        return dict(row) if row else None
+
+
+def touch_admin_session(token, conn=None):
+    """Az utolsó admin-kérés idejének frissítése (a tétlenségi időkorlát innen számolódik)."""
+    stamp = format_ts(utcnow())
+    if conn is not None:
+        conn.execute('UPDATE sessions SET admin_seen_at = ? WHERE token = ?', (stamp, token))
+        return
+    with _db() as own:
+        own.execute('UPDATE sessions SET admin_seen_at = ? WHERE token = ?', (stamp, token))
+
+
+def set_admin_sudo(token, until, conn=None):
+    """A sudo mód lejáratának beállítása (None → lezárás). Frissíti a tétlenségi időzítőt is."""
+    sudo_until = format_ts(until) if until else None
+    stamp = format_ts(utcnow())
+    sql = 'UPDATE sessions SET sudo_until = ?, admin_seen_at = ? WHERE token = ?'
+    if conn is not None:
+        conn.execute(sql, (sudo_until, stamp, token))
+        return
+    with _db() as own:
+        own.execute(sql, (sudo_until, stamp, token))
 
 
 def get_or_create_user_reconnect_token(user_id):

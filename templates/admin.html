@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="hu" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="robots" content="noindex,nofollow">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#f5f5f7">
+    <title>Admin</title>
+    <link rel="icon" href="data:,">
+    <!-- A szigorú CSP miatt nincs beágyazott szkript: a téma és a nyelv a megjelenítés előtt, külső fájlból áll be -->
+    <script src="/admin/assets/admin-boot.js?v={{ asset_v }}"></script>
+    <link rel="stylesheet" href="/static/style.css?v={{ public_v }}">
+    <link rel="stylesheet" href="/admin/assets/admin.css?v={{ asset_v }}">
+</head>
+<body class="admin-body">
+    <svg class="admin-sprite" width="0" height="0" aria-hidden="true" focusable="false">
+        <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></symbol>
+        <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></symbol>
+        <symbol id="i-close" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></symbol>
+        <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></symbol>
+        <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+        <symbol id="i-menu" viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></symbol>
+        <symbol id="i-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+        <symbol id="i-list" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></symbol>
+    </svg>
+
+    <div id="admin-app" class="admin-app">
+        <header class="app-topbar admin-topbar">
+            <div class="topbar-left">
+                <button id="admin-menu-btn" class="topbar-btn admin-menu-btn" type="button" aria-label="Menü" title="Menü" data-i18n-title="admin.menu">
+                    <svg class="icon"><use href="#i-menu"/></svg>
+                </button>
+                <h1 class="topbar-title admin-title">
+                    <svg class="icon"><use href="#i-shield"/></svg>
+                    <span data-i18n="admin.title">Admin</span>
+                </h1>
+            </div>
+            <div class="topbar-right">
+                <span class="topbar-user-name" id="admin-user-name"></span>
+                <button id="admin-sudo-chip" class="admin-sudo-chip" type="button" title="Sudo" data-i18n-title="admin.sudo_title">
+                    <svg class="icon"><use href="#i-lock"/></svg>
+                    <span id="admin-sudo-label"></span>
+                </button>
+                <button class="topbar-btn btn-lang-toggle" type="button" aria-label="Nyelv" title="Nyelv" data-i18n-title="common.language">
+                    <span class="lang-code">HU</span>
+                </button>
+                <button class="topbar-btn btn-theme-toggle" type="button" aria-label="Téma váltás" title="Téma váltás" data-i18n-title="common.theme">
+                    <svg class="icon icon-sun"><use href="#i-sun"/></svg>
+                    <svg class="icon icon-moon"><use href="#i-moon"/></svg>
+                </button>
+                <a id="admin-exit" class="topbar-btn topbar-btn-danger admin-exit" href="/" aria-label="Kilépés az admin panelből" title="Kilépés az admin panelből" data-i18n-title="admin.exit">
+                    <svg class="icon"><use href="#i-logout"/></svg>
+                </a>
+            </div>
+        </header>
+
+        <div class="admin-layout">
+            <nav id="admin-nav" class="admin-nav" aria-label="Admin" data-i18n-aria="admin.nav_label"></nav>
+            <div id="admin-nav-backdrop" class="admin-nav-backdrop"></div>
+            <main id="admin-main" class="admin-main"></main>
+        </div>
+    </div>
+
+    <!-- Tétlenség miatti zárolás: a panel elhomályosul és jelszót kér (a játékból nem dob ki) -->
+    <div id="admin-lock" class="dialog admin-lock hidden" role="dialog" aria-modal="true" aria-labelledby="admin-lock-title">
+        <form id="admin-lock-form" class="dialog-content" autocomplete="off">
+            <h2 id="admin-lock-title" data-i18n="admin.lock_title">A munkamenet lejárt</h2>
+            <p class="dialog-text" data-i18n="admin.lock_text">Tétlenség miatt a panel zárolva lett. Add meg újra a jelszavad.</p>
+            <input id="admin-lock-password" type="password" autocomplete="current-password" placeholder="Jelszó" data-i18n-placeholder="admin.password" required>
+            <div id="admin-lock-error" class="auth-error hidden"></div>
+            <div class="dialog-buttons">
+                <button id="admin-lock-submit" type="submit" data-i18n="admin.unlock">Feloldás</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Sudo: friss jelszó-megerősítés a romboló műveletekhez -->
+    <div id="admin-sudo-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="admin-sudo-title">
+        <form id="admin-sudo-form" class="dialog-content" autocomplete="off">
+            <h2 id="admin-sudo-title" data-i18n="admin.sudo_dialog_title">Jelszó-megerősítés (sudo)</h2>
+            <p class="dialog-text" id="admin-sudo-text"></p>
+            <input id="admin-sudo-password" type="password" autocomplete="current-password" placeholder="Jelszó" data-i18n-placeholder="admin.password" required>
+            <div id="admin-sudo-error" class="auth-error hidden"></div>
+            <div class="dialog-buttons">
+                <button id="admin-sudo-cancel" type="button" class="secondary" data-i18n="admin.cancel">Mégsem</button>
+                <button id="admin-sudo-submit" type="submit" data-i18n="admin.confirm">Megerősítés</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Egy naplósor részletei -->
+    <div id="admin-detail-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="admin-detail-title">
+        <div class="dialog-content admin-detail">
+            <h2 id="admin-detail-title"></h2>
+            <div id="admin-detail-body" class="admin-detail-body"></div>
+            <div class="dialog-buttons">
+                <button id="admin-detail-close" type="button" class="secondary" data-i18n="admin.close">Bezárás</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast-container" aria-live="polite"></div>
+
+    <script src="/static/i18n-data.js?v={{ public_v }}"></script>
+    <script src="/admin/assets/admin-i18n.js?v={{ asset_v }}"></script>
+    <script src="/static/i18n.js?v={{ public_v }}"></script>
+    <script src="/admin/assets/admin.js?v={{ asset_v }}"></script>
+</body>
+</html>

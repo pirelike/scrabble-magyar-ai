@@ -615,8 +615,9 @@ API útvonalak léteznek; `test_i18n.py` mintájára az admin fordítások telje
 
 ## 21. Megvalósítási sorrend
 
-1. **Alapok**: `ADMIN_EMAILS`, őr (404), `/admin` oldal + őrzött assetek, `is_admin` a `/me`-ben,
-   admin gomb, `admin_audit`, sudo mód, hozzáférési tesztek.
+1. **Alapok** *(kész)*: `ADMIN_EMAILS`, őr (404), `/admin` oldal + őrzött assetek, `is_admin` a `/me`-ben,
+   admin gomb, `admin_audit`, sudo mód, hozzáférési tesztek. Az „Admin napló” nézet is elkészült (a napló
+   ellenőrzéséhez kellett); a leírás és az eltérések a CLAUDE.md „Admin panel” szakaszában vannak.
 2. **Áttekintés + Felhasználók** (lista, részletek, kitiltás, némítás, kijelentkeztetés, név).
 3. **Élő szobák** (lista, részletek, megfigyelés, rendszerüzenet, kirúgás, feloszlatás, lezárás).
 4. **Szótár** (szó-vizsgáló, kizárt szavak, felülbírálás, szavazatok, gyorsítótárak).

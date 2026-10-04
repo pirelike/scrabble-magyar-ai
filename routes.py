@@ -30,6 +30,7 @@ from auth import (
     get_user_async_games,
     get_user_active_games, abandon_game_by_id, is_user_in_game,
     get_friends, get_pending_requests, get_sent_requests, search_users,
+    is_admin_user, touch_admin_session,
 )
 from email_service import send_verification_email
 from socket_auth import create_socket_token
@@ -109,6 +110,14 @@ def _set_session_cookie(response, token):
     return response
 
 
+def _with_admin_flag(payload, user):
+    """Csak az adminnál kerül a válaszba az `is_admin` jelző; másnál a kulcs sem szerepel
+    (egy `false` érték is elárulná, hogy admin panel létezik)."""
+    if is_admin_user(user):
+        payload['is_admin'] = True
+    return payload
+
+
 def _str_field(data, key):
     """Biztonságosan kiolvas egy szöveges mezőt a JSON törzsből (nem szöveg → '')."""
     value = data.get(key, '')
@@ -178,8 +187,11 @@ def request_code():
 
     response = {'success': True, 'message': 'Verifikációs kód elküldve.'}
     if not SMTP_CONFIGURED:
-        response['dev_code'] = code
         response['message'] = 'Fejlesztői mód: SMTP nincs konfigurálva.'
+        # Admin címnél a kód nem kerülhet a válaszba (a szerver konzolján olvasható): SMTP nélkül különben
+        # bárki "megerősíthetné" az admin címet, és a regisztrációval admin lenne.
+        if not is_admin_user({'email': email}):
+            response['dev_code'] = code
     return jsonify(response)
 
 
@@ -250,15 +262,17 @@ def register():
 
     user_id = result
     token = create_session(user_id)
+    if is_admin_user({'email': email}):
+        touch_admin_session(token)  # a jelszó most hangzott el: az admin panel azonnal nyitható
 
     resp = make_response(jsonify({
         'success': True,
         'message': 'Fiók létrehozva!',
-        'user': {
+        'user': _with_admin_flag({
             'id': user_id,
             'email': email,
             'display_name': name,
-        }
+        }, {'email': email})
     }))
     return _set_session_cookie(resp, token)
 
@@ -287,15 +301,17 @@ def login():
 
     user = result
     token = create_session(user['id'])
+    if is_admin_user(user):
+        touch_admin_session(token)  # a jelszó most hangzott el: az admin panel azonnal nyitható
 
     resp = make_response(jsonify({
         'success': True,
         'message': 'Sikeres bejelentkezés!',
-        'user': {
+        'user': _with_admin_flag({
             'id': user['id'],
             'email': user['email'],
             'display_name': user['display_name'],
-        }
+        }, user)
     }))
     return _set_session_cookie(resp, token)
 
@@ -319,14 +335,14 @@ def me():
 
     return jsonify({
         'success': True,
-        'user': {
+        'user': _with_admin_flag({
             'id': user['id'],
             'email': user['email'],
             'display_name': user['display_name'],
             'games_played': user['games_played'],
             'games_won': user['games_won'],
             'total_score': user['total_score'],
-        }
+        }, user)
     })
 
 
