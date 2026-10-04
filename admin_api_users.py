@@ -8,7 +8,7 @@ import admin
 import admin_live
 import admin_users
 import auth
-import config
+import mail_config
 import email_service
 import word_review
 from admin import AdminError
@@ -162,7 +162,7 @@ def users_reset_password(user_id):
         f'Az ideiglenes jelszavad: {password}\n\nBelépés után változtasd meg. A korábbi munkameneteid kijelentkeztek.')
     admin_live.kick_user(user_id)
     data = {'emailed': bool(emailed), 'sessions_closed': closed}
-    if not config.SMTP_CONFIGURED:
+    if not mail_config.is_configured():
         data['temp_password'] = password
     return json_ok(**data)
 

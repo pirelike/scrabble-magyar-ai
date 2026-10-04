@@ -17,7 +17,7 @@ import practice
 import push_service
 import settings
 import word_review
-from config import SMTP_CONFIGURED
+import mail_config
 from tiles import tokenize_word, word_base_score, TILE_VALUES
 from auth import (
     get_leaderboard, LEADERBOARD_METRICS, LEADERBOARD_MIN_GAMES,
@@ -192,7 +192,7 @@ def request_code():
     send_verification_email(email, code)
 
     response = {'success': True, 'message': 'Verifikációs kód elküldve.'}
-    if not SMTP_CONFIGURED:
+    if not mail_config.is_configured():
         response['message'] = 'Fejlesztői mód: SMTP nincs konfigurálva.'
         # Admin címnél a kód nem kerülhet a válaszba (a szerver konzolján olvasható): SMTP nélkül különben
         # bárki "megerősíthetné" az admin címet, és a regisztrációval admin lenne.

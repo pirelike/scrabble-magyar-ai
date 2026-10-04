@@ -53,6 +53,7 @@ const Router = {
             if (active) item.setAttribute('aria-current', 'page'); else item.removeAttribute('aria-current');
         });
         document.body.classList.remove('admin-nav-open');
+        Nav.revealActive();
         document.title = t(section.labelKey) + ' — ' + t('admin.title');
         const view = h('div', { class: 'admin-view' });
         const main = document.getElementById('admin-main');
@@ -87,6 +88,12 @@ const Nav = {
     set(sectionId, count) {
         this.badges[sectionId] = count;
         this.refreshBadges();
+    },
+
+    // Alacsony ablakban / telefonon az oldalmenü görgethető: a kijelölt menüpont ne maradjon a képen kívül
+    revealActive() {
+        const nav = document.getElementById('admin-nav');
+        revealInScroller(nav, nav && nav.querySelector('.admin-nav-item.active'), { axis: 'y' });
     },
 
     refreshBadges() {
@@ -262,6 +269,7 @@ function bindEvents() {
     });
     document.getElementById('admin-menu-btn').addEventListener('click', () => {
         document.body.classList.toggle('admin-nav-open');
+        Nav.revealActive();
     });
     document.getElementById('admin-nav-backdrop').addEventListener('click', () => {
         document.body.classList.remove('admin-nav-open');

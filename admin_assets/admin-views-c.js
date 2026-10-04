@@ -568,6 +568,207 @@ const CLEANUP_LABELS = {
     abandoned_games: 'admin.cl_abandoned_games', chat_log: 'admin.cl_chat_log', ip_bans: 'admin.cl_ip_bans', login_events: 'admin.cl_login_events',
 };
 
+// ===== Levelező szerver (SMTP) =====
+
+const MAIL_SECURITY_LABELS = { starttls: 'admin.mail_sec_starttls', ssl: 'admin.mail_sec_ssl', none: 'admin.mail_sec_none' };
+const MAIL_ERROR_LABELS = {
+    dns: 'admin.mail_err_dns', timeout: 'admin.mail_err_timeout', refused: 'admin.mail_err_refused', connect: 'admin.mail_err_connect',
+    tls: 'admin.mail_err_tls', certificate: 'admin.mail_err_certificate', auth: 'admin.mail_err_auth', unsupported: 'admin.mail_err_unsupported',
+    sender: 'admin.mail_err_sender', recipient: 'admin.mail_err_recipient', disconnected: 'admin.mail_err_disconnected',
+    protocol: 'admin.mail_err_protocol', error: 'admin.mail_err_error',
+};
+
+function mailErrorText(code) {
+    return t(MAIL_ERROR_LABELS[code] || MAIL_ERROR_LABELS.error);
+}
+
+// ISO 8601 időbélyeg (pl. a git commit ideje) helyi formában
+function formatIso(value) {
+    const date = value ? new Date(value) : null;
+    return date && !Number.isNaN(date.getTime()) ? date.toLocaleString(I18N.locale()) : '–';
+}
+
+const MailCard = {
+    build(mail, reload) {
+        const field = (labelKey, control, hintKey) => h('label', { class: 'admin-field' },
+            h('span', { class: 'admin-field-label' }, t(labelKey)), control,
+            hintKey ? h('span', { class: 'form-hint form-hint-tight' }, t(hintKey)) : null);
+        const host = h('input', { type: 'text', maxlength: 253, value: mail.host, placeholder: 'smtp.gmail.com', autocomplete: 'off' });
+        const port = h('input', { type: 'number', min: 1, max: 65535, value: mail.port });
+        const security = h('select', null, Object.entries(MAIL_SECURITY_LABELS).map(([value, key]) => h('option', { value }, t(key))));
+        security.value = mail.security;
+        const username = h('input', { type: 'text', maxlength: 254, value: mail.username, autocomplete: 'off' });
+        const password = h('input', { type: 'password', maxlength: 256, autocomplete: 'new-password',
+            placeholder: mail.password_set ? t('admin.mail_password_keep') : '' });
+        const fromAddress = h('input', { type: 'email', maxlength: 254, value: mail.from_address, autocomplete: 'off' });
+        const fromName = h('input', { type: 'text', maxlength: 80, value: mail.from_name, autocomplete: 'off' });
+        const verify = h('input', { type: 'checkbox', checked: !!mail.verify_tls });
+        const plainWarning = h('p', { class: 'form-hint admin-mail-warning' + (mail.security === 'none' ? '' : ' hidden') }, t('admin.mail_plain_warning'));
+
+        // A titkosítási mód váltásakor a port az új mód szokásos portjára áll, ha addig a régi mód alapportja volt
+        let lastSecurity = security.value;
+        security.addEventListener('change', () => {
+            if (Number(port.value) === mail.defaults[lastSecurity]) port.value = mail.defaults[security.value];
+            lastSecurity = security.value;
+            plainWarning.classList.toggle('hidden', security.value !== 'none');
+        });
+
+        // A jelszó üresen hagyva a mentettet jelenti (a szerver csak ugyanahhoz a kiszolgálóhoz / felhasználóhoz tartja meg)
+        const collect = (extra) => ({
+            host: host.value.trim(), port: port.value === '' ? null : Number(port.value), security: security.value,
+            username: username.value.trim(), password: password.value === '' ? null : password.value,
+            from_address: fromAddress.value.trim(), from_name: fromName.value.trim(), verify_tls: verify.checked, ...extra,
+        });
+
+        const sendTest = h('input', { type: 'checkbox' });
+        const result = h('div', { class: 'admin-mail-result', role: 'status' });
+        const setResult = (kind, text) => { result.className = 'admin-mail-result' + (kind ? ' ' + kind : ''); result.textContent = text; };
+        const checkBtn = UI.btn(t('admin.mail_check') + ' 🔒', async () => {
+            setResult('', t('admin.mail_checking'));
+            checkBtn.disabled = true;
+            const response = await Api.post('/api/admin/system/mail/check', collect({ send: sendTest.checked }));
+            checkBtn.disabled = false;
+            if (!response.ok) { if (response.status !== 401) setResult('bad', Api.message(response)); else setResult('', ''); return; }
+            const data = response.data;
+            if (!data.ok) setResult('bad', t('admin.mail_check_failed', { reason: mailErrorText(data.code) }));
+            else setResult('good', data.sent_to ? t('admin.mail_check_sent', { to: data.sent_to }) : t('admin.mail_check_ok'));
+        }, { kind: 'secondary' });
+
+        const env = mail.environment;
+        const sourceBadge = UI.badge(t(mail.source === 'database' ? 'admin.mail_source_database' : 'admin.mail_source_environment'),
+            mail.source === 'database' ? 'warn' : 'muted');
+        return UI.card(t('admin.card_mail'), h('p', { class: 'form-hint' }, t('admin.mail_note')),
+            UI.kv([
+                [t('admin.mail_state'), h('span', null, UI.badge(mail.configured ? t('admin.yes') : t('admin.no'), mail.configured ? 'ok' : 'danger'), ' ', sourceBadge)],
+                [t('admin.mail_env'), env.host ? `${env.host}:${env.port} · ${env.from_address || '–'} · ` + (env.configured ? t('admin.yes') : t('admin.no')) : null],
+                [t('admin.mail_changed'), mail.updated_at ? t('admin.set_changed', { who: mail.updated_by_name || '?', when: formatStamp(mail.updated_at) }) : null],
+            ]),
+            h('div', { class: 'admin-mail-form' },
+                field('admin.f_mail_host', host), field('admin.f_mail_port', port), field('admin.f_mail_security', security),
+                field('admin.f_mail_username', username, 'admin.f_mail_username_hint'), field('admin.f_mail_password', password, 'admin.f_mail_password_hint'),
+                field('admin.f_mail_from', fromAddress), field('admin.f_mail_from_name', fromName)),
+            plainWarning,
+            h('label', { class: 'admin-field admin-field-check' }, verify, h('span', { class: 'admin-field-label' }, t('admin.f_mail_verify'))),
+            h('p', { class: 'form-hint form-hint-tight' }, t('admin.f_mail_verify_hint')),
+            h('label', { class: 'admin-field admin-field-check' }, sendTest, h('span', { class: 'admin-field-label' }, t('admin.f_mail_send_test'))),
+            result,
+            h('div', { class: 'admin-action-row' },
+                checkBtn,
+                UI.btn(t('admin.mail_save') + ' 🔒', () => Act.open({
+                    title: t('admin.mail_save_title'), text: t('admin.mail_save_text'), doneText: t('admin.mail_saved'),
+                    run: (v) => Api.patch('/api/admin/system/mail', collect({ reason: v.reason })), done: reload })),
+                UI.btn(t('admin.smtp_test'), async () => {
+                    const response = await Api.post('/api/admin/system/smtp-test');
+                    if (!response.ok) showToast(response.data.code ? t('admin.smtp_test_failed', { reason: mailErrorText(response.data.code) }) : Api.message(response), true);
+                    else showToast(response.data.console ? t('admin.email_console') : t('admin.smtp_test_sent'));
+                }, { kind: 'secondary' }),
+                mail.source === 'database' ? UI.btn(t('admin.mail_reset') + ' 🔒', () => Act.open({
+                    title: t('admin.mail_reset'), text: t('admin.mail_reset_text'), danger: true, doneText: t('admin.mail_reset_done'),
+                    run: (v) => Api.del('/api/admin/system/mail', { reason: v.reason }), done: reload }), { kind: 'secondary' }) : null));
+    },
+};
+
+// ===== Frissítés GitHubról és újraindítás =====
+
+// Újraindítás után a szerver egy ideig nem válaszol: amint újra elérhető, a lap újratölt
+async function waitForRestart() {
+    showToast(t('admin.upd_restarting'));
+    let down = false;
+    for (let i = 0; i < 90; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const probe = await Api.request('GET', '/api/admin/session');
+        if (probe.status === 0) down = true;
+        else if (down) { location.reload(); return; }
+    }
+    showToast(t('admin.upd_restart_timeout'), true);
+}
+
+const UpdateCard = {
+    build(reload) {
+        const holder = h('div');
+        loadInto(holder, () => Api.get('/api/admin/system/update'), (box, data) => this.paint(box, data.update, reload));
+        return UI.card(t('admin.card_update'), h('p', { class: 'form-hint' }, t('admin.update_note')), holder);
+    },
+
+    paint(box, u, reload) {
+        if (!u.repo) { box.appendChild(h('p', { class: 'text-muted' }, t('admin.upd_not_repo'))); return; }
+        const commit = u.commit || {};
+        box.appendChild(UI.kv([
+            [t('admin.upd_branch'), u.branch || t('admin.upd_detached')],
+            [t('admin.upd_commit'), h('span', null, h('code', null, commit.short || '–'), ' ', commit.subject || '')],
+            [t('admin.col_time'), commit.date ? formatIso(commit.date) : null],
+            [t('admin.upd_remote'), u.remote ? h('code', { class: 'admin-code-wrap' }, u.remote) : null],
+            [t('admin.upd_running'), h('span', null, h('code', null, u.running_commit || '–'), ' ',
+                u.restart_needed ? UI.badge(t('admin.upd_restart_needed'), 'warn') : UI.badge(t('admin.upd_in_sync'), 'ok'))],
+        ]));
+        if (u.dirty_count) {
+            box.appendChild(h('div', { class: 'admin-mail-warning form-hint' }, h('strong', null, t('admin.upd_dirty', { n: u.dirty_count })), ' ',
+                t('admin.upd_dirty_note'), h('div', null, u.dirty.map((path) => h('code', { class: 'admin-code-wrap' }, path + ' ')))));
+        }
+
+        const planBox = h('div', { class: 'admin-update-plan' });
+        const errorText = (response) => Api.message(response) + (response.data.detail ? ' — ' + response.data.detail : '');
+        const runCheck = async (branch, fetch = true) => {
+            planBox.replaceChildren(h('p', { class: 'text-muted' }, t('admin.upd_checking')));
+            const response = await Api.post('/api/admin/system/update/check', { branch, fetch });
+            if (!response.ok) { planBox.replaceChildren(response.status === 401 ? '' : UI.errorBox(errorText(response))); return; }
+            this.paintPlan(planBox, response.data.update, runCheck, reload);
+        };
+        box.appendChild(h('div', { class: 'admin-action-row' },
+            UI.btn(t('admin.upd_check'), () => runCheck(undefined), { kind: 'secondary' }),
+            UI.btn(t('admin.upd_restart') + ' 🔒', () => Act.open({
+                title: t('admin.upd_restart'), text: t('admin.upd_restart_text'), danger: true,
+                run: (v) => Api.post('/api/admin/system/restart', { reason: v.reason }), done: () => waitForRestart() }), { kind: 'secondary', disabled: u.restart_scheduled })));
+        box.appendChild(planBox);
+    },
+
+    paintPlan(box, u, recheck, reload) {
+        const plan = u.plan;
+        const select = h('select', null, u.branches.map((b) => h('option', { value: b.name },
+            `${b.name}${b.current ? ' · ' + t('admin.upd_branch_current') : ''} · ${b.short} · ${b.subject}`)));
+        select.value = plan.branch;
+        select.addEventListener('change', () => recheck(select.value, false));
+        const blocked = u.dirty_count > 0 || plan.ahead > 0;
+        const children = [h('label', { class: 'admin-field' }, h('span', { class: 'admin-field-label' }, t('admin.upd_pick_branch')), select)];
+
+        if (plan.up_to_date) {
+            children.push(h('p', { class: 'form-hint' }, t('admin.upd_up_to_date')));
+        } else {
+            children.push(UI.kv([
+                [t('admin.upd_switch_label'), plan.switch ? t('admin.upd_switch', { from: u.branch || t('admin.upd_detached'), to: plan.branch }) : null],
+                [t('admin.upd_new_commits'), String(plan.behind)], [t('admin.upd_files'), String(plan.files_total)]]));
+            if (plan.ahead > 0) children.push(h('p', { class: 'form-hint admin-mail-warning' }, t('admin.upd_ahead', { n: plan.ahead })));
+            if (plan.incoming.length) {
+                children.push(UI.subtitle(t('admin.upd_incoming')), UI.table({ compact: true, items: plan.incoming, columns: [
+                    { label: t('admin.upd_col_commit'), cell: (c) => h('code', null, c.short) }, { label: t('admin.upd_col_message'), cell: (c) => c.subject },
+                    { label: t('admin.upd_col_author'), cell: (c) => c.author }, { label: t('admin.col_time'), cell: (c) => formatIso(c.date) }] }));
+            }
+            if (plan.files.length) {
+                children.push(h('details', { class: 'admin-details' }, h('summary', null, t('admin.upd_files_list', { n: plan.files_total })),
+                    h('div', null, plan.files.map((f) => h('div', null, h('code', null, f.status + ' ' + f.path))))));
+            }
+        }
+        children.push(h('div', { class: 'admin-action-row' }, UI.btn(t('admin.upd_apply') + ' 🔒', () => this.apply(plan, reload),
+            { kind: 'primary', disabled: plan.up_to_date || blocked })));
+        box.replaceChildren(...children);
+    },
+
+    apply(plan, reload) {
+        const fields = [];
+        if (plan.requirements_changed) fields.push({ name: 'install', type: 'checkbox', label: t('admin.f_upd_install'), value: true });
+        fields.push({ name: 'restart', type: 'checkbox', label: t('admin.f_upd_restart'), value: false, hint: t('admin.f_upd_restart_hint') });
+        Act.open({
+            title: t('admin.upd_apply_title', { branch: plan.branch }), text: t('admin.upd_apply_text', { branch: plan.branch }), danger: true, fields,
+            doneText: t('admin.upd_done'),
+            run: (v) => Api.post('/api/admin/system/update/apply', { branch: plan.branch, install: !!v.install, restart: !!v.restart, reason: v.reason }),
+            done: (data, v) => {
+                if (data.update.installed === false) showToast(t('admin.upd_install_failed'), true);
+                if (data.update.restarting) waitForRestart(); else reload();
+            },
+        });
+    },
+};
+
 const SystemView = {
     async render(view) {
         const holder = h('div');
@@ -589,7 +790,7 @@ const SystemView = {
         box.appendChild(UI.card(t('admin.card_services'), UI.kv([
             [t('admin.srv_dictionary'), yes(d.services.dictionary)], [t('admin.srv_vocabulary'), yes(d.services.vocabulary)],
             [t('admin.srv_push'), h('span', null, yes(d.push.available), ' ', t('admin.push_subs', { n: d.push.subscriptions }))],
-            [t('admin.srv_smtp'), h('span', null, yes(d.smtp.configured), d.smtp.host ? ' ' + d.smtp.host : '')],
+            [t('admin.srv_smtp'), h('span', null, yes(d.mail.configured), d.mail.host ? ' ' + d.mail.host : '')],
             [t('admin.srv_tunnel'), h('span', null, UI.badge(tunnel.state || '–', tunnel.url ? 'ok' : 'muted'), tunnel.url ? [' ', tunnel.url] : null)],
             [t('admin.d_vapid'), d.push.public_key ? h('code', { class: 'admin-code-wrap' }, d.push.public_key) : null]]),
         h('div', { class: 'admin-action-row' },
@@ -599,12 +800,10 @@ const SystemView = {
             UI.btn(t('admin.push_test_self'), async () => {
                 const result = await Api.post('/api/admin/system/push-test');
                 showToast(result.ok ? t('admin.push_test_sent', { n: result.data.sent }) : Api.message(result), !result.ok);
-            }, { kind: 'secondary' }),
-            UI.btn(t('admin.smtp_test'), async () => {
-                const result = await Api.post('/api/admin/system/smtp-test');
-                if (!result.ok) showToast(Api.message(result), true);
-                else showToast(result.data.console ? t('admin.email_console') : t('admin.smtp_test_sent'));
             }, { kind: 'secondary' }))));
+
+        box.appendChild(MailCard.build(d.mail, reload));
+        box.appendChild(UpdateCard.build(reload));
 
         const v = d.versions;
         box.appendChild(UI.card(t('admin.card_versions'), UI.kv([

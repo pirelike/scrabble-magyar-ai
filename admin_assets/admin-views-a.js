@@ -702,11 +702,11 @@ const RoomDetailView = {
 
             if (live) right.appendChild(this.actions(room, started, askReason, act, () => messageText, (v) => { messageText = v; }));
 
-            right.appendChild(UI.card(t('admin.card_history'), room.history.length ? UI.table({ compact: true,
+            right.appendChild(UI.card(t('admin.card_moves'), room.history.length ? UI.table({ compact: true,
                 items: room.history.slice(-30).reverse(), columns: [
                     { label: '#', cell: (m) => m.n },
                     { label: t('admin.col_player'), cell: (m) => m.player },
-                    { label: t('admin.col_action'), cell: (m) => m.type },
+                    { label: t('admin.col_action'), cell: (m) => moveTypeLabel(m.type) },
                     { label: t('admin.col_words'), cell: (m) => (m.words || []).join(', ') },
                     { label: t('admin.col_score'), cell: (m) => m.score },
                 ] }) : h('p', { class: 'text-muted' }, t('admin.none'))));

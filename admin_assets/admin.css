@@ -7,6 +7,11 @@
     position: absolute;
 }
 
+:root {
+    /* A tábla legnagyobb mérete (nagy képernyőn nő, lásd a lap alján) */
+    --admin-board-max: 560px;
+}
+
 .admin-app {
     display: flex;
     flex-direction: column;
@@ -110,6 +115,7 @@
     flex: 1;
     min-width: 0;
     max-width: 1280px;
+    margin-inline: auto;
     padding: var(--space-6) max(var(--space-6), var(--safe-right)) calc(var(--space-8) + var(--safe-bottom))
              var(--space-6);
 }
@@ -130,7 +136,7 @@
 
 .admin-filters {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
     gap: var(--space-3);
     align-items: end;
     margin-bottom: var(--space-4);
@@ -721,6 +727,22 @@
 
 .admin-tabs::-webkit-scrollbar { display: none; }
 
+/* Ha a fülsor görgethető, a kilógó oldalon elhalványul (a ScrollRow állítja az osztályokat) */
+.admin-tabs.can-scroll-left {
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 28px);
+    mask-image: linear-gradient(90deg, transparent 0, #000 28px);
+}
+
+.admin-tabs.can-scroll-right {
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent 100%);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent 100%);
+}
+
+.admin-tabs.can-scroll-left.can-scroll-right {
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 28px, #000 calc(100% - 28px), transparent 100%);
+    mask-image: linear-gradient(90deg, transparent 0, #000 28px, #000 calc(100% - 28px), transparent 100%);
+}
+
 .admin-tab {
     --btn-bg: transparent;
     --btn-bg-hover: var(--color-fill-strong);
@@ -828,7 +850,7 @@
 
 .admin-chart-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
     gap: var(--space-3);
     margin-bottom: var(--space-4);
 }
@@ -870,8 +892,8 @@
 .heat-5 { background: var(--accent); }
 
 .admin-hbars { display: grid; gap: 6px; }
-.hbar-row { display: grid; grid-template-columns: minmax(70px, 28%) 1fr 48px; align-items: center; gap: var(--space-2); font-size: var(--text-sm); }
-.hbar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hbar-row { display: grid; grid-template-columns: minmax(70px, 28%) minmax(40px, 1fr) minmax(32px, auto); align-items: center; gap: var(--space-2); font-size: var(--text-sm); }
+.hbar-label { min-width: 0; line-height: 1.25; overflow-wrap: anywhere; }
 .hbar-track { height: 10px; border-radius: 5px; background: var(--color-fill); overflow: hidden; }
 .hbar-fill { height: 100%; border-radius: 5px; background: var(--accent); }
 .hbar-value { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
@@ -898,10 +920,12 @@
 
 .admin-board {
     display: grid;
-    grid-template-columns: repeat(15, 1fr);
+    /* Rögzített sávok: a sorok magassága ne függjön a tartalomtól (az üres sorok különben összeesnek) */
+    grid-template-columns: repeat(15, minmax(0, 1fr));
+    grid-template-rows: repeat(15, minmax(0, 1fr));
     gap: 1px;
     width: 100%;
-    max-width: 560px;
+    max-width: var(--admin-board-max);
     aspect-ratio: 1;
     padding: 2px;
     background: var(--board-border, var(--border-primary));
@@ -913,6 +937,8 @@
     align-items: center;
     justify-content: center;
     min-width: 0;
+    min-height: 0;
+    overflow: hidden;
     background: var(--cell-empty, var(--color-fill));
     border-radius: 2px;
     container-type: inline-size;
@@ -928,7 +954,7 @@
 
 .admin-room-layout {
     display: grid;
-    grid-template-columns: minmax(280px, 560px) minmax(0, 1fr);
+    grid-template-columns: minmax(280px, var(--admin-board-max)) minmax(0, 1fr);
     gap: var(--space-4);
     align-items: start;
 }
@@ -954,13 +980,13 @@
 .admin-replay-controls { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3); }
 .admin-replay-slider { flex: 1; margin: 0; }
 .admin-replay-info { margin-bottom: var(--space-3); font-size: var(--text-sm); color: var(--text-secondary); }
-.admin-replay-stage { max-width: 560px; }
+.admin-replay-stage { max-width: var(--admin-board-max); }
 
 .admin-word-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); margin-bottom: var(--space-4); }
 .admin-word-head .admin-tile { font-size: var(--text-lg); }
 
-@media (max-width: 900px) {
-    .admin-room-layout { grid-template-columns: 1fr; }
+@media (max-width: 1180px) {
+    .admin-room-layout { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* ----- Szerver napló ----- */
@@ -1009,7 +1035,8 @@
 }
 
 .admin-table td { white-space: normal; }
-.admin-table td .admin-action-row { flex-wrap: nowrap; }
+.admin-table td .admin-action-row { flex-wrap: wrap; }
+.admin-user-link { white-space: nowrap; }
 .admin-table td .admin-action-row button, .admin-table td button { white-space: nowrap; }
 
 /* A közös stíluskészlet csak a szöveg-, e-mail- és jelszómezőt fedi le: az admin többi mezője (szám, keresés, dátum,
@@ -1069,3 +1096,66 @@
 
 .admin-setting-control input[type="number"], .admin-setting-control select { width: 150px; }
 .admin-search-box input { margin-bottom: var(--space-2); }
+
+/* ===== Levelező szerver és frissítés (Rendszer) ===== */
+
+.admin-mail-form {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: var(--space-3);
+    margin: var(--space-3) 0;
+}
+
+.admin-mail-warning {
+    margin: var(--space-2) 0;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    background: var(--gold-subtle);
+    color: var(--gold-text);
+}
+
+.admin-mail-result { min-height: 1.4em; margin-top: var(--space-2); font-size: var(--text-sm); color: var(--text-secondary); }
+.admin-mail-result.good { color: var(--success-text); }
+.admin-mail-result.bad { color: var(--danger-text); }
+
+.admin-update-plan { margin-top: var(--space-3); }
+.admin-update-plan .admin-field { max-width: 520px; margin-bottom: var(--space-3); }
+
+/* ===== Nagy képernyő: a tartalom szélesebb és középen áll, a betűk és a tábla is nagyobbak ===== */
+
+@media (min-width: 1600px) {
+    :root { --admin-board-max: 640px; }
+    .admin-main { max-width: 1560px; }
+}
+
+@media (min-width: 1920px) {
+    :root {
+        --admin-board-max: 720px;
+        --text-xs: 12px;
+        --text-sm: 14px;
+        --text-base: 16px;
+        --text-lg: 18px;
+        --text-xl: 21px;
+        --text-2xl: 26px;
+        --text-3xl: 30px;
+    }
+
+    .admin-nav { flex-basis: 264px; width: 264px; }
+    .admin-main { max-width: 1800px; }
+}
+
+@media (min-width: 2400px) {
+    :root {
+        --admin-board-max: 820px;
+        --text-xs: 13px;
+        --text-sm: 15px;
+        --text-base: 17px;
+        --text-lg: 20px;
+        --text-xl: 23px;
+        --text-2xl: 29px;
+        --text-3xl: 34px;
+    }
+
+    .admin-nav { flex-basis: 288px; width: 288px; }
+    .admin-main { max-width: 2100px; }
+}

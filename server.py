@@ -31,6 +31,7 @@ import routes as public_routes
 from game import Game, CHALLENGE_TIMEOUT, ALLOWED_HINT_LIMITS, DEFAULT_HINT_LIMIT
 from room import Room
 import config
+import mail_config
 from config import AUTH_RATE_LIMITS
 from auth import (
     init_db, save_game, finish_game, add_game_move,
@@ -2830,7 +2831,7 @@ if __name__ == '__main__':
     if config.ADMIN_EMAILS:  # csak a szerver konzoljára: a webes felület semmit sem árul el
         print(f"[admin] Admin panel bekapcsolva ({len(config.ADMIN_EMAILS)} admin cím"
               f"{', IP-lista aktív' if config.ADMIN_IP_ALLOWLIST else ''})")
-        if not config.SMTP_CONFIGURED:
+        if not mail_config.is_configured():
             print("[admin] Figyelem: SMTP nincs beállítva — az admin cím regisztrációs kódja csak ezen a konzolon jelenik meg.")
 
     if use_tunnel:

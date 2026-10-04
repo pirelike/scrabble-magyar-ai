@@ -18,6 +18,7 @@ from importlib import metadata
 import admin
 import auth
 import config
+import mail_config
 from admin import AdminError
 
 START_TIME = time.time()
@@ -242,7 +243,7 @@ def services_info():
         'dictionary': bool(dictionary.is_available()),
         'vocabulary': ai_player._vocabulary is not None,
         'push': bool(push_service.is_available()),
-        'smtp': bool(config.SMTP_CONFIGURED),
+        'smtp': bool(mail_config.is_configured()),
         'tunnel': tunnel.status(),
     }
 
@@ -307,11 +308,12 @@ def config_view():
         return {'key': key, 'value': MASK if is_set else '', 'secret': True, 'set': bool(is_set)}
 
     import push_service
+    mail = mail_config.current()     # a most érvényes levelezés (az admin panelen mentett vagy a környezeti)
     items = [
-        plain('SMTP_HOST', config.SMTP_HOST), plain('SMTP_PORT', config.SMTP_PORT),
-        plain('SMTP_USER', config.SMTP_USER), plain('SMTP_FROM', config.SMTP_FROM),
-        secret('SMTP_PASSWORD', bool(config.SMTP_PASSWORD)),
-        plain('SMTP_CONFIGURED', config.SMTP_CONFIGURED),
+        plain('SMTP_HOST', mail['host']), plain('SMTP_PORT', mail['port']), plain('SMTP_SECURITY', mail['security']),
+        plain('SMTP_USER', mail['username']), plain('SMTP_FROM', mail['from_address']),
+        secret('SMTP_PASSWORD', bool(mail['password'])),
+        plain('SMTP_CONFIGURED', mail['configured']), plain('SMTP_SOURCE', mail['source']),
         secret('SECRET_KEY', bool(os.environ.get('SECRET_KEY'))),
         secret('VAPID_PRIVATE_KEY', bool(os.environ.get('VAPID_PRIVATE_KEY'))),
         plain('VAPID_SUBJECT', push_service.subject()),
