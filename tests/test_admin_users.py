@@ -8,7 +8,7 @@ import auth
 import config
 import server
 from helpers import (
-    ADMIN_EMAIL, ADMIN_PASSWORD, finished_game, guest_client, live_room, make_user, registered_client,
+    ADMIN_EMAIL, finished_game, guest_client, live_room, make_user, registered_client,
 )
 
 REASON = 'Teszt indoklás'

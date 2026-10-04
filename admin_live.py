@@ -359,7 +359,7 @@ def room_detail(ctx, room_key):
         'spectator_names': sorted(room.spectators.values()),
         'async': {'turn_hours': game.turn_hours, 'deadline': game.turn_deadline} if game.async_mode else None,
         'last_action': game.last_action, 'max_players': room.max_players, 'puzzle': game.puzzle,
-        'saved': room.db_game_id,
+        'saved': room.db_game_id, 'server_time': time.time(),
     })
     return detail
 

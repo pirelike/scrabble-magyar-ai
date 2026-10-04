@@ -34,8 +34,9 @@ _UNSAFE_METHODS = frozenset({'POST', 'PUT', 'PATCH', 'DELETE'})
 _IDLE_EXEMPT = frozenset({'admin_api.session_info', 'admin_api.reauth',
                           'admin_pages.page', 'admin_pages.asset'})
 
-_CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; "
-        "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+# A Socket.IO kliens ugyanonnan töltődik, mint a nyilvános oldalon (cdnjs); a WebSocket kapcsolat a saját hosttal
+_CSP = ("default-src 'none'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self'; img-src 'self' data:; "
+        "font-src 'self'; connect-src 'self' ws: wss:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 
 
 # ===== Őr =====

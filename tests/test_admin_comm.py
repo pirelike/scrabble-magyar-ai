@@ -8,7 +8,7 @@ import email_service
 import push_service
 import server
 from helpers import (
-    ADMIN_EMAIL, ADMIN_PASSWORD, client_with_session, guest_client, live_room, make_user, registered_client,
+    ADMIN_EMAIL, client_with_session, guest_client, live_room, make_user, registered_client,
 )
 
 REASON = 'Teszt indoklás'

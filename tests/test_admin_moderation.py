@@ -1,15 +1,12 @@
 """Admin panel: moderáció — tiltott szavak, chat napló, bejelentések (a játékosoknál is), nevek átnézése."""
-import json
-
 import pytest
 
 import admin
 import admin_mod
-import auth
 import push_service
 import server
 from helpers import (
-    ADMIN_EMAIL, client_with_session, guest_client, live_room, make_user, registered_client,
+    client_with_session, guest_client, live_room, make_user, registered_client,
 )
 
 REASON = 'Teszt indoklás'

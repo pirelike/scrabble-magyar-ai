@@ -31,19 +31,22 @@ Böngészőben: http://localhost:5000
 - `challenge.py` — Challenge (megtámadás) logika, szavazási állapotgép, vote resolution
 - `room.py` — Room osztály (szoba állapot, owner, beállítások, chat, timer invalidálás, megfigyelők, robotlépés-azonosító)
 - `state.py` — ServerState singleton (szobák, játékosok, tokenek, reconnect tracking, megfigyelők, élő játékok)
-- `admin.py` — Admin panel logika (a Flask kéréstől független): napló (`action` — kötelező indoklás, a művelettel egy tranzakcióban; `record` — `view.*` események indoklás nélkül), munkamenet (`session_status`, `touch`, `sudo_active`, `reauth`, `grant_sudo`, `end_sudo`), naplólekérdezés és CSV (`query_audit`, `audit_csv`), `ip_allowed`; lásd „Admin panel”
-- `admin_routes.py` — Admin HTTP réteg: az őr (`before_app_request`: 404 / IP-lista / forgalomkorlát / CSRF / tétlenség), `admin_bp` (`/api/admin`), `admin_pages_bp` (`/admin`, `/admin/assets/`), `danger` és `sudo_required` dekorátorok
-- `admin_assets/` — Az admin felület kliens fájljai (`admin.js`, `admin.css`, `admin-i18n.js`, `admin-boot.js`); szándékosan NEM a nyilvános `static/` mappában, csak az őrzött útvonalon érhetők el
+- `admin.py` — Admin panel logika (a Flask kéréstől független): napló (`action` — kötelező indoklás, a művelettel egy tranzakcióban; `record` — `view.*` események indoklás nélkül), munkamenet (`session_status`, `touch`, `sudo_active`, `reauth`, `grant_sudo`, `end_sudo`), naplólekérdezés és CSV (`query_audit`, `audit_csv`), közös segédek (`fold`, `order_by`, `parse_until`, `clean_text`…), `ip_allowed`; lásd „Admin panel”
+- `admin_routes.py` — Admin HTTP réteg: az őr (`before_app_request`: 404 / IP-lista / forgalomkorlát / CSRF / tétlenség), `admin_bp` (`/api/admin`), `admin_pages_bp` (`/admin`, `/admin/assets/`), `danger` és `sudo_required` dekorátorok, közös segédek (`json_ok`, `reason_of`, `csv_response`); a végpontok az `admin_api_*.py` fájlokban
+- `admin_api_users.py` (áttekintés, kereső, felhasználók) · `admin_api_game.py` (szobák, játékarchívum, levelezős, ranglista / értékszám, napi feladvány) · `admin_api_dict.py` (szótár, bejelentések, moderáció) · `admin_api_comm.py` (közlemények, karbantartás, push, e-mail, beállítások, statisztika) · `admin_api_system.py` (biztonság, rendszer)
+- `admin_users.py` (felhasználók: lista, részletek, név / e-mail / jelszó, kitiltás, némítás, értékszám, kitüntetések, export, törlés) · `admin_live.py` (élő szobák, beavatkozások, számlálók, figyelmeztetések, grafikonok; a `server.py`-t a `bind()` injektálja) · `admin_games.py` (archívum, érvénytelenítés, ELO újraszámolás, gyanús minták, levelezős beavatkozások) · `admin_dict.py` (szó-vizsgáló, kizárt lista, felülbírálatok, saját szavak, bírálók, gyorsítótárak) · `admin_comm.py` (közlemények, karbantartási mód, push, e-mail) · `admin_stats.py` (statisztika, napi feladvány) · `admin_mod.py` (tiltott szavak, chat napló, bejelentések, nevek) · `admin_security.py` (belépési napló, IP tiltás, kódok, munkamenetek, forgalomkorlát-állapot) · `admin_system.py` (naplópuffer, háttérfolyamatok, konfiguráció, adatbázis, mentés, takarítás)
+- `settings.py` — Futásidejű beállítások (`app_settings`, `cfg.<kulcs>`): `DEFINITIONS` (típus, határok, alapérték), `get` / `store` / `validate` / `describe`, `maintenance()`; újraindítás nélkül hatnak
+- `admin_assets/` — Az admin felület kliens fájljai: `admin.js` (mag: API, munkamenet, zárolás, sudo), `admin-ui.js` (komponensek, szűrős listanézet, űrlap-párbeszéd, grafikonok, tábla), `admin-views-a.js` / `-b.js` / `-c.js` (menüpontok), `admin-main.js` (útvonalválasztó, élő kapcsolat, Ctrl+K kereső, indítás), `admin.css`, `admin-i18n.js`, `admin-boot.js`; szándékosan NEM a nyilvános `static/` mappában, csak az őrzött útvonalon érhetők el
 - `routes.py` — Flask blueprint-ek: auth (+ push feliratkozás), game (lépések, megosztás, elemzés, levelezős lista), public (ranglista, szótár-ellenőrző, napi feladvány, gyakorló módok), main (index + PWA: `/manifest.webmanifest`, `/sw.js`)
 - `config.py` — SMTP, auth, DB, rate limit és admin (`ADMIN_EMAILS`, tétlenségi / sudo idő, IP-lista) konfigurációs konstansok (`os.environ`-ból)
-- `auth.py` — SQLite DB kezelés, regisztráció, login, session, jelszó hash (PBKDF2), játék mentés/visszatöltés/lépésnaplózás, admin: `is_admin_user`, az admin munkamenet állapota (`admin_seen_at`, `sudo_until`), `admin_audit` tábla (triggerekkel csak hozzáfűzhető)
+- `auth.py` — SQLite DB kezelés, regisztráció, login, session, jelszó hash (PBKDF2), játék mentés/visszatöltés/lépésnaplózás, admin: `is_admin_user`, az admin munkamenet állapota (`admin_seen_at`, `sudo_until`), `admin_audit` tábla (triggerekkel csak hozzáfűzhető); kitiltás / némítás (`users.banned_until`, `chat_muted_until`), belépési napló, az admin panel táblái (lásd „Admin panel”)
 - `email_service.py` — 6 számjegyű kód generálás, SMTP küldés (háttérszálon)
 - `rate_limiter.py` — Generikus rate limiter Socket.IO (SID) és HTTP (IP) endpointokhoz
 - `socket_auth.py` — Aláírt, rövid életű token a Socket.IO identitás igazolásához (`set_name`)
 - `tunnel.py` — Cloudflare tunnel subprocess kezelés (indítás/leállítás)
 - `dict/` — Beágyazott hu_HU hunspell szótár fájlok (hu_HU.dic, hu_HU.aff) + `hu_attested.txt` (a kockázatos levezetések ténylegesen használt alakjai, CC BY-SA 4.0) + `hu_rejected.txt` (a szótár-építő átnézésén elutasított szavak)
 - `templates/index.html` — Egyoldalas UI: auth (3 tab), lobby (Kezdőlap / Új szoba / Mentett játékok / Barátok / Levelezős / Gyakorlás / Ranglista), várakozó szoba, játék, profil, visszajátszás (+ elemzés); közös SVG ikon-sprite, minden képernyőn egységes felső sáv (`app-topbar`); minden szöveg `data-i18n*` jelölésű
-- `templates/admin.html` — Az admin panel oldala (nincs beágyazott szkript / stílus: szigorú CSP); csak adminnak
+- `templates/admin.html` — Az admin panel oldala (nincs beágyazott szkript / stílus: szigorú CSP; a Socket.IO kliens a cdnjs-ről); csak adminnak
 - `templates/sw.js` — Service worker (Jinja sablon, `VERSION` = kliens fájlok mtime-ja; az `/admin` soha nem kerül gyorsítótárba)
 - `static/app.js` — Kliens logika, drag & drop, pinch-to-zoom, Socket.IO kommunikáció, auth flow, téma váltás, hang rendszer (SoundManager, SoundSettings), megfigyelő mód, ranglista, szótár-böngésző, előnézet, zsetonszámláló, tipp, gyorsbillentyűk, PWA telepítés; modulok: `Daily`, `Practice` (+ `PracticeStore`: a gyakorlás statisztikája a `localStorage`-ban), `AsyncGames`, `LobbyNav`, `Push`, `Badges`, `Replay` (elemzés, megosztás); közös segédek: `makeEl`, `makeAvatar`, `tokenizeWord` (a szerver `tokenize_word`-jének mása), `fillWordTiles`
 - `static/i18n.js` + `static/i18n-data.js` — Többnyelvű felület: `t()`, `tServer()`, `I18N.setLang()`; a fordítások (hu/en) szigorú JSON-ban
@@ -52,7 +55,7 @@ Böngészőben: http://localhost:5000
 - `tools/bot_arena.py` — Robot-aréna: a fokozatok erejének mérése bot–bot játékokkal (`ladder`, `match`, `adapt`; kalibrációhoz, nem része a szervernek)
 - `tools/build_attested.py` — a `dict/hu_attested.txt` előállítása egy szógyakorisági listából (elírás- és névszűrővel; nem része a szervernek)
 - `tools/word_review.py` — a szótár-építő tömeges párja: `sample` (véletlen szavak átnézésre, pl. AI-nak), `apply` (az elutasított szavak felvétele a `dict/hu_rejected.txt`-be), `stats` (nem része a szervernek)
-- `tests/` — Tesztek (pytest, 1709 teszt)
+- `tests/` — Tesztek (pytest, 2152 teszt); `tests/admin_browser_server.py` + `admin_browser_smoke.js` — a böngészős admin teszt segédei (nem pytest-fájlok)
 - `requirements.txt` — Python függőségek (flask, flask-socketio, gevent, gevent-websocket, opcionálisan pywebpush)
 - `.venv/` — Virtual environment
 
@@ -67,6 +70,8 @@ Böngészőben: http://localhost:5000
 - **Játékelemzés**: a játék végén lépésenként a legjobb lehetséges lépés és a kint maradt pont
 - **Kitüntetések** (bingó, 100+ pontos lépés, 8+ zsetonos szó, joker, 300 pontos játék, robotverő, napi feladvány…), **visszajátszás megosztása linkkel** (`/?replay=TOKEN`), **visszavonás** (függő lerakás visszavonása szavazás előtt, Ctrl+Z)
 - **Web Push**: értesítés, ha rád kerül a sor, miközben nem nézed a játékot (profil → kapcsoló)
+- **Admin panel** (`/admin`, csak a `ADMIN_EMAILS` címeihez kötött fióknak, másnak azonos 404): felhasználók (kitiltás, némítás, jelszó, értékszám…), élő szobák beavatkozásokkal, játékarchívum és visszajátszás, ELO újraszámolás, szótár-kezelés, moderáció (bejelentések, tiltott szavak, chat napló), közlemények és karbantartási mód, push / e-mail, statisztika, biztonság, rendszer (mentés, napló), funkciókapcsolók, csak hozzáfűzhető admin napló kötelező indoklással; lásd „Admin panel”
+- **Játékos oldali moderáció**: játékos / chat üzenet bejelentése, közlemény-banner (hu / en), karbantartási mód, a kitiltás okának és lejáratának megjelenítése
 - **Szótár-böngésző**: szó-ellenőrző párbeszéd (érvényes-e, pontérték, zsetonok, javaslatok)
 - **Többnyelvű felület**: magyar + angol (`localStorage('scrabble-lang')`), a szótár magyar marad
 - **PWA**: telepíthető, kapcsolat nélkül induló felület (service worker), ikonok, manifest
@@ -107,7 +112,7 @@ Böngészőben: http://localhost:5000
 - XSS védelem: frontend innerHTML helyett DOM API (textContent, createElement, addEventListener)
 - Jelszó: `werkzeug.security` PBKDF2-SHA256, 260k iteráció, random salt
 - Verifikációs kód: 6 számjegy, 10 perc lejárat, max 5 próbálkozás/kód
-- Admin panel: e-mailhez kötött (`ADMIN_EMAILS`), nem adminnak minden admin útvonal azonos 404, tétlenség utáni jelszókérés, sudo mód a romboló műveletekhez, CSRF-védelem, opcionális IP-lista, csak hozzáfűzhető napló (lásd „Admin panel”)
+- Admin panel: e-mailhez kötött (`ADMIN_EMAILS`), nem adminnak minden admin útvonal azonos 404, tétlenség utáni jelszókérés, sudo mód a romboló műveletekhez, CSRF-védelem, opcionális IP-lista, csak hozzáfűzható napló; kitiltás (fiók / IP), kötelező indoklás minden módosításnál (lásd „Admin panel”)
 - Session: `secrets.token_urlsafe(48)`, HttpOnly cookie, 30 nap lejárat
 
 ## Szoba rendszer
@@ -185,10 +190,11 @@ Vendég mód: a régi név-megadós flow megmarad (statisztikák nem mentődnek)
 - `GET /api/push/public-key`, `POST /api/push/subscribe|unsubscribe` — Web Push (bejelentkezve)
 - `GET /api/leaderboard?metric=rating|wins|win_rate|avg_score|best_game&limit=50` — ranglista (nyilvános; bejelentkezve a saját helyezés is: `me`, `is_me`)
 - `GET|POST /api/dictionary/check` (`q` / `words`, max. 8 szó) — szó-ellenőrzés: `valid`, `tiles`, `score`, `reason`, `suggestions`
+- `GET /api/announcements` — a most érvényes közlemények és a karbantartási mód (nyilvános; a célcsoport a bejelentkezéstől függ; `announcements` 60/perc)
 - `GET /manifest.webmanifest`, `GET /sw.js` — PWA (a service worker a gyökérről, `Service-Worker-Allowed: /`)
 
 Session cookie: `HttpOnly` + `SameSite=Lax` + `Secure` (Cloudflare tunnel HTTPS).
-IP-alapú rate limiting (`rate_limiter.py`): kód küldés 3/5perc, login 10/5perc, regisztráció 3/óra, ranglista 30/perc, szótár 60/perc, admin 120/perc (romboló műveletek: 20/perc).
+IP-alapú rate limiting (`rate_limiter.py`): kód küldés 3/5perc, login 10/5perc, regisztráció 3/óra, ranglista 30/perc, szótár 60/perc, admin 120/perc (romboló műveletek: 20/perc), közlemények 60/perc. Az értékek az admin panelen futásidőben felülírhatók (Biztonság → Forgalomkorlátok).
 
 ### Frontend auth (`index.html` + `app.js`)
 Az `auth-screen` 3 tabbal:
@@ -249,14 +255,22 @@ Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztésh
 | `tests/test_push.py` | 44 | VAPID, feliratkozások, küldés (mockolva), API, „Te jössz!” kiváltása |
 | `tests/test_async_games.py` | 56 | Levelezős játék: játéklogika (határidő, lejárat, feladás), szerver, mentés / visszaállítás, lista, útvonalak |
 | `tests/test_word_review.py` | 48 | Szótár-építő: elutasított szavak a szótárban (lista + szavazatok), szavazás / küszöb / visszavonás, mintavétel, API (belépés, ellenőrzés, rate limit), `tools/word_review.py`, a mellékelt lista épsége |
-| `tests/test_admin_access.py` | 174 | Admin hozzáférés: nem admin → mindenhol azonos 404 (oldal, asset, API, rossz metódus, `//`), `ADMIN_EMAILS` üres, e-mailhez kötött adminság, `is_admin` csak az adminnál, nyilvános fájlok admin-mentessége, tétlenség és újraigazolás, CSRF, sudo (és a `danger` / `sudo_required` védelmek), IP-lista, forgalomkorlát, Socket.IO, service worker, az admin cím nem foglalható le |
+| `tests/test_admin_access.py` | 207 | Admin hozzáférés: nem admin → mindenhol azonos 404 (oldal, asset, API, rossz metódus, `//`) — az **összes** útvonalra az útvonaltérképből, `ADMIN_EMAILS` üres, e-mailhez kötött adminság, `is_admin` csak az adminnál, nyilvános fájlok admin-mentessége, tétlenség és újraigazolás, CSRF (fejléc + azonos eredet) minden módosító útvonalon, sudo (és a `danger` / `sudo_required` védelmek), IP-lista, forgalomkorlát, Socket.IO, service worker, CSP, az admin cím nem foglalható le |
 | `tests/test_admin_audit.py` | 51 | Admin napló: csak hozzáfűzhető (trigger), kötelező indoklás, a művelettel egy tranzakcióban (visszagördülés), szűrők / lapozás / LIKE-menekítés, CSV (képlet-injekció elleni védelem), végpont és export naplózása |
-| `tests/test_admin_client.py` | 26 | Admin kliens: JS szintaxis, fordítások teljessége (hu/en, szerverüzenetek AST-ből), hívott API útvonalak és elem-azonosítók léte, nincs `innerHTML` / beágyazott kód |
+| `tests/test_admin_users.py` | 80 | Felhasználók: lista / szűrők (ékezetfüggetlen), részletek, név / e-mail / jelszó, kitiltás (belépés, session, socket, futó játék, lejárat), némítás, szótár-építő tiltás / visszavonás, értékszám, kitüntetések, export, törlés / anonimizálás, jegyzetek, védett admin fiókok |
+| `tests/test_admin_rooms.py` | 61 | Élő szobák: lista / szűrők / elakadás-érzékelés, részletek, kezek naplózása, beavatkozások (üzenet, kirúgás, tulajdonjog, kör átugrása, időzítő, szavazás, robot, mentés, befejezés, érvénytelenítés, feloszlatás), zsetonmegmaradás, élő admin események |
+| `tests/test_admin_games.py` | 43 | Játékarchívum, érvénytelenítés / visszavonás, ELO újraszámolás (= a lépésenkénti számolás), gyanús minták, levelezős beavatkozások, ranglista |
+| `tests/test_admin_dictionary.py` | 43 | Szó-vizsgáló, kizárt lista (írás, visszagördülés, diff), felülbírálatok, saját szavak, szavazatok törlése, bírálók, küszöb, gyorsítótárak |
+| `tests/test_admin_comm.py` | 68 | Közlemények (érvényességi idő, célcsoport, nyilvános végpont), karbantartási mód, push, e-mail (tömeges: megerősítés, korlát), beállítások (érvényesítés, naplózás, hatás futásidőben), statisztika, napi feladvány |
+| `tests/test_admin_system.py` | 65 | Rendszer (konfiguráció titkok nélkül, mentés, takarítás, naplók, folyamatok), biztonság (belépési napló, IP tiltás, forgalomkorlát, kódok, munkamenetek), áttekintés és figyelmeztetések |
+| `tests/test_admin_moderation.py` | 26 | Tiltott szavak, chat napló (élő / tartós), játékos oldali bejelentés, nevek átnézése |
+| `tests/test_admin_client.py` | 49 | Admin kliens: JS szintaxis (minden fájl), fordítások teljessége (hu/en, szerverüzenetek AST-ből az összes `admin*.py`-ból), a hívott API útvonalak és metódusok léte, minden végponthoz van felület, elem-azonosítók, menüpontok, nincs `innerHTML` / beágyazott kód, a kliens magja és a fordítás node-ban |
+| `tests/test_admin_browser.py` | 1 | Az admin felület valódi böngészőben (Playwright): minden menüpont betöltődik, nincs JS hiba, művelet-párbeszéd, sudo, kereső, élő Socket.IO események, telefon, nyelvváltás (kimarad, ha nincs node / Playwright / Chromium) |
 
-**Összesen: 1709 teszt**
+**Összesen: 2152 teszt**
 
-Fixture: `tests/conftest.py` — temp_db (auto-applied, ideiglenes SQLite DB minden teszthez)
-Segédek: `tests/helpers.py` — `registered_set_name_payload()` (érvényes socket-tokennel), `verify_email()`
+Fixture: `tests/conftest.py` — temp_db (auto-applied, ideiglenes SQLite DB minden teszthez), `admin_env` (az `ADMIN_EMAILS` beállítva), `api` (bejelentkezett admin API-kliens), `isolated_dictionary` (a tartós kizárt lista ideiglenes másolata)
+Segédek: `tests/helpers.py` — `registered_set_name_payload()` (érvényes socket-tokennel), `verify_email()`, admin: `AdminApi`, `make_user`, `guest_client`, `registered_client`, `live_room`, `finished_game`
 
 ## Challenge (megtámadás) rendszer — szavazásos
 
@@ -336,7 +350,9 @@ Játék közben a side panelen chat szekció érhető el:
 | `set_visibility` | `{hidden}`: a böngészőlap háttérbe került-e (push értesítéshez) |
 | `spectate_room` | Megfigyelés: `{room_id}` (nyilvános) vagy `{code}` (privát is); csak folyamatban lévő játék |
 | `leave_spectate` | Kilépés a megfigyelésből |
-| `admin_subscribe` | Belépés az `admin` Socket.IO szobába (élő admin események). Csak adminnak hat (`admin_subscribed` a válasz); másnak csendben semmi. Kijelentkezéskor és azonosságváltáskor a kapcsolat kilép a szobából |
+| `admin_subscribe` | Belépés az `admin` Socket.IO szobába (élő admin események). Az admin oldal `{auth_token}`-nel (aláírt socket-token, nem számít online játékosnak), a játékból bejelentkezett admin anélkül. Csak adminnak hat (`admin_subscribed` + `admin_overview` a válasz); másnak csendben semmi. Kijelentkezéskor és azonosságváltáskor a kapcsolat kilép a szobából |
+| `admin_watch_room` | `{room_id}` (azonosító vagy kód): egy élő szoba figyelése az admin panelről (nem néző, nem számít a korlátba); a szoba minden változásáról `admin_room_state` érkezik. Csak adminnak, másnak csendben semmi |
+| `report_content` | Játékos vagy chat üzenet bejelentése `{kind: 'player'\|'chat', target, message, reason}` (csak regisztrált, a szobában lévő játékos) → `report_result` |
 
 ### Játékmenet (kliens→szerver)
 | Event | Leírás |
@@ -379,6 +395,10 @@ Játék közben a side panelen chat szekció érhető el:
 | `rating_update` | `{rating, change}` — új értékszám a befejezett játék után |
 | `game_saved` | `{game_id}` — a befejezett játék azonosítója (elemzés / visszajátszás) |
 | `async_your_turn` / `async_invited` | Levelezős játék: rád került a sor / meghívtak (a lobbyban lévőnek) |
+| `announcement` | `{registered, guests}` — a közlemények / karbantartási mód élő frissítése (a kliens a sajátját választja) |
+| `account_banned` | `{reason, until}` — a fiók kitiltása: a kapcsolat azonnal bezárul |
+| `report_result` | `{success, message}` — a bejelentés eredménye |
+| `admin_overview` / `admin_room_update` / `admin_room_state` / `admin_alert` / `admin_report` | Csak az `admin` szobának: élő számlálók (5 mp), egy szoba sora, egy figyelt szoba teljes állapota, tiltott szavas üzenet, új bejelentés |
 | `error` | Hibaüzenet |
 
 ## Rate limiting
@@ -402,6 +422,8 @@ Játék közben a side panelen chat szekció érhető el:
 'request_hint': (3, 30),
 'spectate_room': (5, 10),
 'admin_subscribe': (5, 10),     # csendben eldobva
+'admin_watch_room': (20, 10),   # csendben eldobva
+'report_content': (3, 60),
 'leave_spectate': (5, 10),
 'withdraw_words': (5, 10),
 'set_visibility': (20, 10),
@@ -520,6 +542,7 @@ A tábla cellái `container-type: inline-size` + `cqw` egységekkel méreteződn
 ### admin.py / config.py (admin)
 - `ADMIN_EMAILS` (üres → nincs admin), `ADMIN_SESSION_IDLE_MINUTES = 30`, `ADMIN_SUDO_MINUTES = 10`, `ADMIN_IP_ALLOWLIST` (üres → bárhonnan; hibás elemnél indulási hiba), `AUTH_RATE_LIMITS['admin'] = (120, 60)`, `['admin_danger'] = (20, 60)`
 - `MIN_REASON_LEN = 3`, `MAX_REASON_LEN = 500`, `TOUCH_INTERVAL_SECONDS = 15`, `AUDIT_DEFAULT_LIMIT = 50`, `AUDIT_MAX_LIMIT = 200`, `AUDIT_EXPORT_MAX = 10000`
+- `config.BACKUP_DIR` (`SCRABBLE_BACKUP_DIR`, alapért. `backups/`, a `.gitignore`-ban); `admin_live.STUCK_*` (elakadás-érzékelés), `admin_security.FAILED_*` (gyanús belépések), `admin_comm.MAX_*` / `BULK_EMAIL_COOLDOWN`, `admin_system.LOG_BUFFER_SIZE = 2000`
 
 ### elo.py / achievements.py / daily.py / async_games.py
 - `INITIAL_RATING = 1200`, `K_PROVISIONAL = 32` (az első 10 értékelt játék), `K_ESTABLISHED = 20`, `MIN_RATED_GAMES_FOR_RANKING = 3`
@@ -705,29 +728,64 @@ A hu_HU szótár helyesírás-ellenőrzésre készült, ezért a Scrabble-ban so
 
 ## Admin panel
 
-Részletes specifikáció és a megvalósítási sorrend: `docs/ADMIN_PANEL.md`. **Állapot: az 1. lépés kész** (hozzáférés, őr, munkamenet, sudo, napló, az admin oldal váza és az „Admin napló” nézet); a további menüpontok a `SECTIONS` listába (`admin_assets/admin.js`) kerülnek.
+Részletes specifikáció: `docs/ADMIN_PANEL.md`. **Állapot: mind a nyolc lépés kész** — hozzáférés / őr / sudo / napló, áttekintés, felhasználók, élő szobák, játékarchívum, levelezős játékok, ranglista / értékszám, szótár, napi feladvány, moderáció, kommunikáció, statisztika, biztonság, rendszer, beállítások, admin napló; globális kereső (Ctrl+K), élő frissítés Socket.IO-n, magyar / angol felület, telefonon is használható.
 
 ### Ki az admin
-- Az `ADMIN_EMAILS` környezeti változó (vesszővel elválasztott e-mail címek, kisbetűsítve hasonlítva) határozza meg; üresen a panel ki van kapcsolva (minden admin útvonal 404). Nem adatbázis-oszlop és nem a megjelenítési névhez kötött: `auth.is_admin_user(user)`. Vendég soha nem admin. **Csak olyan címet adj meg, amelynek a fiókja már a tiéd** (vagy SMTP-vel regisztrálj): az admin címnél a `request-code` SMTP nélkül sem adja vissza a kódot (`dev_code`), az a szerver konzolján olvasható.
+- Az `ADMIN_EMAILS` környezeti változó (vesszővel elválasztott e-mail címek, kisbetűsítve hasonlítva) határozza meg; üresen a panel ki van kapcsolva (minden admin útvonal 404). Nem adatbázis-oszlop és nem a megjelenítési névhez kötött: `auth.is_admin_user(user)`. Vendég soha nem admin. **Csak olyan címet adj meg, amelynek a fiókja már a tiéd** (vagy SMTP-vel regisztrálj): az admin címnél a `request-code` SMTP nélkül sem adja vissza a kódot (`dev_code`), az a szerver konzolján olvasható. Az admin címek védettek: más fiók nem veheti fel őket, az admin fiókot nem lehet kitiltani, törölni, némítani (és saját magadat sem).
 - Opcionális: `ADMIN_IP_ALLOWLIST` (IP-k / CIDR-ek; hibás elemnél a szerver el sem indul), `ADMIN_SESSION_IDLE_MINUTES` (30), `ADMIN_SUDO_MINUTES` (10).
 
 ### Láthatatlanság (nem admin semmit sem tud meg)
-- A `admin_routes._guard` az egész alkalmazás elé kerül (`before_app_request`, az útvonal-illesztés előtt), ezért a **rossz metódus** (405), a **nem létező alútvonal** és a `//admin` is ugyanazt a szokásos 404-et adja nem adminnak. Az admin válaszok fejlécei (`no-store`, CSP, `X-Frame-Options`...) csak az adminnak mennek (`g.admin_user`), így a 404 fejlécei sem árulkodnak.
+- A `admin_routes._guard` az egész alkalmazás elé kerül (`before_app_request`, az útvonal-illesztés előtt), ezért a **rossz metódus** (405), a **nem létező alútvonal** és a `//admin` is ugyanazt a szokásos 404-et adja nem adminnak. Az admin válaszok fejlécei (`no-store`, CSP, `X-Frame-Options`...) csak az adminnak mennek (`g.admin_user`), így a 404 fejlécei sem árulkodnak. A `tests/test_admin_access.py` az **összes** admin útvonalat az alkalmazás útvonaltérképéből állítja elő (új végpont automatikusan bekerül): nem adminnak mind azonos 404, CSRF nélkül 403, tétlenség után 401 `reauth`.
 - Az oldal (`GET /admin` → `templates/admin.html`) és az assetek (`GET /admin/assets/<fájl>` ← `admin_assets/`) ugyanazt az őrt használják. Az admin JS / CSS / fordítás **nincs** a `static/` mappában, a nyilvános `i18n-data.js` nem tartalmaz `admin.` kulcsot, az `index.html` pedig semmilyen admin elemet; az „Admin” gombot a `static/app.js` `AdminEntry` modulja futásidőben szúrja be, ha a `/api/auth/me` `is_admin`-t jelez. A service worker az `/admin` útvonalakat nem érinti.
-- CSP: `script-src 'self'; style-src 'self'` — az admin oldalon nincs beágyazott szkript és `style=` attribútum (a téma / nyelv beállítása az `admin-boot.js`-ben).
+- CSP: `script-src 'self' https://cdnjs.cloudflare.com; style-src 'self'; connect-src 'self' ws: wss:` — az admin oldalon nincs beágyazott szkript és `style=` attribútum (a téma / nyelv beállítása az `admin-boot.js`-ben; a JS csak CSSOM-on át állít stílust). A Socket.IO kliens ugyanonnan töltődik, mint a nyilvános oldalon; ha nem érhető el, a nézetek időzítővel frissülnek.
 
 ### Az őr lépései (sorrendben)
 1. Azonosítás (`session_token` süti → `validate_session` → `is_admin_user`), különben 404. 2. IP-engedélylista (kívülről 404). 3. IP-alapú forgalomkorlát (`admin`). 4. CSRF: nem biztonságos metódusnál kötelező az `X-Admin-Request: 1` fejléc **és** az `Origin` (vagy `Referer`) hostja egyezzen a kérés hostjával (különben 403). 5. Tétlenség: az utolsó admin-kérés óta eltelt idő > `ADMIN_SESSION_IDLE_MINUTES` (vagy nincs időbélyeg) → 401 `{reauth: true}`; kivétel az oldal, az assetek, `GET /api/admin/session` és `POST /api/admin/reauth` (ezek nem frissítik az időzítőt). A sikeres kérés ritkítottan (15 mp) frissíti a `sessions.admin_seen_at`-et. A friss belépés (jelszó) is beállítja.
-- **Sudo mód**: `POST /api/admin/sudo {password}` → `ADMIN_SUDO_MINUTES` percre a `sessions.sudo_until`-ban (a sessionhöz kötve, tétlenség / újraigazolás lezárja); `DELETE /api/admin/sudo` lezárja. A romboló végpontokra `@admin_routes.sudo_required` (401 `{sudo_required: true}`), a sudo nélküli, de veszélyesekre `@admin_routes.danger` (`admin_danger` forgalomkorlát) kerül. A rossz jelszó a `login` forgalomkorlátjába számít és naplózódik (`admin.sudo_failed` / `admin.reauth_failed`).
+- **Sudo mód**: `POST /api/admin/sudo {password}` → `ADMIN_SUDO_MINUTES` percre a `sessions.sudo_until`-ban (a sessionhöz kötve, tétlenség / újraigazolás lezárja); `DELETE /api/admin/sudo` lezárja. A romboló végpontokra `@admin_routes.sudo_required` (401 `{sudo_required: true}`), a sudo nélküli, de veszélyesekre `@admin_routes.danger` (`admin_danger` forgalomkorlát) kerül. A kliens (`Api.call`) a 401-et felismeri: jelszót kér, majd megismétli a kérést. A rossz jelszó a `login` forgalomkorlátjába számít és naplózódik (`admin.sudo_failed` / `admin.reauth_failed`).
 
 ### Napló (`admin_audit`)
 - Tábla: id, admin_user_id, action, target_type, target_id, details_json, ip, user_agent, created_at. **Nem törölhető és nem szerkeszthető**: `BEFORE UPDATE` / `BEFORE DELETE` trigger. A napló nem törlődik a felhasználó törlésekor sem (nincs idegen kulcs).
-- **Módosító műveletek** mindig így íródnak: `with admin.action(ctx, 'user.ban', 'user', uid, reason=indoklás, details={...}) as act: act.conn.execute(...); act.details['before'] = ...; act.details['after'] = ...`. Az indoklás kötelező (3–500 karakter; hiányában a művelet el sem indul), a naplósor a művelettel **egy tranzakcióban** íródik (hiba vagy naplózási hiba esetén minden visszagördül). A memóriabeli mellékhatásokat (socket bontás, szoba) a blokk UTÁN kell elvégezni. Személyes adat megtekintése: `admin.record(conn, ctx, 'view.…', …)` (indoklás nélkül). Az `AdminContext(admin_user_id, ip, user_agent)` a kérésből jön (`g.admin_ctx`).
-- Végpontok (`/api/admin`, mind JSON): `GET /session` (ki az admin, `session`: `idle_*`, `sudo_*`), `POST /reauth {password}`, `POST /sudo {password}`, `DELETE /sudo`, `GET /audit?admin=&action=&target_type=&target_id=&since=&until=&q=&limit=&offset=` (lapozott lista, legfeljebb 200); `format=csv` vagy `download=1` a letöltés (legfeljebb 10 000 sor, `view.audit_export` naplósorral; a CSV-ben a `=`, `+`, `-`, `@` kezdetű cellák elé `'` kerül).
-- Socket.IO: `admin_subscribe` (lásd fent); az admin szoba neve `admin` (`server.ADMIN_ROOM`).
+- **Módosító műveletek** mindig így íródnak: `with admin.action(ctx, 'user.ban', 'user', uid, reason=indoklás, details={...}) as act: act.conn.execute(...); act.details['before'] = ...; act.details['after'] = ...`. Az indoklás kötelező (3–500 karakter; hiányában a művelet el sem indul; csak ott hagyható el, ahol a tartalom maga az indoklás: közlemény, push, e-mail — `require_reason=False`), a naplósor a művelettel **egy tranzakcióban** íródik (hiba vagy naplózási hiba esetén minden visszagördül). A memóriabeli mellékhatásokat (socket bontás, szoba) a blokk UTÁN kell elvégezni; a memóriabeli beavatkozásoknál (szoba) a naplósor a művelet ELŐTT íródik, így naplózási hiba esetén a művelet nem történik meg. Személyes adat megtekintése: `admin.record(conn, ctx, 'view.…', …)` (indoklás nélkül: `view.user`, `view.game`, `view.racks`, `view.chat`, `view.report`, `view.codes`, `view.logins_export`, `view.audit_export`). Az `AdminContext(admin_user_id, ip, user_agent)` a kérésből jön (`g.admin_ctx`).
+- Végpontok (`/api/admin`, mind JSON): `GET /session`, `POST /reauth`, `POST|DELETE /sudo`, `GET /audit?admin=&action=&target_type=&target_id=&since=&until=&q=&limit=&offset=` (lapozott lista, legfeljebb 200); `format=csv` vagy `download=1` a letöltés (legfeljebb 10 000 sor; a CSV-ben a `=`, `+`, `-`, `@` kezdetű cellák elé `'` kerül).
+
+### Menüpontok és végpontok (`/api/admin`)
+| Menüpont | Végpontok (kivonat) | Sudo |
+|---|---|---|
+| **Áttekintés** | `GET /overview` (élő számlálók, mai adatok, szerver, szolgáltatások, figyelmeztetések), `GET /charts?days=` (30 napos grafikonok), `GET /search?q=` (felhasználó / szoba / játék / szó) | – |
+| **Felhasználók** | `GET /users` (szűrők: `q status online admin from to min_games inactive_days sort order`, CSV), `GET /users/<id>` (részletek, `view.user`), `/profile` (olvasható nézet, megszemélyesítés nincs), `PATCH /users/<id>` (név; e-mail sudo-val, a régi címre értesítés), `POST /users/<id>/ban` (sudo; 1h/1d/7d/30d/végleges), `unban`, `mute`, `unmute`, `logout-all`, `reset-password` (sudo; SMTP nélkül egyszer a válaszban), `rating` (sudo), `badges`, `recompute-stats`, `reviews/revert` (sudo), `reviews/block`, `push-test`, `push/<id>` (törlés), `notes`, `export` (GDPR JSON), `DELETE /users/<id>` (sudo; anonimizálás / törlés, a név begépelése) | részben |
+| **Élő szobák** | `GET /rooms`, `GET /rooms/<id\|kód>` (tábla, zsák, szavazás, történet, chat, türelmi idők), `/racks` (kezek, `view.racks`), `POST /rooms/<id>/action {action}`: `message kick transfer skip extend pause resume resolve_vote reschedule_bot save end void disband` (`end`, `void`, `disband`: sudo) | részben |
+| **Játékok** | `GET /games` (szűrők, CSV), `/games/<id>` (`view.game`), `/moves` (visszajátszás), `/export`, `POST /void` `unvoid` (az ELO újraszámolódik) `unshare` `status` `reanalyze`, `DELETE /games/<id>` (sudo), `GET|POST /games/cleanup` | részben |
+| **Levelezős** | `GET /async`, `POST /async/<id>/extend expire resign remind void load unload`, `POST /async/sweep` | – |
+| **Ranglista** | `GET /ratings?metric=`, `/ratings/suspicious`, `POST /ratings/recompute {dry_run}` (alkalmazás: sudo) | részben |
+| **Szótár** | `GET /dictionary/word?w=` (döntési lánc), `/rejected` (+ `preview`, `download`, `export-votes` sudo), `/overrides`, `/additions`, `DELETE /votes` (sudo), `/second-opinion`, `/reviewers`, `/review-summary`, `/threshold`, `POST /caches/clear` | részben |
+| **Napi feladvány** | `GET /daily?date=`, `/daily/archive`, `/daily/preview`, `POST /daily/<dátum>/regenerate`, `DELETE /scores/<user>`, `POST /scores/<user>/reset-revealed` | ha voltak próbálkozások |
+| **Moderáció** | `GET /reports`, `/reports/<id>` (`view.report`), `PATCH /reports/<id>`, `GET /moderation/chat?source=live\|log` (`view.chat`), `/moderation/words` (+ `POST`, `DELETE`), `/moderation/names` | – |
+| **Kommunikáció** | `GET|POST /announcements`, `PATCH|DELETE /announcements/<id>`, `GET|POST /maintenance`, `POST /push/preview`, `POST /push` (csoportnál `confirm`), `POST /email`, `GET /email/preview`, `POST /email/bulk` (sudo, percenként egy, max. 500) | részben |
+| **Statisztika** | `GET /stats?metric=registrations\|active\|retention\|games\|bots\|words\|challenges\|practice\|review\|heatmap&range=7\|30\|90\|365` (CSV) | – |
+| **Biztonság** | `GET /security/logins` (gyanús minták jelölve, CSV), `/security/rate-limits` (+ `POST /unblock`), `/security/ip-bans` (+ `POST` sudo, `DELETE`), `/security/codes` (`view.codes`), `/security/sessions` (+ `DELETE`, `POST revoke-all` sudo, `POST close-admins`) | részben |
+| **Rendszer** | `GET /system` (szerver, szolgáltatások, konfiguráció titkok nélkül, verziók, adatbázis, mentések, háttérfolyamatok, push, tunnel), `/system/logs`, `GET|POST /system/backup` (letöltés: sudo), `POST /system/vacuum`, `GET|POST /system/cleanup` (sudo), `POST /system/tunnel/restart` (sudo), `smtp-test`, `push-test` | részben |
+| **Beállítások** | `GET /settings`, `PATCH /settings {changes: {kulcs: érték \| null}, reason}` (`null` = vissza az alapra) | – |
+| **Admin napló** | `GET /audit` | – |
+
+Szerver-újraindítás / leállítás gomb **nincs** (a folyamatot a gazdagép kezeli): helyette karbantartási mód.
+
+### Beállítások (`settings.py`, `app_settings` tábla, `cfg.<kulcs>`)
+`registration_open`, `guest_allowed`, `room_creation` (everyone / registered / none), `max_spectators`, `default_hint_limit`, `bots_enabled`, `max_bots`, `default_bot_level`, `bot_think_multiplier`, `feature_daily` / `feature_async` / `feature_practice` / `feature_word_review`, `word_reject_threshold`, `grace_disconnect`, `grace_waiting_owner`, `chat_max_length`, `chat_rate_count` / `chat_rate_window`, `banned_word_action` (mask / drop), `chat_log_enabled` / `chat_log_days`, `backup_daily` / `backup_keep`, `rate_limits_http` / `rate_limits_socket` (felülírások), rejtetten `maintenance`. Olvasás: `settings.get(kulcs, alapérték)` (gyorsítótárazott, `auth.DB_PATH`-hoz kötve); a módosítás után a `server.apply_runtime_settings()` érvényesíti (forgalomkorlátok, szótár-építő küszöb, chat). Az érték mellett látszik az alapérték, a „visszaállítás alapra” és a legutóbbi módosító. Új funkciókapcsoló: `DEFINITIONS` + `SETTING_TEXT` az `admin-views-c.js`-ben + fordítás.
+
+### Adatbázis (az admin panel miatti bővítések, migrációval)
+- `users`: `banned_until` (végleges: `9999-12-31 23:59:59`), `ban_reason`, `chat_muted_until`, `review_blocked`, `last_login_at`, `last_login_ip`, `deleted_at`; `sessions`: `ip`, `user_agent`, `last_seen`, `admin_seen_at`, `sudo_until`.
+- Új táblák: `admin_audit`, `user_admin_notes`, `rating_adjustments` (kézi értékszám-módosítás; az ELO újraszámolás ezt is figyelembe veszi), `word_overrides`, `word_additions`, `announcements`, `reports`, `login_events`, `ip_bans`, `chat_log`, `usage_counters` (gyakorló módok napi hívásszáma), `banned_words`, `app_settings`.
+- Kitiltás: a `validate_session` kitiltott / törölt felhasználóra `None`-t ad (a session azonnal érvénytelen), a socket-kapcsolatok bezárulnak (`admin_live.kick_user`, `account_banned`), a futó játékban lecsatlakozottá válik; belépéskor a felhasználó látja az okot és a lejáratot. IP tiltás: `@app.before_request` és a socket `connect` (30 mp-es gyorsítótár). Némítás: a `send_chat` csendben eldobja. Karbantartási mód: új szoba / levelezős játék / napi próbálkozás letiltva (az admin kivétel), bannerrel.
+- Anonimizálás: név → „Törölt felhasználó #id”, e-mail és jelszó törölve, a játékok és az értékszám-előzmények megmaradnak; teljes törlés külön opció. Az ELO újraszámolás (`admin_games.compute_ratings`) a befejezett, robot nélküli játékokat `updated_at, id` szerint játssza újra: a lépésenkénti számolással azonos eredményt ad (teszt). Érvénytelenített játék: `saved_games.status = 'voided'`, nem számít az értékszámba / statisztikába / ranglistába.
+
+### Kliens felépítése (`admin_assets/`)
+- Szabályok: kizárólag DOM API (`h()` elemépítő: a szöveg mindig szövegcsomópont; `innerHTML` nincs), **minden szöveg** `t('admin.kulcs')` vagy `data-i18n` (a kulcsok csak `[a-z_]`, szó szerint a kódban — nincs összefűzés; hu **és** en az `admin-i18n.js`-ben, a szerver magyar üzenetei az `en.server.exact`-ban), a hálózati hívás egyetlen helyen (`Api.request`, minden kérésen az `X-Admin-Request` fejléc), a kulcsok és az API útvonalak létét a tesztek ellenőrzik.
+- `Router`: `#menüpont/azonosító?szűrők` (a szűrők, a lapozás, a rendezés és a fül az URL-ben: vissza gomb, linkmásolás); `registerSection({id, order, icon, labelKey, render})`; `Router.onLeave` / `Router.interval` a nézet elhagyásakor takarít. `mountList` — szűrős, rendezhető, lapozott lista CSV exporttal; `Act.open({title, fields, confirmName, run, done})` — minden módosító művelet űrlap-párbeszéde (kötelező indoklás, célpont-név begépelése, a mezőnkénti szerverhiba kiemelése, sudo-kérés a 401 után); `Chart` (SVG oszlop / vonal / halmozott / hőtérkép / vízszintes oszlop), `renderBoard` (15×15 tábla, a premium mezőkkel), `loadInto` (vázlat, hiba, újrapróbálás).
+- Élő frissítés: `Live` (Socket.IO `admin` szoba; `admin_overview` ötmásodpercenként, `admin_room_update`, `admin_room_state` a figyelt szobára, `admin_alert`, `admin_report` → toast + menü-jelvény); Socket.IO nélkül (CDN nem elérhető) a nézetek időzítővel frissülnek.
+- Telefonon a menü oldalról csúszó lap, a táblázatok soronként kártyák, a lapok görgethetők.
 
 ### Új admin funkció hozzáadása (teendők)
-1. Logika az `admin.py`-ban (vagy új modulban), módosításnál `admin.action(...)`. 2. Végpont az `admin_routes.py`-ban (`admin_bp`), romboló műveletnél `@sudo_required`. 3. Menüpont a `SECTIONS` listában + nézet az `admin.js`-ben, **minden szöveg** az `admin-i18n.js`-ben (hu **és** en; a szerver magyar üzenetei az `en.server.exact`-ban — a `tests/test_admin_client.py` ellenőrzi). 4. Hozzáférési teszt: az új végpontot fel kell venni a `tests/test_admin_access.py` `ADMIN_ENDPOINTS` listájába. 5. Az e-mail módosításánál (2. lépés) az `ADMIN_EMAILS` címei védettek: más fiók nem vehet fel admin címet.
+1. Logika az `admin_*.py` megfelelő moduljában (vagy újban), módosításnál `admin.action(...)`. 2. Végpont az `admin_api_*.py`-ban (`admin_bp`), romboló műveletnél `@sudo_required` / `@danger`. 3. Nézet az `admin-views-*.js`-ben (`registerSection` új menüponthoz), **minden szöveg** az `admin-i18n.js`-ben (hu **és** en; az új szerverüzenet is az `en.server.exact`-ban). 4. Teszt a funkcióhoz; a hozzáférési tesztek az új útvonalat automatikusan lefedik (útvonaltérkép), de a `tests/test_admin_client.py` számon kéri, hogy minden végpontnak legyen felülete. 5. Kliens-oldali hiba kereséséhez: `tests/test_admin_browser.py` (valódi szerver + Playwright; kimarad, ha nincs node / Playwright / Chromium — a `PLAYWRIGHT_MODULE`, `PLAYWRIGHT_CHROMIUM` környezeti változóval felülírható).
 
 ## Ismert problémák / TODO
 
@@ -761,10 +819,11 @@ Részletes specifikáció és a megvalósítási sorrend: `docs/ADMIN_PANEL.md`.
 - [x] Többnyelvű felület — magyar és angol UI (a szótár marad magyar)
 - [x] Drag & drop vizuális visszajelzés javítása — foglalt cellák jelölése drop közben
 - [x] Kényelmi funkciók — élő előnézet, zsetonszámláló, keverés/rendezés + gyorsbillentyűk, meghívó link, lépéstörténet
+- [x] Admin panel — felhasználók, élő szobák, archívum, szótár, moderáció, kommunikáció, statisztika, biztonság, rendszer, beállítások (lásd „Admin panel”)
+- [x] Játékos oldali újdonságok az admin panelhez: bejelentés (játékos / chat üzenet), közlemény-banner, karbantartási mód, kitiltás üzenete
 
 ### Ötletek
 - [ ] Szótár-építő: az AI által elutasított szavak emberi második véleménye (külön mintavétel a `hu_rejected.txt` szavaiból), a felhasználói szavazatok exportja a tartós listába, mintázat-alapú átvizsgálás (a népnév + -gyűlölet / -ellenesség / -üldözés … családok teljes végigjárása), szavankénti szerepkör / küszöb
 - [ ] Robot: kétszeres ragozás és hosszabb szótövek (memória!), tapasztalati értékelés (szimuláció), emberszerűbb lépések (kevesebb egyzsetonos lépés az alsó fokozatokon), gyakori szavak listája a ritka szavak elkerülésére, fokozat robotonként a felületen
 - [ ] Levelezős játék: nyitott (ismeretlen ellenfeles) játékok, e-mail értesítés push híján, chat, emlékeztető a határidő előtt
-- [ ] Admin panel — csak a kijelölt felhasználónak (`ADMIN_EMAILS`); részletes specifikáció: `docs/ADMIN_PANEL.md`. Kész: 1. lépés (hozzáférés, őr, sudo, napló, váz); hátra: a 2–8. lépés (felhasználók, szobák, szótár, játékok, kommunikáció, biztonság / rendszer / beállítások, statisztika / moderáció)
 - [ ] Több nyelv a felületen (a `i18n-data.js` blokkja és a `SUPPORTED` lista bővítésével)

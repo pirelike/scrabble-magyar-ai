@@ -96,7 +96,7 @@ class TestRejectedList:
         uid, _ = make_user('a@example.com', 'Anna')
         word = _valid_word()
         word_review.record_vote(uid, word.upper(), False)
-        item = api.get(f'/api/admin/dictionary/rejected?source=voted').get_json()['items'][0]
+        item = api.get('/api/admin/dictionary/rejected?source=voted').get_json()['items'][0]
         assert item['word'] == word.upper() and item['voted'] is True and item['bad'] == 1 and item['listed'] is False
 
     def test_csv(self, api):

@@ -8,7 +8,6 @@ import re
 import shutil
 import subprocess
 import sys
-import time
 
 import pytest
 from flask import Flask, jsonify
@@ -33,6 +32,11 @@ ADMIN_ENDPOINTS = [
     ('GET', '/admin/assets/admin.css'),
     ('GET', '/admin/assets/admin-i18n.js'),
     ('GET', '/admin/assets/admin-boot.js'),
+    ('GET', '/admin/assets/admin-ui.js'),
+    ('GET', '/admin/assets/admin-views-a.js'),
+    ('GET', '/admin/assets/admin-views-b.js'),
+    ('GET', '/admin/assets/admin-views-c.js'),
+    ('GET', '/admin/assets/admin-main.js'),
     ('GET', '/admin/assets/nincs-ilyen.js'),
     ('GET', '/admin/masik'),
     ('GET', '/api/admin'),
@@ -91,6 +95,90 @@ def _assert_plain_404(response, reference):
     # Az admin válaszok fejlécei sem szivároghatnak a 404-re
     for header in ('Cache-Control', 'X-Frame-Options', 'Content-Security-Policy', 'X-Robots-Tag'):
         assert header not in response.headers
+
+
+def _all_admin_routes():
+    """Minden admin útvonal és minden megengedett metódusa az alkalmazás útvonaltérképéből (mintaazonosítókkal), plusz
+    egy nem engedélyezett metódus (PUT): új végpont így automatikusan bekerül a hozzáférési tesztekbe."""
+    items = set()
+    for rule in server.app.url_map.iter_rules():
+        if not (rule.rule == '/admin' or rule.rule.startswith(('/admin/', '/api/admin'))):
+            continue
+        path = re.sub(r'<(?:\w+:)?\w+>', '1', rule.rule)
+        for method in sorted(rule.methods - {'HEAD', 'OPTIONS'}):
+            items.add((method, path))
+        items.add(('PUT', path))
+    return sorted(items)
+
+
+ALL_ADMIN_ROUTES = _all_admin_routes()
+UNSAFE = {'POST', 'PUT', 'PATCH', 'DELETE'}
+
+
+class TestEveryAdminRoute:
+    """A teljes útvonaltérkép: semmilyen admin útvonal nem árulkodhat a nem adminnak, és az őr minden útvonalra egyformán
+    érvényes (CSRF, tétlenség)."""
+
+    @pytest.fixture(autouse=True)
+    def _no_rate_limit(self, monkeypatch):
+        # Több száz kérés megy ki egy IP-ről: a forgalomkorlátot külön tesztek fedik le
+        import routes
+        monkeypatch.setattr(routes._rate_limiter, 'check_ip', lambda ip, action: True)
+
+    def test_the_route_map_is_complete(self):
+        assert len(ALL_ADMIN_ROUTES) > 200
+        assert ('GET', '/api/admin/overview') in ALL_ADMIN_ROUTES
+        assert ('POST', '/api/admin/rooms/1/action') in ALL_ADMIN_ROUTES
+
+    def test_anonymous_gets_the_plain_404_everywhere(self):
+        reference = _reference_404()
+        client = client_with_session(None)
+        for method, path in ALL_ADMIN_ROUTES:
+            _assert_plain_404(_request(client, method, path, headers=HEADERS), reference)
+
+    def test_a_normal_user_gets_the_plain_404_everywhere(self):
+        reference = _reference_404()
+        _, token = create_user_with_session('player@example.com', 'Játékos', PASSWORD)
+        client = client_with_session(token)
+        for method, path in ALL_ADMIN_ROUTES:
+            _assert_plain_404(_request(client, method, path, headers=HEADERS), reference)
+
+    def test_every_unsafe_request_needs_the_csrf_header(self, admin_client):
+        for method, path in ALL_ADMIN_ROUTES:
+            if method in UNSAFE:
+                response = _request(admin_client, method, path, headers={'Origin': 'http://localhost'})
+                assert response.status_code == 403, (method, path)
+
+    def test_every_unsafe_request_needs_a_same_origin_header(self, admin_client):
+        for method, path in ALL_ADMIN_ROUTES:
+            if method in UNSAFE:
+                response = _request(admin_client, method, path,
+                                    headers={'X-Admin-Request': '1', 'Origin': 'http://evil.example'})
+                assert response.status_code == 403, (method, path)
+
+    def test_an_idle_session_needs_the_password_on_every_api_route(self, admin_token, admin_client):
+        exempt = {'/api/admin/session', '/api/admin/reauth'}
+        with auth.transaction() as conn:
+            conn.execute("UPDATE sessions SET admin_seen_at = '2000-01-01 00:00:00' WHERE token = ?", (admin_token,))
+        for method, path in ALL_ADMIN_ROUTES:
+            if not path.startswith('/api/admin') or path in exempt or method == 'PUT':
+                continue
+            response = _request(admin_client, method, path, headers=HEADERS)
+            assert response.status_code == 401 and response.get_json().get('reauth') is True, (method, path)
+
+    def test_admin_responses_carry_the_security_headers(self, admin_client):
+        for path in ('/admin', '/api/admin/overview', '/api/admin/system', '/admin/assets/admin-main.js'):
+            response = admin_client.get(path)
+            assert response.status_code == 200, path
+            assert response.headers['Cache-Control'] == 'no-store'
+            assert response.headers['X-Frame-Options'] == 'DENY'
+            assert 'frame-ancestors \'none\'' in response.headers['Content-Security-Policy']
+
+    def test_the_csp_allows_only_the_socket_io_cdn_besides_self(self, admin_client):
+        csp = admin_client.get('/admin').headers['Content-Security-Policy']
+        assert "script-src 'self' https://cdnjs.cloudflare.com;" in csp
+        assert "style-src 'self';" in csp and 'unsafe-inline' not in csp and 'unsafe-eval' not in csp
+        assert "default-src 'none'" in csp
 
 
 class TestNotAdminSeesNothing:
@@ -183,7 +271,10 @@ class TestAdminAccess:
         assert not re.search(r'\son[a-z]+=', body)
 
     @pytest.mark.parametrize('name,mime', [('admin.js', 'javascript'), ('admin.css', 'css'),
-                                           ('admin-i18n.js', 'javascript'), ('admin-boot.js', 'javascript')])
+                                           ('admin-i18n.js', 'javascript'), ('admin-boot.js', 'javascript'),
+                                           ('admin-ui.js', 'javascript'), ('admin-views-a.js', 'javascript'),
+                                           ('admin-views-b.js', 'javascript'), ('admin-views-c.js', 'javascript'),
+                                           ('admin-main.js', 'javascript')])
     def test_assets_are_served_to_the_admin(self, admin_client, name, mime):
         response = admin_client.get('/admin/assets/' + name)
         assert response.status_code == 200
@@ -302,7 +393,8 @@ class TestPublicSurfaceHasNoAdmin:
                 assert 'admin' not in name.lower(), os.path.join(folder, name)
 
     def test_public_static_route_does_not_serve_admin_assets(self, admin_client):
-        for name in ('admin.js', 'admin.css', 'admin-i18n.js'):
+        for name in ('admin.js', 'admin.css', 'admin-i18n.js', 'admin-ui.js', 'admin-views-a.js', 'admin-views-b.js',
+                     'admin-views-c.js', 'admin-main.js'):
             assert admin_client.get('/static/' + name).status_code == 404
 
 
@@ -644,7 +736,7 @@ class TestSocketAccess:
         user_id, _ = create_user_with_session(ADMIN_EMAIL, 'Főnök', PASSWORD)
         client = self._client(user_id)
         client.emit('admin_subscribe')
-        assert self._events(client) == ['admin_subscribed']
+        assert self._events(client) == ['admin_subscribed', 'admin_overview']
         server.socketio.emit('admin_overview', {'x': 1}, to='admin')
         assert self._events(client) == ['admin_overview']
 

@@ -15,7 +15,7 @@ import email_service
 import push_service
 import server
 from helpers import (
-    ADMIN_EMAIL, ADMIN_PASSWORD, client_with_session, finished_game, guest_client, live_room, make_user,
+    ADMIN_EMAIL, client_with_session, finished_game, guest_client, live_room, make_user,
     registered_client,
 )
 
@@ -106,8 +106,6 @@ class TestOverview:
         assert 'review_spike' in self._codes(api)
 
     def test_overdue_async_alert(self, api):
-        import async_games
-        from types import SimpleNamespace
         a, _ = make_user('a@example.com', 'Anna')
         b, _ = make_user('b@example.com', 'Béla')
         auth.send_friend_request(a, b)

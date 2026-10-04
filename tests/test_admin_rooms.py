@@ -8,7 +8,7 @@ import admin
 import admin_live
 import auth
 import server
-from helpers import ADMIN_EMAIL, guest_client, live_room, make_user, registered_client
+from helpers import guest_client, live_room, make_user, registered_client
 from tiles import TILE_DISTRIBUTION
 
 REASON = 'Teszt beavatkozás'

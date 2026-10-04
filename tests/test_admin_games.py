@@ -6,7 +6,6 @@ from types import SimpleNamespace
 import pytest
 
 import admin
-import admin_games
 import async_games
 import auth
 import daily
@@ -14,7 +13,7 @@ import push_service
 import server
 from board import Board
 from helpers import (
-    ADMIN_EMAIL, finished_game, guest_client, live_room, make_user, registered_client,
+    finished_game, guest_client, live_room, make_user, registered_client,
 )
 
 REASON = 'Teszt indoklás'
