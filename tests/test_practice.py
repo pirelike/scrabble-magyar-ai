@@ -155,6 +155,16 @@ class TestRackWords:
         words = {e['word']: e for e in practice.rack_words(['SZ', 'Ó', 'T', 'A', 'L', 'M', 'K'])}
         assert words['SZÓ']['tiles'] == 2 and words['SZÓ']['score'] == 3 + 2
 
+    def test_separate_single_tiles_do_not_form_a_digraph(self):
+        # S + Z külön zsetonként nem adja az SZ betűt: SZÓ csak az SZ zsetonnal rakható ki
+        split = {e['word'] for e in practice.rack_words(['S', 'Z', 'Ó', 'T', 'A', 'L', 'M'])}
+        assert 'SZÓ' not in split and 'SZAL' not in split
+        whole = {e['word']: e for e in practice.rack_words(['SZ', 'Ó', 'T', 'A', 'L', 'M', 'K'])}
+        assert 'SZÓ' in whole
+        # a sorrend nem számít: Z után S sem alkothat ZS-t
+        assert 'ZSÁK' not in {e['word'] for e in practice.rack_words(['Z', 'S', 'Á', 'K', 'A', 'T', 'L'])}
+        assert 'ZSÁK' in {e['word'] for e in practice.rack_words(['ZS', 'Á', 'K', 'A', 'T', 'L', 'M'])}
+
     def test_bingo_bonus_when_all_seven_tiles_are_used(self):
         words = {e['word']: e for e in practice.rack_words(['K', 'Ó', 'B', 'O', 'R', 'R', 'A'])}
         assert words['KÓBORRA']['tiles'] == 7
@@ -216,14 +226,26 @@ class TestCheckRackWord:
         assert practice.check_rack_word(self.RACK, 'QWX')['reason'] == 'invalid_chars'
         assert practice.check_rack_word(self.RACK, 'A' * 20)['reason'] == 'invalid_chars'
 
-    def test_digraph_can_be_one_tile_or_two(self):
+    def test_digraph_needs_its_own_tile(self):
         one = practice.check_rack_word(['SZ', 'Ó', 'A'], 'SZÓ')
-        two = practice.check_rack_word(['S', 'Z', 'Ó'], 'SZÓ')
         assert one['ok'] and one['tiles'] == ['SZ', 'Ó'] and one['score'] == 5
-        assert two['ok'] and two['tiles'] == ['S', 'Z', 'Ó'] and two['score'] == 1 + 4 + 2
-        # ha mindkét kirakás megvan, a több pontot érő számít
+        # külön S + Z zsetonból nem lesz SZ
+        two = practice.check_rack_word(['S', 'Z', 'Ó'], 'SZÓ')
+        assert not two['ok'] and two['reason'] == 'split_digraph'
+        # ha mindkettő megvan, a kétjegyű zseton számít (nem a külön S + Z)
         both = practice.check_rack_word(['SZ', 'S', 'Z', 'Ó'], 'SZÓ')
-        assert both['score'] == 7
+        assert both['ok'] and both['tiles'] == ['SZ', 'Ó'] and both['score'] == 5
+
+    def test_every_digraph_is_refused_from_two_single_tiles(self):
+        # (a GY, LY, NY, TY második betűjéből, az Y-ból nincs önálló zseton: csak ezek fordulhatnak elő)
+        for first, second in (('C', 'S'), ('S', 'Z'), ('Z', 'S')):
+            result = practice.check_rack_word([first, second, 'A', 'K'], first + second + 'AK')
+            assert result['reason'] == 'split_digraph', (first, second)
+
+    def test_single_tiles_next_to_a_digraph_tile_are_fine(self):
+        # asszony = A + S + SZ + O + NY: az S egyjegyű, az SZ viszont egy zseton
+        result = practice.check_rack_word(['A', 'S', 'SZ', 'O', 'NY'], 'ASSZONY')
+        assert result['ok'] and result['tiles'] == ['A', 'S', 'SZ', 'O', 'NY']
 
     def test_bingo_bonus(self):
         result = practice.check_rack_word(['K', 'Ó', 'B', 'O', 'R', 'R', 'A'], 'KÓBORRA')

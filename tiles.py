@@ -58,6 +58,12 @@ DIGRAPHS = frozenset(letter for letter in LETTERS if len(letter) == 2)
 VOWELS = frozenset('AÁEÉIÍOÓÖŐUÚÜŰ')
 
 
+def forms_digraph(first, second):
+    """Két szomszédos zseton egy-egy betűje kétjegyű betűt adna-e (S + Z = SZ)? Ez nem megengedett: a kétjegyű
+    betűt (SZ, CS, GY, LY, NY, TY, ZS) csak a saját zsetonjával lehet kirakni."""
+    return len(first) == 1 and len(second) == 1 and first + second in DIGRAPHS
+
+
 def tokenize_word(word):
     """Szó felbontása zsetonokra (a kétkarakteres betűk: SZ, CS, ... egy zseton).
 

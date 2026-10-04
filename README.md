@@ -26,7 +26,7 @@ Open http://localhost:5000 in your browser.
 - **Online multiplayer** — lobby rendszer, szobák létrehozása/csatlakozás, automatikus Cloudflare tunnel publikus URL-lel
 - **Nyilvános és privát szobák** — privát szoba csak 6-jegyű kóddal csatlakozható, nyilvános szobák a lobbyban listázva
 - **Felhasználói fiókok** — regisztráció email verifikációval, bejelentkezés, vendég mód
-- **Teljes magyar betűkészlet** — 100 zseton, beleértve a többkarakteres betűket (SZ, CS, GY, LY, NY, ZS, TY)
+- **Teljes magyar betűkészlet** — 100 zseton, beleértve a többkarakteres betűket (SZ, CS, GY, LY, NY, ZS, TY) — a kétjegyű betű csak a saját zsetonjával rakható ki (külön S + Z nem)
 - **Standard Scrabble pontozás** — DL, TL, DW, TW premium mezők, 50 pont bónusz mind a 7 zseton kirakásakor
 - **Szótár-böngésző (Challenge fázis)** — a megtámadás során a lerakott szavakra kattintva egy új lapon indíthatunk Google keresést (szótári fókusszal), segítve a szavazást
 - **Szótár-ellenőrzés** — beágyazott hu_HU szótár (rendszerfüggőség nélkül): a szótári szavakat és ragozott alakjaikat fogadja el; tulajdonnevek, rövidítések, idegen írásmódú szavak és a szótárban nem szereplő összetételek nem érvényesek; a nyelvtanilag lehetséges, de a használatban nem előforduló alakokat (FALIM, ÉJÉK, BLÖKIÜL) kiszűri
@@ -40,7 +40,7 @@ Open http://localhost:5000 in your browser.
 - **Játék mentés / visszatöltés** — manuális mentés (owner-only); lobby-first restore flow: a tulajdonos visszaállítja a mentést, várakozó szoba jön létre ahová az eredeti játékosok csatlakozhatnak
 - **Visszajátszás** — befejezett játékok lépésről lépésre visszanézhetők (board snapshot-okkal), elemzéssel és megosztható linkkel
 - **Visszavonás** — megtámadás módban a lerakó visszavonhatja a még el nem döntött lerakását; `Ctrl+Z` az utolsó lerakott betűt veszi vissza
-- **Játékos profil** — statisztikák (játszott, győzelem, nyerési arány, átl. pontszám, értékszám), kitüntetések és játékelőzmények (értékszám-változással)
+- **Játékos profil** — statisztikák (játszott, győzelem, nyerési arány, átl. pontszám, értékszám), kitüntetések, beállítások és játékelőzmények (értékszám-változással); a lobby navigációja a profilban is elérhető
 - **Sötét / világos téma** — automatikus detektálás (`prefers-color-scheme`), manuális váltás, Slate+Gold paletta
 - **Hang effektek** — betű lerakás, szavazás, kör értesítő, chat, játék kezdés/vége; hangerő-szabályozó és kategóriánkénti ki/be kapcsolók (Web Audio API, nincs külső fájl)
 - **Stabil újracsatlakozás** — hálózati hiba vagy manuális kilépés után is visszacsatlakozhatnak a játékosok az aktív játékba (120 mp grace period, token alapú); a **várakozó szoba** sem szűnik meg azonnal, ha a tulajdonos kapcsolata megszakad (pl. telefonon átvált az üzenetküldő appra a kód elküldéséhez): 10 percig megmarad, és a tulajdonos visszatérhet
@@ -59,7 +59,7 @@ Open http://localhost:5000 in your browser.
 - **Animációk** — betű lerakás, ellenfél lépésének becsúszása, pontszám felugró, kör váltás jelzése; húzás közben a foglalt mezők pirossal jelölve (`prefers-reduced-motion` esetén kikapcsolva)
 - **PWA** — telepíthető alkalmazás (manifest, service worker, ikonok); kapcsolat nélkül is elindul a felület, és érthető üzenetet mutat
 - **Többnyelvű felület** — magyar és angol (automatikus nyelvfelismerés, kézi váltás a felső sávban); a szótár magyar marad, a szerver üzeneteit a kliens fordítja
-- **Kényelmi funkciók** — élő pontszám-előnézet lerakás közben · zsetonszámláló („mi van még a zsákban?”) · betűtartó keverés / rendezés + gyorsbillentyűk · meghívó link (`/?join=KÓD`) megosztással · lépéstörténet, az utolsó lépés kiemelése a táblán és „legjobb lépés” a játék végén
+- **Kényelmi funkciók** — élő pontszám-előnézet lerakás közben · zsetonszámláló („mi van még a zsákban?”) · betűtartó keverés / rendezés + gyorsbillentyűk · a betűtartó a tábla jobb oldalán (alapértelmezett) vagy alatta áll, a profilban vagy a játék „Elrendezés” gombjával állítható · meghívó link (`/?join=KÓD`) megosztással · lépéstörténet, az utolsó lépés kiemelése a táblán és „legjobb lépés” a játék végén
 
 ---
 

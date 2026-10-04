@@ -100,7 +100,7 @@ class TestKeyUsage:
             assert f'history.{kind}' in data['en']
         for reason in ('not_in_dictionary', 'invalid_chars', 'too_long', 'too_short'):
             assert f'dict.reason_{reason}' in data['en']
-        for reason in ('too_short', 'invalid_chars', 'not_in_rack', 'not_a_word'):   # practice.check_rack_word
+        for reason in ('too_short', 'invalid_chars', 'not_in_rack', 'split_digraph', 'not_a_word'):   # practice.check_rack_word
             assert f'hunt.reason_{reason}' in data['en'] and f'hunt.reason_{reason}' in data['hu']
         for rank in ('master', 'advanced', 'solid', 'beginner'):
             assert f'hunt.rank_{rank}' in data['en'] and f'hunt.rank_{rank}' in data['hu']

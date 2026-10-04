@@ -297,6 +297,10 @@ const AppState = {
     },
 
     reset() {
+        // A félkész lerakás (pl. a napi feladvány megmutatott megoldása vagy egy tipp) nem maradhat a
+        // következő játék táblájára
+        BoardState.clearPlacement();
+        Preview.clear();
         if (this.isSpectator) { this.resetSpectator(); return; }
         this.currentRoomCode = null;
         this.currentRoomId = null;
@@ -661,8 +665,8 @@ const Lobby = {
         document.getElementById('room-ai-difficulty').addEventListener('change', () => this.updateAiControls());
         this.updateAiControls();
 
-        // Lobby nav tab switching
-        document.querySelectorAll('.lobby-nav-tab').forEach(tab => {
+        // Lobby nav tab switching (a profil képernyő saját, másolt sorát a Profile kezeli)
+        document.querySelectorAll('#lobby-nav .lobby-nav-tab').forEach(tab => {
             tab.addEventListener('click', () => this.switchTab(tab.dataset.lobbyTab));
         });
 
@@ -711,8 +715,8 @@ const Lobby = {
         }
 
         // Update tab buttons
-        document.querySelectorAll('.lobby-nav-tab').forEach(t => t.classList.remove('active'));
-        const activeTab = document.querySelector(`.lobby-nav-tab[data-lobby-tab="${tabId}"]`);
+        document.querySelectorAll('#lobby-nav .lobby-nav-tab').forEach(t => t.classList.remove('active'));
+        const activeTab = document.querySelector(`#lobby-nav .lobby-nav-tab[data-lobby-tab="${tabId}"]`);
         if (activeTab) activeTab.classList.add('active');
         LobbyNav.reveal(activeTab);
 
@@ -1491,6 +1495,8 @@ const GameBoard = {
             this._resetAnimState();
             BoardState.handOrder = [];
             BoardState.handLetters = null;
+            BoardState.clearPlacement();
+            Preview.clear();
         }
         AppState.gameState = state;
         AppState.myPlayerId = socket.id;
@@ -2156,6 +2162,56 @@ const GameBoard = {
         BoardState.placedTiles = placed;
         SoundManager.play('tile_place');
         this.afterPlacementChange();
+    },
+};
+
+// ===== BETŰTARTÓ HELYE =====
+// A játékban a betűtartó a tábla jobb oldalán áll (alapértelmezés) vagy a tábla alatt; a választás az
+// eszközön marad (localStorage). A beállítás az asztali gépre és a fekvő tabletre hat: álló telefonon /
+// tableten a betűtartó mindig alul van, fekvő telefonon mindig oldalt (ott a hely dönt) — ezt a CSS intézi.
+
+const HandLayout = {
+    KEY: 'scrabble-hand-position',
+    DEFAULT: 'right',
+    POSITIONS: ['right', 'bottom'],
+    _value: null,
+
+    get() {
+        if (this._value) return this._value;
+        let saved = null;
+        try { saved = localStorage.getItem(this.KEY); } catch { /* nincs tároló: marad az alapérték */ }
+        this._value = this.POSITIONS.includes(saved) ? saved : this.DEFAULT;
+        return this._value;
+    },
+
+    set(position) {
+        if (!this.POSITIONS.includes(position)) return;
+        this._value = position;
+        try { localStorage.setItem(this.KEY, position); } catch { /* privát mód: a munkamenetre marad */ }
+        this.apply();
+    },
+
+    toggle() {
+        this.set(this.get() === 'right' ? 'bottom' : 'right');
+    },
+
+    // A választás a <html> elemre kerül (a CSS ebből dolgozik), a profil választója igazodik hozzá
+    apply() {
+        const position = this.get();
+        document.documentElement.dataset.hand = position;
+        document.querySelectorAll('#hand-position .segment').forEach(btn => {
+            const on = btn.dataset.position === position;
+            btn.classList.toggle('active', on);
+            btn.setAttribute('aria-checked', on ? 'true' : 'false');
+        });
+    },
+
+    init() {
+        document.querySelectorAll('#hand-position .segment').forEach(btn => {
+            btn.addEventListener('click', () => this.set(btn.dataset.position));
+        });
+        document.getElementById('btn-hand-position').addEventListener('click', () => this.toggle());
+        this.apply();
     },
 };
 
@@ -3260,6 +3316,9 @@ const Daily = {
             const tiles = this._pendingSolution;
             this._pendingSolution = null;
             GameBoard.applyHint(tiles);
+        } else {
+            // Új próbálkozás ugyanabban a szobában (nincs új game_id): tiszta tábla
+            GameBoard.recall();
         }
     },
 
@@ -3366,6 +3425,13 @@ function formatClock(totalSeconds) {
 const HU_ALPHABET = ['A', 'Á', 'B', 'C', 'CS', 'D', 'E', 'É', 'F', 'G', 'GY', 'H', 'I', 'Í', 'J', 'K', 'L', 'LY',
     'M', 'N', 'NY', 'O', 'Ó', 'Ö', 'Ő', 'P', 'R', 'S', 'SZ', 'T', 'TY', 'U', 'Ú', 'Ü', 'Ű', 'V', 'Z', 'ZS'];
 const HU_ORDER = Object.fromEntries(HU_ALPHABET.map((letter, i) => [letter, i]));
+
+// Két szomszédos zseton egy-egy betűje kétjegyű betűt adna-e (S + Z = SZ)? A kétjegyű betű csak a saját
+// zsetonjával rakható ki (a szerver `tiles.forms_digraph`-jának mása)
+const DIGRAPH_TILES = new Set(['CS', 'GY', 'LY', 'NY', 'SZ', 'TY', 'ZS']);
+function formsDigraph(first, second) {
+    return !!first && first.length === 1 && second.length === 1 && DIGRAPH_TILES.has(first + second);
+}
 
 // Szó zsetonokra bontása (a szerver `tokenize_word`-jének mása: a kétjegyű betű egy zseton; a kevesebb
 // zsetont használó felbontás nyer, egyenlőségnél a több pontot érő — pl. KÉSZSÉG = K É S ZS É G)
@@ -4608,6 +4674,15 @@ const Practice = {
         let index = -1;
         if (h.pending) index = free(h.pending + ch);
         h.pending = '';
+        if (index < 0) {
+            // S, majd Z: ha van szabad SZ zseton, az az S helyére kerül (külön S + Z nem lehet SZ)
+            const last = h.built.length ? h.rack[h.built[h.built.length - 1]] : '';
+            const joined = formsDigraph(last, ch) ? free(last + ch) : -1;
+            if (joined >= 0) {
+                h.built.pop();
+                index = joined;
+            }
+        }
         if (index < 0) index = free(ch);
         if (index < 0 && h.rack.some((tile, i) => tile.length === 2 && tile[0] === ch && !h.built.includes(i))) {
             h.pending = ch;
@@ -4644,6 +4719,10 @@ const Practice = {
         const tiles = h.built.map(i => h.rack[i]);
         const word = tiles.join('');
         const bingo = tiles.length === h.rack.length;
+        if (tiles.some((tile, i) => i > 0 && formsDigraph(tiles[i - 1], tile))) {
+            this.huntReject(t('hunt.reason_split_digraph'));
+            return;
+        }
         if (h.kind === 'bingo' && !bingo) {
             this.huntReject(t('bingo.need_all'), true);
             return;
@@ -4984,24 +5063,29 @@ const Practice = {
 // Keskeny képernyőn a fülek elférnek-e: a kijelölt fül középre görgetődik, a széleken elhalványul a sor.
 
 const LobbyNav = {
-    init() {
-        const nav = document.getElementById('lobby-nav');
-        nav.addEventListener('scroll', () => this.update(), { passive: true });
-        window.addEventListener('resize', () => this.update());
-        if ('ResizeObserver' in window) new ResizeObserver(() => this.update()).observe(nav);
-        this.update();
+    // A lobby és a profil képernyő is ugyanilyen sort használ
+    _navs() {
+        return document.querySelectorAll('.lobby-nav');
     },
 
-    update() {
-        const nav = document.getElementById('lobby-nav');
+    init() {
+        for (const nav of this._navs()) {
+            nav.addEventListener('scroll', () => this.update(nav), { passive: true });
+            if ('ResizeObserver' in window) new ResizeObserver(() => this.update(nav)).observe(nav);
+        }
+        window.addEventListener('resize', () => this._navs().forEach(nav => this.update(nav)));
+        this._navs().forEach(nav => this.update(nav));
+    },
+
+    update(nav) {
         const max = nav.scrollWidth - nav.clientWidth;
         nav.classList.toggle('can-scroll-left', max > 2 && nav.scrollLeft > 4);
         nav.classList.toggle('can-scroll-right', max > 2 && nav.scrollLeft < max - 4);
     },
 
     reveal(tab) {
-        const nav = document.getElementById('lobby-nav');
-        if (!tab || nav.scrollWidth <= nav.clientWidth) return;
+        const nav = tab && tab.closest('.lobby-nav');
+        if (!nav || nav.scrollWidth <= nav.clientWidth) return;
         const navRect = nav.getBoundingClientRect();
         const tabRect = tab.getBoundingClientRect();
         const target = nav.scrollLeft + (tabRect.left - navRect.left) - (navRect.width - tabRect.width) / 2;
@@ -5178,6 +5262,9 @@ const Profile = {
     init() {
         document.getElementById('btn-profile').addEventListener('click', () => this.show());
         document.getElementById('btn-profile-back').addEventListener('click', () => this.back());
+        document.querySelectorAll('#profile-nav .lobby-nav-tab').forEach(tab => {
+            tab.addEventListener('click', () => this.openLobbyTab(tab.dataset.lobbyTab));
+        });
         window.addEventListener('langchange', () => {
             if (this._data && !document.getElementById('profile-screen').classList.contains('hidden')) {
                 this.renderStats(this._data.stats);
@@ -5197,11 +5284,33 @@ const Profile = {
         if (target === 'lobby-screen') socket.emit('get_rooms');
     },
 
+    // A navigációs sor fülére kattintva a lobbyba lépünk, és az adott fület nyitjuk meg
+    openLobbyTab(tabId) {
+        this._returnTo = null;
+        if (tabId !== 'room') showScreen('lobby-screen');
+        Lobby.switchTab(tabId);
+    },
+
+    // A profil sora a lobbyé másolata: a jelvények és a nyitott szoba füle a lobby mostani állapotát mutatja
+    syncNav() {
+        const mirror = (fromId, toId) => {
+            const from = document.getElementById(fromId);
+            const to = document.getElementById(toId);
+            if (!from || !to) return;
+            to.textContent = from.textContent;
+            to.classList.toggle('hidden', from.classList.contains('hidden'));
+        };
+        mirror('friend-badge', 'profile-friend-badge');
+        mirror('async-badge', 'profile-async-badge');
+        mirror('nav-tab-room', 'profile-nav-tab-room');
+    },
+
     async show() {
         const current = document.querySelector('.screen:not(.hidden)');
         if (current && current.id !== 'profile-screen' && current.id !== 'replay-screen') {
             this._returnTo = current.id;
         }
+        this.syncNav();
         try {
             const resp = await fetch('/api/auth/profile');
             const data = await resp.json();
@@ -6656,6 +6765,7 @@ WordBuilder.init();
 Practice.init();
 AsyncGames.init();
 LobbyNav.init();
+HandLayout.init();
 Push.init();
 Replay.init();
 GameOver.init();

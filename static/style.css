@@ -606,6 +606,28 @@ select {
     border-top: 1px solid var(--color-separator);
 }
 
+/* A profil oldal háttere a csoport saját színével azonos: itt kártyaként jelenik meg (mint a statisztika-kártyák) */
+.profile-container .settings-group {
+    background: var(--bg-card);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+}
+
+/* Beállítássor, amelyben a kapcsoló helyett szegmentált választó áll (kis képernyőn alá törik) */
+.setting-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3) var(--space-4);
+    padding: var(--space-3) 0;
+}
+
+.setting-row .segmented {
+    flex: 0 0 auto;
+}
+
 .toggle-info {
     display: flex;
     flex-direction: column;
@@ -2030,6 +2052,60 @@ button.btn-rejoin {
     z-index: var(--z-ghost);
     pointer-events: none;
     opacity: 0.92;
+}
+
+
+/* ===== 11b. JÁTÉK: BETŰTARTÓ A TÁBLA MELLETT (alapértelmezett beállítás) ===== */
+/* Asztali gépen és fekvő tableten a betűtartó függőlegesen a tábla jobb oldalán áll (a `data-hand` attribútumot
+   a `HandLayout` állítja a <html> elemen; `bottom` esetén marad az alap elrendezés: a tábla alatt).
+   Keskeny (820px alatti) ablakban a betűtartó marad alul: oldalt nem férne el a panel, a tábla és a betűtartó.
+   A zseton mérete csak a képernyő magasságától függ (nem a tábla méretétől), különben a tábla szélessége és
+   a betűtartó szélessége körkörösen függene egymástól. Az álló és a kompakt fekvő nézetnek saját szabálya van. */
+
+@media (orientation: landscape) and (min-height: 541px) and (min-width: 820px) {
+    :root[data-hand="right"] .game-layout {
+        --tile: clamp(
+            44px,
+            calc((var(--vh) - var(--chrome-top) - var(--space-5) - var(--space-6) - var(--safe-bottom)
+                  - 2 * var(--hand-pad) - 6 * var(--hand-gap)) / 7),
+            64px
+        );
+        --hand-w: calc(var(--tile) + 2 * var(--hand-pad));
+        --board-size: clamp(
+            320px,
+            min(
+                720px,
+                calc(var(--vh) - var(--chrome-top) - var(--space-5) - var(--space-6) - var(--safe-bottom)),
+                calc(100vw - var(--panel-w) - var(--hand-w) - var(--space-4) - 3 * var(--gutter))
+            ),
+            720px
+        );
+    }
+
+    :root[data-hand="right"] .board-area {
+        flex-direction: row;
+        align-items: center;
+    }
+
+    :root[data-hand="right"] .hand {
+        flex-direction: column;
+        width: auto;
+        min-height: 0;
+    }
+}
+
+/* Tippgombbal együtt öt eszköz van: az utolsó a teljes sort kapja (két oszlopos eszközsor) */
+@media (orientation: landscape) and (min-height: 541px) and (min-width: 820px) {
+    .actions-tools:has(#btn-hint:not(.hidden)) #btn-hand-position {
+        grid-column: 1 / -1;
+    }
+}
+
+/* A gyorsgomb csak ott kell, ahol a beállítás hat (álló nézetben és keskeny ablakban alul, kompakt fekvőben oldalt a hely dönt) */
+@media (orientation: portrait), (orientation: landscape) and (max-height: 540px), (max-width: 819px) {
+    #btn-hand-position {
+        display: none;
+    }
 }
 
 

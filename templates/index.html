@@ -64,6 +64,7 @@
         <symbol id="i-eye" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></symbol>
         <symbol id="i-share" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></symbol>
         <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1V17h6v-.2c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2z"/></symbol>
+        <symbol id="i-layout" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/></symbol>
         <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></symbol>
         <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></symbol>
         <symbol id="i-robot" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="3"/><path d="M12 8V4"/><circle cx="12" cy="3" r="1"/><circle cx="8.5" cy="14" r="1.2"/><circle cx="15.5" cy="14" r="1.2"/></symbol>
@@ -1015,6 +1016,10 @@
                         <svg class="icon"><use href="#i-bulb"/></svg>
                         <span data-i18n="game.hint">Tipp</span>
                     </button>
+                    <button id="btn-hand-position" class="tool-btn" type="button" title="Betűtartó áthelyezése (a tábla mellé / alá)" data-i18n-title="game.layout_title">
+                        <svg class="icon"><use href="#i-layout"/></svg>
+                        <span data-i18n="game.layout">Elrendezés</span>
+                    </button>
                 </div>
                 <!-- Lépéstörténet -->
                 <details class="history-section" id="history-section">
@@ -1105,13 +1110,30 @@
 
     <!-- Profil képernyő -->
     <div id="profile-screen" class="screen screen-column hidden">
-        <header class="app-topbar">
+        <header class="app-topbar app-topbar-lobby">
             <div class="topbar-left">
                 <button id="btn-profile-back" class="topbar-btn" type="button" aria-label="Vissza a lobbyba" title="Vissza a lobbyba" data-i18n-title="profile.back">
                     <svg class="icon"><use href="#i-back"/></svg>
                 </button>
                 <h1 class="topbar-title" data-i18n="common.profile">Profilom</h1>
             </div>
+            <!-- A lobby navigációja a profilban is: egy kattintással bármelyik fülre -->
+            <nav class="lobby-nav segmented" id="profile-nav" aria-label="Lobby" data-i18n-aria="lobby.nav_label">
+                <button class="lobby-nav-tab segment" data-lobby-tab="home" type="button" data-i18n="lobby.tab_home">Kezdőlap</button>
+                <button class="lobby-nav-tab segment" data-lobby-tab="create" type="button" data-i18n="lobby.tab_create">Új szoba</button>
+                <button class="lobby-nav-tab segment" data-lobby-tab="saved" type="button" data-i18n="lobby.tab_saved">Mentett játékok</button>
+                <button class="lobby-nav-tab segment" data-lobby-tab="friends" type="button">
+                    <span data-i18n="lobby.tab_friends">Barátok</span>
+                    <span class="friend-badge hidden" id="profile-friend-badge">0</span>
+                </button>
+                <button class="lobby-nav-tab segment" data-lobby-tab="async" type="button">
+                    <span data-i18n="lobby.tab_async">Levelezős</span>
+                    <span class="friend-badge hidden" id="profile-async-badge">0</span>
+                </button>
+                <button class="lobby-nav-tab segment" data-lobby-tab="practice" type="button" data-i18n="lobby.tab_practice">Gyakorlás</button>
+                <button class="lobby-nav-tab segment" data-lobby-tab="leaderboard" type="button" data-i18n="lobby.tab_leaderboard">Ranglista</button>
+                <button class="lobby-nav-tab segment hidden" data-lobby-tab="room" id="profile-nav-tab-room" type="button" data-i18n="lobby.tab_room">Nyitott szoba</button>
+            </nav>
             <div class="topbar-right">
                 <div class="topbar-user">
                     <span class="topbar-user-name" id="profile-user-name"></span>
@@ -1137,6 +1159,18 @@
                 <h2 class="section-title" data-i18n="badge.title">Kitüntetések</h2>
             </div>
             <div id="profile-badges" class="badge-grid"></div>
+            <div id="layout-settings" class="settings-group">
+                <div class="setting-row">
+                    <div class="toggle-info">
+                        <span class="toggle-name" id="hand-position-label" data-i18n="layout.hand_name">Betűtartó helye</span>
+                        <span class="toggle-desc" data-i18n="layout.hand_desc">Asztali gépen és fekvő tableten a tábla mellett vagy alatt áll. Telefonon álló nézetben mindig alul, fekvő nézetben mindig oldalt van.</span>
+                    </div>
+                    <div class="segmented" id="hand-position" role="radiogroup" aria-labelledby="hand-position-label">
+                        <button class="segment" type="button" role="radio" aria-checked="false" data-position="right" data-i18n="layout.hand_right">Jobb oldalt</button>
+                        <button class="segment" type="button" role="radio" aria-checked="false" data-position="bottom" data-i18n="layout.hand_bottom">Alul</button>
+                    </div>
+                </div>
+            </div>
             <div id="push-settings" class="settings-group hidden">
                 <div class="toggle-row">
                     <label class="toggle-label" for="push-toggle">
