@@ -338,7 +338,7 @@ class TestAdminEmailCannotBeClaimed:
     @pytest.fixture(autouse=True)
     def no_smtp(self, monkeypatch):
         import routes
-        monkeypatch.setattr(routes, 'SMTP_CONFIGURED', False)
+        monkeypatch.setattr(config, 'SMTP_CONFIGURED', False)
         monkeypatch.setattr(routes, 'send_verification_email', lambda email, code: None)
 
     def test_dev_code_is_withheld_for_the_admin_address(self):

@@ -222,6 +222,7 @@ A szerver opcionális környezeti változókat olvas. Egyik sem kötelező — m
 | `VAPID_SUBJECT` | `mailto:SMTP_FROM` | Web Push `sub` mező (`mailto:` vagy `https:` cím) |
 
 Ha az SMTP változók nincsenek beállítva, a verifikációs kódok a szerver konzolra íródnak ki (fejlesztéshez elegendő).
+Az admin panelen (Rendszer → „Levelező szerver (SMTP)”) a levelező szerver újraindítás nélkül is beállítható és kipróbálható; az ott mentett beállítás erősebb a környezeti változóknál. Ugyanott a Rendszer oldalon a program GitHubról is frissíthető (a legfrissebb vagy egy megadott ágra).
 
 A Web Push a `pywebpush` csomagot használja (a `requirements.txt` tartalmazza); ha nincs telepítve, az értesítések kikapcsolnak, a játék többi része változatlanul működik. Az értesítésekhez a böngészőnek HTTPS (vagy `localhost`) kell; iPhone-on az alkalmazást előbb a Főképernyőhöz kell adni.
 

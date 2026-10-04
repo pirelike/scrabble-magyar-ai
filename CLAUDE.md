@@ -38,9 +38,11 @@ Böngészőben: http://localhost:5000
 - `settings.py` — Futásidejű beállítások (`app_settings`, `cfg.<kulcs>`): `DEFINITIONS` (típus, határok, alapérték), `get` / `store` / `validate` / `describe`, `maintenance()`; újraindítás nélkül hatnak
 - `admin_assets/` — Az admin felület kliens fájljai: `admin.js` (mag: API, munkamenet, zárolás, sudo), `admin-ui.js` (komponensek, szűrős listanézet, űrlap-párbeszéd, grafikonok, tábla), `admin-views-a.js` / `-b.js` / `-c.js` (menüpontok), `admin-main.js` (útvonalválasztó, élő kapcsolat, Ctrl+K kereső, indítás), `admin.css`, `admin-i18n.js`, `admin-boot.js`; szándékosan NEM a nyilvános `static/` mappában, csak az őrzött útvonalon érhetők el
 - `routes.py` — Flask blueprint-ek: auth (+ push feliratkozás), game (lépések, megosztás, elemzés, levelezős lista), public (ranglista, szótár-ellenőrző, napi feladvány, gyakorló módok), main (index + PWA: `/manifest.webmanifest`, `/sw.js`)
-- `config.py` — SMTP, auth, DB, rate limit és admin (`ADMIN_EMAILS`, tétlenségi / sudo idő, IP-lista) konfigurációs konstansok (`os.environ`-ból)
+- `config.py` — SMTP (környezeti alapérték), auth, DB, rate limit és admin (`ADMIN_EMAILS`, tétlenségi / sudo idő, IP-lista) konfigurációs konstansok (`os.environ`-ból)
 - `auth.py` — SQLite DB kezelés, regisztráció, login, session, jelszó hash (PBKDF2), játék mentés/visszatöltés/lépésnaplózás, admin: `is_admin_user`, az admin munkamenet állapota (`admin_seen_at`, `sudo_until`), `admin_audit` tábla (triggerekkel csak hozzáfűzhető); kitiltás / némítás (`users.banned_until`, `chat_muted_until`), belépési napló, az admin panel táblái (lásd „Admin panel”)
-- `email_service.py` — 6 számjegyű kód generálás, SMTP küldés (háttérszálon)
+- `email_service.py` — SMTP küldés (verifikációs kód, egyszerű levelek; háttérszálon), a titkosítási mód szerint (`starttls` | `ssl` | `none`), ellenőrzött tanúsítvánnyal; `check_connection` / `classify_error` — az admin panel kapcsolat-próbája (biztonságos hibakódokkal)
+- `mail_config.py` — A levelező szerver beállítása: az admin panelen mentett felülbírálat (`app_settings`, `mail.smtp`) vagy a környezeti `SMTP_*` (`current`, `is_configured`, `public_view` — jelszó nélkül); lásd „Levelező szerver (SMTP)”
+- `admin_mail.py` — a levelező szerver beállításának ellenőrzése, mentése, visszaállítása, kapcsolat-próbája (naplózva, jelszó nélkül) · `admin_update.py` — frissítés GitHubról (`check`, `apply`) és újraindítás; lásd „Frissítés GitHubról és újraindítás”
 - `rate_limiter.py` — Generikus rate limiter Socket.IO (SID) és HTTP (IP) endpointokhoz
 - `socket_auth.py` — Aláírt, rövid életű token a Socket.IO identitás igazolásához (`set_name`)
 - `tunnel.py` — Cloudflare tunnel subprocess kezelés (indítás/leállítás)
@@ -55,7 +57,7 @@ Böngészőben: http://localhost:5000
 - `tools/bot_arena.py` — Robot-aréna: a fokozatok erejének mérése bot–bot játékokkal (`ladder`, `match`, `adapt`; kalibrációhoz, nem része a szervernek)
 - `tools/build_attested.py` — a `dict/hu_attested.txt` előállítása egy szógyakorisági listából (elírás- és névszűrővel; nem része a szervernek)
 - `tools/word_review.py` — a szótár-építő tömeges párja: `sample` (véletlen szavak átnézésre, pl. AI-nak), `apply` (az elutasított szavak felvétele a `dict/hu_rejected.txt`-be), `stats` (nem része a szervernek)
-- `tests/` — Tesztek (pytest, 2152 teszt); `tests/admin_browser_server.py` + `admin_browser_smoke.js` — a böngészős admin teszt segédei (nem pytest-fájlok)
+- `tests/` — Tesztek (pytest, 2277 teszt); `tests/admin_browser_server.py` + `admin_browser_smoke.js` — a böngészős admin teszt segédei (nem pytest-fájlok)
 - `requirements.txt` — Python függőségek (flask, flask-socketio, gevent, gevent-websocket, opcionálisan pywebpush)
 - `.venv/` — Virtual environment
 
@@ -212,7 +214,7 @@ SMTP_USER=yourscrabble@gmail.com
 SMTP_PASSWORD=abcd-efgh-ijkl-mnop
 SMTP_FROM=yourscrabble@gmail.com
 ```
-Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztéshez).
+Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztéshez). A környezeti változók csak az **alapérték**: az admin panel Rendszer → „Levelező szerver (SMTP)” kártyáján mentett beállítás erősebb, újraindítás nélkül hat (lásd „Levelező szerver (SMTP)”). A környezeti beállítás mindig STARTTLS-t használ.
 
 ## Tesztek
 
@@ -229,7 +231,7 @@ Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztésh
 | `tests/test_challenge.py` | 17 | Challenge szavazásos rendszer |
 | `tests/test_dictionary.py` | 99 | Szótár-ellenőrzés (valódi szótárral: kisbetűs keresés, tulajdonnevek, rövidítések, értelmetlen szavak pl. SALYT, a furcsa alakok szűrése és a használt alakok megtartása), elérhetőség, javaslatok, tábla-validáció |
 | `tests/test_affix_checker.py` | 46 | Beépített szóellenőrző: toldalékok, előtagok, folytatási osztályok, speciális jelzők, morfológiai szűrés (kockázatos levezetések, használati lista, kötőjeles szócikkek), a valódi szótár (hunspellel összevetve) |
-| `tests/test_email_service.py` | 4 | Email küldés |
+| `tests/test_email_service.py` | 32 | Email küldés (környezeti és mentett beállítással: STARTTLS / SSL / nincs titkosítás, feladó neve, tanúsítvány-ellenőrzés), hibakódok, kapcsolat-próba |
 | `tests/test_room.py` | 12 | Room osztály |
 | `tests/test_friends.py` | 27 | Barát CRUD, kérések, felhasználókeresés, szobameghívó, online státusz |
 | `tests/test_timer_and_replay.py` | 30 | Kör időlimit, replay perzisztencia |
@@ -265,9 +267,11 @@ Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztésh
 | `tests/test_admin_system.py` | 65 | Rendszer (konfiguráció titkok nélkül, mentés, takarítás, naplók, folyamatok), biztonság (belépési napló, IP tiltás, forgalomkorlát, kódok, munkamenetek), áttekintés és figyelmeztetések |
 | `tests/test_admin_moderation.py` | 26 | Tiltott szavak, chat napló (élő / tartós), játékos oldali bejelentés, nevek átnézése |
 | `tests/test_admin_client.py` | 49 | Admin kliens: JS szintaxis (minden fájl), fordítások teljessége (hu/en, szerverüzenetek AST-ből az összes `admin*.py`-ból), a hívott API útvonalak és metódusok léte, minden végponthoz van felület, elem-azonosítók, menüpontok, nincs `innerHTML` / beágyazott kód, a kliens magja és a fordítás node-ban |
+| `tests/test_admin_mail.py` | 54 | Levelező szerver: tárolás és érvényes beállítás (mentett > környezeti), érvényesítés, jelszó sosem látszik (válasz, napló), jelszó megtartása csak ugyanahhoz a kiszolgálóhoz, visszaállítás, kapcsolat-próba (sudo, csak a saját címre), élő hatás |
+| `tests/test_admin_update.py` | 43 | Frissítés GitHubról valódi helyi git-tárakkal: állapot, ellenőrzés (fetch), fast-forward, ágváltás, tiszta munkafa, eltérő előzmény, szintaxishiba → visszagörgetés, ágnév-ellenőrzés, függőség-telepítés, újraindítás, végpontok (sudo, indoklás) |
 | `tests/test_admin_browser.py` | 1 | Az admin felület valódi böngészőben (Playwright): minden menüpont betöltődik, nincs JS hiba, művelet-párbeszéd, sudo, kereső, élő Socket.IO események, telefon, nyelvváltás (kimarad, ha nincs node / Playwright / Chromium) |
 
-**Összesen: 2152 teszt**
+**Összesen: 2277 teszt**
 
 Fixture: `tests/conftest.py` — temp_db (auto-applied, ideiglenes SQLite DB minden teszthez), `admin_env` (az `ADMIN_EMAILS` beállítva), `api` (bejelentkezett admin API-kliens), `isolated_dictionary` (a tartós kizárt lista ideiglenes másolata)
 Segédek: `tests/helpers.py` — `registered_set_name_payload()` (érvényes socket-tokennel), `verify_email()`, admin: `AdminApi`, `make_user`, `guest_client`, `registered_client`, `live_room`, `finished_game`
@@ -763,11 +767,25 @@ Részletes specifikáció: `docs/ADMIN_PANEL.md`. **Állapot: mind a nyolc lép�
 | **Kommunikáció** | `GET|POST /announcements`, `PATCH|DELETE /announcements/<id>`, `GET|POST /maintenance`, `POST /push/preview`, `POST /push` (csoportnál `confirm`), `POST /email`, `GET /email/preview`, `POST /email/bulk` (sudo, percenként egy, max. 500) | részben |
 | **Statisztika** | `GET /stats?metric=registrations\|active\|retention\|games\|bots\|words\|challenges\|practice\|review\|heatmap&range=7\|30\|90\|365` (CSV) | – |
 | **Biztonság** | `GET /security/logins` (gyanús minták jelölve, CSV), `/security/rate-limits` (+ `POST /unblock`), `/security/ip-bans` (+ `POST` sudo, `DELETE`), `/security/codes` (`view.codes`), `/security/sessions` (+ `DELETE`, `POST revoke-all` sudo, `POST close-admins`) | részben |
-| **Rendszer** | `GET /system` (szerver, szolgáltatások, konfiguráció titkok nélkül, verziók, adatbázis, mentések, háttérfolyamatok, push, tunnel), `/system/logs`, `GET|POST /system/backup` (letöltés: sudo), `POST /system/vacuum`, `GET|POST /system/cleanup` (sudo), `POST /system/tunnel/restart` (sudo), `smtp-test`, `push-test` | részben |
+| **Rendszer** | `GET /system` (szerver, szolgáltatások, konfiguráció titkok nélkül, verziók, adatbázis, mentések, háttérfolyamatok, push, tunnel), `/system/logs`, `GET|POST /system/backup` (letöltés: sudo), `POST /system/vacuum`, `GET|POST /system/cleanup` (sudo), `POST /system/tunnel/restart` (sudo), `smtp-test`, `push-test`, **levelező szerver**: `GET|PATCH|DELETE /system/mail` (PATCH / DELETE sudo), `POST /system/mail/check` (sudo), **frissítés**: `GET /system/update`, `POST /system/update/check`, `POST /system/update/apply` (sudo), `POST /system/restart` (sudo) | részben |
 | **Beállítások** | `GET /settings`, `PATCH /settings {changes: {kulcs: érték \| null}, reason}` (`null` = vissza az alapra) | – |
 | **Admin napló** | `GET /audit` | – |
 
-Szerver-újraindítás / leállítás gomb **nincs** (a folyamatot a gazdagép kezeli): helyette karbantartási mód.
+Leállítás gomb **nincs** (a folyamatot a gazdagép kezeli): helyette karbantartási mód. Újraindítás **van**, de csak a frissítés (és a Rendszer oldal „Újraindítás” gombja) része: sudo + indoklás, a folyamat önmagára cserélődik (`os.execv`); lásd „Frissítés GitHubról és újraindítás”.
+
+### Levelező szerver (SMTP)
+- **Kétféle forrás**: az admin panelen mentett felülbírálat (`app_settings`, `mail.smtp` kulcs, JSON: `host`, `port`, `security` = `starttls` | `ssl` | `none`, `username`, `password`, `from_address`, `from_name`, `verify_tls`, `updated_by/at`) — ez az erősebb —, ennek híján a környezeti `SMTP_*`. A `mail_config.current()` hívási időben számolja ki (`source`: `database` | `environment`, `configured`); az `email_service` minden küldésnél ezt olvassa, ezért a mentés **újraindítás nélkül** hat. Környezeti forrásnál a `configured` a korábbi szabály (`config.SMTP_CONFIGURED`: user + jelszó + feladó); mentett beállításnál: kiszolgáló + port + feladó, és ha van felhasználónév, jelszó is (felhasználónév nélkül bejelentkezés nélkül küld, pl. helyi levelező).
+- **Jelszó**: az adatbázisban van (mint a push VAPID kulcsa, ezért egy adatbázis-mentés tartalmazza), de **sosem kerül ki**: a válaszban csak `password_set`, a naplóban csak `password_changed`. Üresen hagyva (`null`) a mentett marad, **de csak ugyanahhoz a kiszolgálóhoz és felhasználónévhez** — másik címre nem küldhető el újragépelés nélkül (mentésnél és próbánál sem).
+- **Végpontok** (`admin_mail.py` ellenőriz és naplóz): `GET /system/mail` (jelszó nélkül + a környezeti alapérték), `PATCH` (sudo, kötelező indoklás; előtte/utána a naplóban), `DELETE` (sudo, vissza a környezeti beállításra; nincs mentett → 409), `POST /system/mail/check` (sudo; a még nem mentett űrlapot próbálja ki: csatlakozás, titkosítás, bejelentkezés, `send: true` esetén teszt levél **csak a saját admin címedre**; a válasz biztonságos hibakód: `dns`, `timeout`, `refused`, `connect`, `tls`, `certificate`, `auth`, `unsupported`, `sender`, `recipient`, `disconnected`, `protocol`, `error` — a kiszolgáló szövege nem megy a felületre). A próba a naplóba kerül (`system.mail_check`). `smtp-test`: a mentett beállítással teszt levél magadnak (hibánál `code`).
+- **Tanúsítvány**: alapértelmezésben ellenőrzött (`ssl.create_default_context()`); az űrlapon kikapcsolható (`verify_tls`) önaláírt tanúsítványú saját levelezőhöz. A fejlécek sortörés ellen védettek (feladó neve / címe), a levél kap `Date` és `Message-ID` fejlécet, a feladó neve a `From`-ban (`Név <cím>`), a boríték feladója a bare cím.
+- **Felület** (Rendszer → „Levelező szerver (SMTP)” kártya): állapot és forrás, űrlap (a titkosítás váltása a szokásos portra állítja a portot, titkosítás nélkül figyelmeztetés), „Kapcsolat kipróbálása”, „Mentés”, „Teszt e-mail magamnak”, „Visszaállítás az alapra”.
+
+### Frissítés GitHubról és újraindítás
+- **Mit tud** (`admin_update.py`, Rendszer → „Frissítés GitHubról” kártya): a program mappája git tár; az állapot (ág, commit, távoli cím **hozzáférési adatok nélkül**, helyi módosítások, futó verzió), „Ellenőrzés a GitHubon” (`git fetch --prune origin`: ágak listája, a kiválasztott ágra váltva/frissítve a beérkező commitok és a változó fájlok), „Frissítés” (a legfrissebb vagy egy megadott ágra), „Újraindítás”.
+- **Biztonsági korlátok**: csak a rögzített `origin` távoli tárral dolgozik; az ág neve szigorúan ellenőrzött (`^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$`, nincs `..`), és a GitHubról éppen lekért ágak között kell lennie; csak **fast-forward** (`git merge --ff-only`), tiszta munkafán (a követett fájlok módosítása blokkol — a nem követettek, pl. az adatbázis, nem); nincs `reset --hard` az admin által; egyszerre egy frissítés fut. Sudo + kötelező indoklás; a naplósor a művelet **előtt** íródik (`system.update`), az eredmény utána (`system.update_done` / `system.update_failed`).
+- **Visszagörgetés**: a frissítés után a megváltozott `.py` fájlok szintaxisát ellenőrzi; hibánál visszaáll az előző ágra és commitra (`Az új kód szintaktikai hibát tartalmaz…`). Eltérő előzménynél (helyi commit) nem ír felül semmit. Ha a `requirements.txt` változott, a „Függőségek telepítése” kapcsoló `pip install -r requirements.txt`-t futtat.
+- **Újraindítás**: a futó folyamat az induláskori commitját rögzíti (`_RUNNING_COMMIT`), ezért a `restart_needed` jelzi, ha a lemezen újabb kód van. Az újraindítás (`POST /system/restart`, vagy „Újraindítás a frissítés után”) sudo + indoklás, röviddel a válasz után a tunnel leáll és a folyamat `os.execv`-vel önmagára cserélődik (azonos parancssor); a kapcsolatok megszakadnak, a kliensek újracsatlakoznak, a tunnel címe megváltozhat (gyors tunnelnél). A felület `/api/admin/session` lekérdezésével várja meg, hogy a szerver visszajöjjön, majd újratölt. Ha az új kód mégsem indul el, a gazdagépen kell helyreállítani. Tesztben a `_restart_process` és a `_pip_install` hamisítva van.
+- Hiba a lekérésnél: 502 `detail`-lel (a git kimenete, a `https://felhasznalo:token@` részek maszkolva).
 
 ### Beállítások (`settings.py`, `app_settings` tábla, `cfg.<kulcs>`)
 `registration_open`, `guest_allowed`, `room_creation` (everyone / registered / none), `max_spectators`, `default_hint_limit`, `bots_enabled`, `max_bots`, `default_bot_level`, `bot_think_multiplier`, `feature_daily` / `feature_async` / `feature_practice` / `feature_word_review`, `word_reject_threshold`, `grace_disconnect`, `grace_waiting_owner`, `chat_max_length`, `chat_rate_count` / `chat_rate_window`, `banned_word_action` (mask / drop), `chat_log_enabled` / `chat_log_days`, `backup_daily` / `backup_keep`, `rate_limits_http` / `rate_limits_socket` (felülírások), rejtetten `maintenance`. Olvasás: `settings.get(kulcs, alapérték)` (gyorsítótárazott, `auth.DB_PATH`-hoz kötve); a módosítás után a `server.apply_runtime_settings()` érvényesíti (forgalomkorlátok, szótár-építő küszöb, chat). Az érték mellett látszik az alapérték, a „visszaállítás alapra” és a legutóbbi módosító. Új funkciókapcsoló: `DEFINITIONS` + `SETTING_TEXT` az `admin-views-c.js`-ben + fordítás.
@@ -783,6 +801,8 @@ Szerver-újraindítás / leállítás gomb **nincs** (a folyamatot a gazdagép k
 - `Router`: `#menüpont/azonosító?szűrők` (a szűrők, a lapozás, a rendezés és a fül az URL-ben: vissza gomb, linkmásolás); `registerSection({id, order, icon, labelKey, render})`; `Router.onLeave` / `Router.interval` a nézet elhagyásakor takarít. `mountList` — szűrős, rendezhető, lapozott lista CSV exporttal; `Act.open({title, fields, confirmName, run, done})` — minden módosító művelet űrlap-párbeszéde (kötelező indoklás, célpont-név begépelése, a mezőnkénti szerverhiba kiemelése, sudo-kérés a 401 után); `Chart` (SVG oszlop / vonal / halmozott / hőtérkép / vízszintes oszlop), `renderBoard` (15×15 tábla, a premium mezőkkel), `loadInto` (vázlat, hiba, újrapróbálás).
 - Élő frissítés: `Live` (Socket.IO `admin` szoba; `admin_overview` ötmásodpercenként, `admin_room_update`, `admin_room_state` a figyelt szobára, `admin_alert`, `admin_report` → toast + menü-jelvény); Socket.IO nélkül (CDN nem elérhető) a nézetek időzítővel frissülnek.
 - Telefonon a menü oldalról csúszó lap, a táblázatok soronként kártyák, a lapok görgethetők.
+
+- **Nagy képernyő és görgethető sorok**: a tartalom (`.admin-main`) középre igazított, 1600 / 1920 / 2400 px fölött szélesebb (`max-width`), a betűméret-tokenek és a tábla legnagyobb mérete (`--admin-board-max`) nő; a tábla rácsa rögzített 15×15 sáv (`minmax(0, 1fr)`), hogy az üres sorok ne essenek össze. A vízszintesen görgethető fülsor (`UI.tabs`) és az oldalmenü a kijelölt elemre gördül (`revealInScroller`, `ScrollRow.watch`: elhalványuló szélek a `can-scroll-left/right` osztályokkal). A lépéstípusok emberi felirata: `moveTypeLabel`.
 
 ### Új admin funkció hozzáadása (teendők)
 1. Logika az `admin_*.py` megfelelő moduljában (vagy újban), módosításnál `admin.action(...)`. 2. Végpont az `admin_api_*.py`-ban (`admin_bp`), romboló műveletnél `@sudo_required` / `@danger`. 3. Nézet az `admin-views-*.js`-ben (`registerSection` új menüponthoz), **minden szöveg** az `admin-i18n.js`-ben (hu **és** en; az új szerverüzenet is az `en.server.exact`-ban). 4. Teszt a funkcióhoz; a hozzáférési tesztek az új útvonalat automatikusan lefedik (útvonaltérkép), de a `tests/test_admin_client.py` számon kéri, hogy minden végpontnak legyen felülete. 5. Kliens-oldali hiba kereséséhez: `tests/test_admin_browser.py` (valódi szerver + Playwright; kimarad, ha nincs node / Playwright / Chromium — a `PLAYWRIGHT_MODULE`, `PLAYWRIGHT_CHROMIUM` környezeti változóval felülírható).

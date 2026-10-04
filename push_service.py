@@ -11,7 +11,7 @@ import json
 import os
 
 import auth
-from config import SMTP_FROM
+import mail_config
 
 try:
     from cryptography.hazmat.primitives import serialization
@@ -56,7 +56,8 @@ def subject():
     configured = os.environ.get('VAPID_SUBJECT', '')
     if configured:
         return configured
-    return f'mailto:{SMTP_FROM}' if SMTP_FROM else 'mailto:admin@localhost.localdomain'
+    sender = mail_config.from_address()
+    return f'mailto:{sender}' if sender else 'mailto:admin@localhost.localdomain'
 
 
 def _b64url(raw):

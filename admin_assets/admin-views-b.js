@@ -122,7 +122,7 @@ const GameDetailView = {
             { label: '#', cell: (m) => m.n },
             { label: t('admin.col_time'), cell: (m) => formatStamp(m.at) },
             { label: t('admin.col_player'), cell: (m) => m.player },
-            { label: t('admin.col_action'), cell: (m) => h('span', null, m.type, m.admin ? [' ', UI.badge(t('admin.by_admin'), 'warn')] : null) },
+            { label: t('admin.col_action'), cell: (m) => h('span', null, moveTypeLabel(m.type), m.admin ? [' ', UI.badge(t('admin.by_admin'), 'warn')] : null) },
             { label: t('admin.col_words'), cell: (m) => (m.words || []).join(', ') },
             { label: t('admin.col_score'), cell: (m) => m.score === null ? '' : m.score },
             { label: t('admin.col_hand'), cell: (m) => m.rack ? h('span', { class: 'admin-rack-tiles' }, m.rack.map((l) => UI.tile(l === '?' ? '' : l, l === '?'))) : '' },
@@ -144,7 +144,7 @@ const GameDetailView = {
                 const board = move && Array.isArray(move.board) ? move.board : null;
                 stage.replaceChildren(renderBoard(board, move ? move.tiles : []));
                 info.textContent = move
-                    ? t('admin.replay_move', { n: move.n, total: moves.length, player: move.player, type: move.type,
+                    ? t('admin.replay_move', { n: move.n, total: moves.length, player: move.player, type: moveTypeLabel(move.type),
                         words: (move.words || []).join(', ') || '–', score: move.score === null ? '–' : move.score })
                     : t('admin.replay_start');
                 slider.value = index;
@@ -429,9 +429,11 @@ const DailyView = {
                     h('div', { class: 'admin-rack-tiles' }, data.puzzle.rack.map((l) => UI.tile(l === '?' ? '' : l, l === '?'))),
                     h('p', { class: 'form-hint' }, t('admin.d_daily_best_words', { words: ((data.puzzle.best || {}).words || []).join(', ') || '–' })),
                     h('div', { class: 'admin-action-row' }, UI.btn(t('admin.act_regenerate') + ' 🔒', () => this.regenerate(data, reload), { kind: 'danger' })))
-                    , UI.card(t('admin.card_daily_dist'), h('div', { class: 'admin-chart-grid' },
-                        Chart.hbars(Object.entries(data.attempts).map(([label, value]) => ({ label: t('admin.daily_attempts_n', { n: label }), value }))),
-                        Chart.hbars(Object.entries(data.scores).map(([label, value]) => ({ label: t(DAILY_SCORE_LABELS[label]), value }))))))));
+                    , UI.card(t('admin.card_daily_dist'),
+                        UI.subtitle(t('admin.daily_dist_attempts')),
+                        Chart.hbars(DAILY_ATTEMPT_ORDER.map((key) => ({ label: t('admin.daily_attempts_n', { n: key }), value: data.attempts[key] || 0 }))),
+                        UI.subtitle(t('admin.daily_dist_scores')),
+                        Chart.hbars(DAILY_SCORE_ORDER.map((key) => ({ label: t(DAILY_SCORE_LABELS[key]), value: data.scores[key] || 0 })))))));
             }
             container.appendChild(UI.card(t('admin.card_daily_board'), data.leaderboard.length ? UI.table({ compact: true, items: data.leaderboard, columns: [
                 { label: '#', cell: (e) => e.rank },
@@ -491,6 +493,9 @@ const DailyView = {
     },
 };
 
+// A szerver JSON-ja ábécé-sorrendben küldi a kulcsokat, ezért a sávok sorrendje itt van rögzítve
+const DAILY_ATTEMPT_ORDER = ['1', '2', '3', '4-5', '6+'];
+const DAILY_SCORE_ORDER = ['perfect', 'high', 'good', 'half', 'low'];
 const DAILY_SCORE_LABELS = {
     perfect: 'admin.daily_score_perfect', high: 'admin.daily_score_high', good: 'admin.daily_score_good',
     half: 'admin.daily_score_half', low: 'admin.daily_score_low',

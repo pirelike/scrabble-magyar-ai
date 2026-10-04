@@ -348,7 +348,8 @@ class TestSystem:
         tables = {t['name']: t['rows'] for t in data['database']['tables']}
         assert tables['users'] == 1 and 'admin_audit' in tables and data['database']['size'] > 0
         assert {j['name'] for j in data['jobs']} >= {'async_sweeper', 'admin_broadcaster'}
-        assert data['smtp']['configured'] in (True, False) and 'tunnel' in data
+        assert data['mail']['configured'] in (True, False) and data['mail']['source'] == 'environment'
+        assert 'password' not in data['mail'] and 'tunnel' in data
 
     def test_config_hides_the_secrets(self, api, monkeypatch):
         monkeypatch.setattr(config, 'SMTP_PASSWORD', 'titkos-jelszo')

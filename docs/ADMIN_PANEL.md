@@ -479,10 +479,25 @@ Grafikonok és táblázatok, időszak-választóval (7 / 30 / 90 / 365 nap), CSV
   futása; futó elemzések sora.
 - **Tunnel**: állapot, publikus URL (másolás gomb), újraindítás.
 - **Push / VAPID**: nyilvános kulcs, feliratkozások száma, teszt üzenet magamnak.
-- **SMTP**: teszt e-mail magamnak.
+- **Levelező szerver (SMTP)** — **beállítható**: kiszolgáló, port, titkosítás (STARTTLS / SSL/TLS / nincs),
+  felhasználónév és jelszó, feladó címe és neve, a tanúsítvány ellenőrzése. A mentett beállítás
+  (`app_settings`, `mail.smtp`) erősebb a környezeti `SMTP_*` értékeknél, és újraindítás nélkül hat. Mentés és
+  visszaállítás az alapra: sudo + indoklás, a naplóban előtte / utána, **jelszó nélkül** (csak hogy változott-e);
+  a jelszó sosem kerül vissza a felületre, és üresen hagyva csak ugyanahhoz a kiszolgálóhoz / felhasználóhoz
+  marad meg. „Kapcsolat kipróbálása” (sudo): csatlakozás, titkosítás, bejelentkezés, kérésre teszt levél a saját
+  címedre; a hibát biztonságos kód mondja meg (dns, timeout, auth, certificate…), a kiszolgáló szövege nem.
+  Teszt e-mail magamnak a mentett beállítással.
+- **Frissítés GitHubról**: a program mappája git tár; állapot (ág, commit, futó verzió, helyi módosítások),
+  „Ellenőrzés a GitHubon” (`git fetch`: ágak, beérkező commitok, változó fájlok), frissítés a legfrissebb vagy egy
+  megadott ágra. Csak fast-forward, tiszta munkafán, a rögzített `origin` távoli tárral és az ismert ágak
+  egyikére; sudo + indoklás, a naplósor a művelet előtt íródik. A frissítés után a megváltozott `.py` fájlok
+  szintaxisát ellenőrzi, hibánál visszaáll az előző állapotra; változott `requirements.txt` esetén kérésre
+  `pip install -r requirements.txt`.
 - **Verzió**: git commit, `asset_version()`, Python és csomagverziók, a tesztek száma (a
   CLAUDE.md-ből).
-- **Újraindítás / leállítás** gomb: **nem** készül a panelre (a szerver folyamatot a gazdagép
+- **Újraindítás**: a frissítés része („Újraindítás a frissítés után”) és külön gomb is (sudo + indoklás): a
+  folyamat `os.execv`-vel önmagára cserélődik, a tunnel előtte leáll; a `restart_needed` jelzi, ha a lemezen
+  újabb kód van, mint amit a folyamat futtat. **Leállítás** gomb továbbra sincs (a szerver folyamatot a gazdagép
   kezeli); helyette karbantartási mód.
 
 ---

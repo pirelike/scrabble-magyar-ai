@@ -11,7 +11,7 @@ from datetime import timedelta
 import admin
 import admin_system
 import auth
-import config
+import mail_config
 import dictionary
 import settings
 from admin import AdminError
@@ -699,7 +699,7 @@ def alerts():
 
     if not dictionary.is_available():
         add('dictionary_down', 'red')
-    if not config.SMTP_CONFIGURED:
+    if not mail_config.is_configured():
         add('smtp_missing', 'yellow')
     if not push_service.is_available():
         add('push_missing', 'yellow')

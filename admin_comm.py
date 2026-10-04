@@ -9,7 +9,7 @@ from datetime import timedelta
 
 import admin
 import auth
-import config
+import mail_config
 import email_service
 import push_service
 import settings
@@ -319,7 +319,7 @@ def email_user(ctx, user_id, data):
     ok, error = email_service.send_plain_email(row['email'], subject, _email_body(row['display_name'], body), wait=True)
     if error and error != 'smtp_not_configured':
         raise AdminError('Az e-mail küldése nem sikerült.', 502)
-    return {'sent': ok, 'console': not config.SMTP_CONFIGURED}
+    return {'sent': ok, 'console': not mail_config.is_configured()}
 
 
 def email_preview(group):
@@ -356,4 +356,4 @@ def email_bulk(ctx, data):
             sent += 1
         elif error != 'smtp_not_configured':
             failed += 1
-    return {'recipients': len(users), 'sent': sent, 'failed': failed, 'console': not config.SMTP_CONFIGURED}
+    return {'recipients': len(users), 'sent': sent, 'failed': failed, 'console': not mail_config.is_configured()}

@@ -9,11 +9,13 @@ from flask import g, request, send_file
 import admin
 import admin_comm
 import admin_live
+import admin_mail
+import admin_update
 import admin_security
 import admin_system
 import auth
-import config
 import email_service
+import mail_config
 import push_service
 import routes as main_routes
 import tunnel
@@ -72,7 +74,7 @@ def security_ip_ban_remove(ban_id):
 @admin_bp.route('/security/codes', methods=['GET'])
 def security_codes():
     """A függő regisztrációs kódok (SMTP nélkül itt látszik a kód). Naplózva: `view.codes`."""
-    return json_ok(items=admin_security.list_codes(g.admin_ctx), smtp=config.SMTP_CONFIGURED)
+    return json_ok(items=admin_security.list_codes(g.admin_ctx), smtp=mail_config.is_configured())
 
 
 @admin_bp.route('/security/codes/<int:code_id>', methods=['DELETE'])
@@ -126,8 +128,7 @@ def system_overview():
         push={'available': push_service.is_available(),
               'public_key': push_service.public_key() if push_service.is_available() else None,
               'subscriptions': _push_count()},
-        tunnel=tunnel.status(), smtp={'configured': config.SMTP_CONFIGURED, 'host': config.SMTP_HOST,
-                                      'from': config.SMTP_FROM})
+        tunnel=tunnel.status(), mail=admin_mail.view())
 
 
 def _push_count():
@@ -224,8 +225,37 @@ def system_smtp_test():
     if error == 'smtp_not_configured':
         return json_ok(sent=False, console=True)
     if not ok:
-        raise AdminError('Az e-mail küldése nem sikerült.', 502)
+        raise AdminError('Az e-mail küldése nem sikerült.', 502, code=error)
     return json_ok(sent=True, console=False)
+
+
+# ===== Levelező szerver (SMTP) =====
+
+@admin_bp.route('/system/mail', methods=['GET'])
+def system_mail_get():
+    """A levelező szerver beállítása (a jelszó nélkül) és a környezeti alapérték."""
+    return json_ok(mail=admin_mail.view())
+
+
+@admin_bp.route('/system/mail', methods=['PATCH'])
+@sudo_required
+def system_mail_update():
+    """A levelező szerver beállítása: kiszolgáló, port, titkosítás, bejelentkezés, feladó. Újraindítás nélkül hat."""
+    return json_ok(mail=admin_mail.update(g.admin_ctx, body_or_empty()))
+
+
+@admin_bp.route('/system/mail', methods=['DELETE'])
+@sudo_required
+def system_mail_reset():
+    """A mentett beállítás törlése: a környezeti változók (`SMTP_*`) értéke lép érvénybe."""
+    return json_ok(mail=admin_mail.reset(g.admin_ctx, reason_of(body_or_empty())))
+
+
+@admin_bp.route('/system/mail/check', methods=['POST'])
+@sudo_required
+def system_mail_check():
+    """Kapcsolat-próba a megadott (még nem mentett) beállítással; `send: true` esetén teszt levéllel a saját címedre."""
+    return json_ok(**admin_mail.check(g.admin_ctx, body_or_empty(), g.admin_user['email']))
 
 
 @admin_bp.route('/system/push-test', methods=['POST'])
@@ -233,3 +263,35 @@ def system_smtp_test():
 def system_push_test():
     """Teszt push üzenet magamnak."""
     return json_ok(**admin_comm.push_test(g.admin_ctx, g.admin_user['id']))
+
+
+# ===== Frissítés GitHubról és újraindítás =====
+
+@admin_bp.route('/system/update', methods=['GET'])
+def system_update_status():
+    """A tár állapota hálózat nélkül: ág, commit, távoli cím, helyi módosítások, újraindítás szükséges-e."""
+    return json_ok(update=admin_update.status())
+
+
+@admin_bp.route('/system/update/check', methods=['POST'])
+@danger
+def system_update_check():
+    """Lekéri az ágakat a GitHubról (`git fetch`), és megmondja, mi változna: `{branch}` (elhagyható)."""
+    body = body_or_empty()
+    return json_ok(update=admin_update.check(body.get('branch'), fetch=body.get('fetch') is not False))
+
+
+@admin_bp.route('/system/update/apply', methods=['POST'])
+@sudo_required
+def system_update_apply():
+    """Frissítés a GitHub egy ágára (előretekerés): `{branch, reason, install?, restart?}`."""
+    body = body_or_empty()
+    return json_ok(update=admin_update.apply(g.admin_ctx, body.get('branch'), reason_of(body),
+                                             install=body.get('install') is True, restart=body.get('restart') is True))
+
+
+@admin_bp.route('/system/restart', methods=['POST'])
+@sudo_required
+def system_restart():
+    """A szerver újraindítása (a folyamat önmagára cserélése); a kapcsolatok megszakadnak, a kliensek újracsatlakoznak."""
+    return json_ok(**admin_update.restart(g.admin_ctx, reason_of(body_or_empty())))

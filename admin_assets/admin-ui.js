@@ -3,6 +3,64 @@
 // Újrahasznosítható elemek: jelvények, gombok, kártyák, táblázat, lapozó, fülek, szűrős listanézet, űrlap-párbeszéd
 // (kötelező indoklással és névbegépeléses megerősítéssel), grafikonok, tábla-rajzoló. Mindenhol DOM API.
 
+// ----- Görgethető sorok: a kijelölt elem láthatóvá tétele és a görgethetőséget jelző szélek -----
+
+// A `scroller`-ben az `item` a látható részre kerül: vízszintesen középre, függőlegesen a legközelebbi szélre
+function revealInScroller(scroller, item, options = {}) {
+    if (!scroller || !item) return;
+    const box = scroller.getBoundingClientRect();
+    const rect = item.getBoundingClientRect();
+    if (!box.width || !box.height) return;          // még nincs elrendezve / nem látszik
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const behavior = options.smooth && !reduce ? 'smooth' : 'auto';
+    if (options.axis === 'y') {
+        if (scroller.scrollHeight <= scroller.clientHeight) return;
+        const above = rect.top - box.top;
+        const below = rect.bottom - box.bottom;
+        if (above < 0) scroller.scrollTo({ top: Math.max(0, scroller.scrollTop + above - 8), behavior });
+        else if (below > 0) scroller.scrollTo({ top: scroller.scrollTop + below + 8, behavior });
+        return;
+    }
+    if (scroller.scrollWidth <= scroller.clientWidth) return;
+    const target = scroller.scrollLeft + (rect.left - box.left) - (box.width - rect.width) / 2;
+    scroller.scrollTo({ left: Math.max(0, target), behavior });
+}
+
+const ScrollRow = {
+    // Vízszintesen görgethető sor (pl. fülek): az első megjelenéskor a `getActive()` eleme a képbe gördül, a
+    // `can-scroll-left` / `can-scroll-right` osztály pedig mutatja, merre van még tartalom
+    watch(bar, getActive) {
+        const update = () => {
+            const max = bar.scrollWidth - bar.clientWidth;
+            bar.classList.toggle('can-scroll-left', max > 2 && bar.scrollLeft > 4);
+            bar.classList.toggle('can-scroll-right', max > 2 && bar.scrollLeft < max - 4);
+        };
+        bar.addEventListener('scroll', update, { passive: true });
+        if (!('ResizeObserver' in window)) {
+            requestAnimationFrame(() => { revealInScroller(bar, getActive()); update(); });
+            return;
+        }
+        let revealed = false;
+        const observer = new ResizeObserver(() => {
+            if (!bar.clientWidth) return;                // a sor még nincs a lapon
+            if (!revealed) { revealed = true; revealInScroller(bar, getActive()); }
+            update();
+        });
+        observer.observe(bar);
+        if (typeof Router !== 'undefined') Router.onLeave(() => observer.disconnect());
+    },
+};
+
+// A lépésnapló típusai (a szerver `action_type` értékei) emberi felirattal; az ismeretlen típus nyersen marad
+const MOVE_TYPE_LABELS = {
+    place: 'admin.move_place', challenge_accept: 'admin.move_challenge_accept', challenge_reject: 'admin.move_challenge_reject',
+    exchange: 'admin.move_exchange', pass: 'admin.move_pass',
+};
+
+function moveTypeLabel(type) {
+    return MOVE_TYPE_LABELS[type] ? t(MOVE_TYPE_LABELS[type]) : String(type);
+}
+
 const UI = {
     badge(text, kind = 'muted') {
         return h('span', { class: 'admin-badge badge-' + kind }, text);
@@ -137,7 +195,8 @@ const UI = {
             next);
     },
 
-    // Fülek: items [{id, label}]; onSelect(id)
+    // Fülek: items [{id, label}]; onSelect(id). Keskeny képernyőn a sor görgethető: a kijelölt fül a látható részre
+    // kerül, és a szélek elhalványulása jelzi, ha van még fül a képen kívül
     tabs(items, active, onSelect) {
         const bar = h('div', { class: 'admin-tabs', role: 'tablist' });
         for (const item of items) {
@@ -146,12 +205,13 @@ const UI = {
             tab.addEventListener('click', () => onSelect(item.id));
             bar.appendChild(tab);
         }
+        ScrollRow.watch(bar, () => bar.querySelector('.admin-tab.active'));
         return bar;
     },
 
     userLink(id, name) {
         if (id === null || id === undefined) return name || '';
-        return UI.link(name || ('#' + id), Router.href('users', id));
+        return UI.link(name || ('#' + id), Router.href('users', id), 'admin-inline-link admin-user-link');
     },
 
     gameLink(id, label) {
