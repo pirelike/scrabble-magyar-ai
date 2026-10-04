@@ -695,9 +695,9 @@ const UpdateCard = {
         const commit = u.commit || {};
         box.appendChild(UI.kv([
             [t('admin.upd_branch'), u.branch || t('admin.upd_detached')],
-            [t('admin.upd_commit'), h('span', null, h('code', null, commit.short || '–'), ' ', commit.subject || '')],
+            [t('admin.upd_commit'), h('span', null, h('code', null, commit.short || '–'), ' ', commit.subject || ''), { wide: true }],
             [t('admin.col_time'), commit.date ? formatIso(commit.date) : null],
-            [t('admin.upd_remote'), u.remote ? h('code', { class: 'admin-code-wrap' }, u.remote) : null],
+            [t('admin.upd_remote'), u.remote ? h('code', { class: 'admin-code-wrap' }, u.remote) : null, { wide: true }],
             [t('admin.upd_running'), h('span', null, h('code', null, u.running_commit || '–'), ' ',
                 u.restart_needed ? UI.badge(t('admin.upd_restart_needed'), 'warn') : UI.badge(t('admin.upd_in_sync'), 'ok'))],
         ]));
@@ -769,6 +769,12 @@ const UpdateCard = {
     },
 };
 
+// A konfiguráció értéke szövegként (az összetett érték — pl. a forgalomkorlátok szótára — JSON-ként, nem „[object Object]”)
+function configValueText(value) {
+    if (value === null || value === undefined) return '';
+    return typeof value === 'object' ? JSON.stringify(value) : String(value);
+}
+
 const SystemView = {
     async render(view) {
         const holder = h('div');
@@ -781,18 +787,18 @@ const SystemView = {
         const yes = (ok) => UI.badge(ok ? t('admin.yes') : t('admin.no'), ok ? 'ok' : 'danger');
         box.appendChild(UI.header(t('admin.nav_system'), t('admin.system_note'), UI.btn(t('admin.refresh'), reload, { kind: 'secondary' })));
         const s = d.server;
-        box.appendChild(UI.card(t('admin.server_title'), UI.kv([
+        const serverCard = UI.card(t('admin.server_title'), UI.kv([
             [t('admin.srv_uptime'), fmtDuration(s.uptime)], [t('admin.srv_memory'), fmtBytes(s.rss)],
             [t('admin.srv_cpu'), s.cpu_percent === null ? '–' : fmtPercent(s.cpu_percent)], [t('admin.srv_greenlets'), fmtNum(s.greenlets)],
-            [t('admin.srv_threads'), fmtNum(s.threads)], [t('admin.srv_python'), s.python]])));
+            [t('admin.srv_threads'), fmtNum(s.threads)], [t('admin.srv_python'), s.python]]));
 
         const tunnel = d.tunnel || {};
-        box.appendChild(UI.card(t('admin.card_services'), UI.kv([
+        const servicesCard = UI.card(t('admin.card_services'), UI.kv([
             [t('admin.srv_dictionary'), yes(d.services.dictionary)], [t('admin.srv_vocabulary'), yes(d.services.vocabulary)],
             [t('admin.srv_push'), h('span', null, yes(d.push.available), ' ', t('admin.push_subs', { n: d.push.subscriptions }))],
             [t('admin.srv_smtp'), h('span', null, yes(d.mail.configured), d.mail.host ? ' ' + d.mail.host : '')],
             [t('admin.srv_tunnel'), h('span', null, UI.badge(tunnel.state || '–', tunnel.url ? 'ok' : 'muted'), tunnel.url ? [' ', tunnel.url] : null)],
-            [t('admin.d_vapid'), d.push.public_key ? h('code', { class: 'admin-code-wrap' }, d.push.public_key) : null]]),
+            [t('admin.d_vapid'), d.push.public_key ? h('code', { class: 'admin-code-wrap' }, d.push.public_key) : null, { wide: true }]]),
         h('div', { class: 'admin-action-row' },
             tunnel.url ? UI.copy(tunnel.url) : null,
             UI.btn(t('admin.tunnel_restart') + ' 🔒', () => Act.open({ title: t('admin.tunnel_restart'), text: t('admin.tunnel_restart_text'), danger: true,
@@ -800,20 +806,22 @@ const SystemView = {
             UI.btn(t('admin.push_test_self'), async () => {
                 const result = await Api.post('/api/admin/system/push-test');
                 showToast(result.ok ? t('admin.push_test_sent', { n: result.data.sent }) : Api.message(result), !result.ok);
-            }, { kind: 'secondary' }))));
+            }, { kind: 'secondary' })));
+        box.appendChild(UI.cardGrid(serverCard, servicesCard));
 
         box.appendChild(MailCard.build(d.mail, reload));
         box.appendChild(UpdateCard.build(reload));
 
         const v = d.versions;
         box.appendChild(UI.card(t('admin.card_versions'), UI.kv([
-            [t('admin.srv_git'), v.git], [t('admin.srv_assets'), String(v.asset_version)], [t('admin.d_admin_assets'), String(v.admin_asset_version)],
+            [t('admin.srv_git'), v.git, { wide: true }], [t('admin.srv_assets'), String(v.asset_version)], [t('admin.d_admin_assets'), String(v.admin_asset_version)],
             [t('admin.srv_python'), v.python], [t('admin.d_platform'), v.platform], [t('admin.d_tests'), v.tests],
             ...Object.entries(v.packages).map(([name, version]) => [name, version])])));
 
         box.appendChild(UI.card(t('admin.card_config'), h('p', { class: 'form-hint' }, t('admin.config_note')), UI.table({ compact: true, items: d.config, columns: [
             { label: t('admin.col_name'), cell: (c) => h('code', null, c.key) },
-            { label: t('admin.col_value'), cell: (c) => c.secret ? h('span', null, '••••  ', UI.badge(c.set ? t('admin.set') : t('admin.not_set'), c.set ? 'ok' : 'muted')) : String(c.value === null || c.value === undefined ? '' : c.value) }] })));
+            { label: t('admin.col_value'), cell: (c) => c.secret ? h('span', null, '••••  ', UI.badge(c.set ? t('admin.set') : t('admin.not_set'), c.set ? 'ok' : 'muted'))
+                : configValueText(c.value) }] })));
 
         this.database(box, d.database, reload);
 
@@ -952,14 +960,16 @@ const SettingsView = {
 
     paint(box, data) {
         const reload = () => Router.render();
-        box.appendChild(UI.header(t('admin.nav_settings'), t('admin.settings_note'), UI.btn(t('admin.refresh'), reload, { kind: 'secondary' })));
+        const column = h('div', { class: 'admin-narrow' });
+        box.appendChild(column);
+        column.appendChild(UI.header(t('admin.nav_settings'), t('admin.settings_note'), UI.btn(t('admin.refresh'), reload, { kind: 'secondary' })));
         for (const group of data.groups) {
             const items = data.items.filter((i) => i.group === group);
             if (!items.length) continue;
-            box.appendChild(UI.subtitle(t(SETTING_GROUP_LABELS[group])));
+            column.appendChild(UI.subtitle(t(SETTING_GROUP_LABELS[group])));
             const card = UI.card(null);
             for (const item of items) card.appendChild(this.row(item, reload));
-            box.appendChild(card);
+            column.appendChild(card);
         }
     },
 
@@ -967,35 +977,49 @@ const SettingsView = {
         const [labelKey, hintKey] = SETTING_TEXT[item.key];
         let control = null;
         let edit = null;
+        let input = null;
         if (item.type === 'bool') {
-            control = h('input', { type: 'checkbox', class: 'admin-toggle', checked: !!item.value });
-            edit = () => control.checked;
+            // a játékos oldali beállításokkal azonos iOS-kapcsoló
+            input = h('input', { type: 'checkbox', checked: !!item.value, 'aria-label': t(labelKey) });
+            control = h('label', { class: 'toggle-switch' }, input, h('span', { class: 'toggle-slider' }));
+            edit = () => input.checked;
         } else if (item.type === 'choice') {
-            control = h('select', null, item.choices.map((c) => h('option', { value: String(c) }, settingChoiceLabel(c))));
-            control.value = String(item.value);
-            edit = () => item.choices.find((c) => String(c) === control.value);
+            input = h('select', { 'aria-label': t(labelKey) }, item.choices.map((c) => h('option', { value: String(c) }, settingChoiceLabel(c))));
+            input.value = String(item.value);
+            control = input;
+            edit = () => item.choices.find((c) => String(c) === input.value);
         } else if (item.type === 'int' || item.type === 'float') {
-            control = h('input', { type: 'number', value: item.value, min: item.min, max: item.max, step: item.type === 'float' ? '0.1' : '1' });
-            edit = () => (control.value === '' ? null : Number(control.value));
+            input = h('input', { type: 'number', value: item.value, min: item.min, max: item.max, step: item.type === 'float' ? '0.1' : '1',
+                'aria-label': t(labelKey) });
+            control = input;
+            edit = () => (input.value === '' ? null : Number(input.value));
         }
-        const row = h('div', { class: 'admin-setting' },
+        // A „Mentés” csak módosítás után él (a változatlan érték mentése értelmetlen)
+        const save = control ? UI.btn(t('admin.save'), () => {
+            const value = edit();
+            if (value === null || value === undefined || value === item.value) return;
+            Act.open({ title: t(labelKey), text: t('admin.set_change_text', { from: settingDisplay(item), to: settingDisplay({ ...item, value }) }), danger: true,
+                run: (v) => Api.patch('/api/admin/settings', { changes: { [item.key]: value }, reason: v.reason }), done: reload });
+        }, { disabled: true }) : null;
+        if (input) {
+            const sync = () => { const value = edit(); save.disabled = value === null || value === undefined || value === item.value; };
+            input.addEventListener('input', sync);
+            input.addEventListener('change', sync);
+        }
+        const reset = item.overridden && control ? UI.btn(t('admin.reset_default'), () => Act.open({ title: t('admin.reset_default'), text: t(labelKey),
+            run: (v) => Api.patch('/api/admin/settings', { changes: { [item.key]: null }, reason: v.reason }), done: reload }),
+            { kind: 'link-btn', small: false }) : null;
+        if (reset) reset.classList.add('admin-setting-reset');
+        return h('div', { class: 'admin-setting' },
             h('div', { class: 'admin-setting-text' }, h('strong', null, t(labelKey)), h('div', { class: 'form-hint form-hint-tight' }, t(hintKey)),
                 h('div', { class: 'admin-setting-meta' },
                     t('admin.set_default', { value: item.type === 'limits' ? '–' : settingDisplay({ ...item, value: item.default }) }),
                     item.overridden ? [' · ', UI.badge(t('admin.overridden'), 'warn')] : null,
-                    item.changed_at ? [' · ', t('admin.set_changed', { who: item.changed_by_name || '?', when: formatStamp(item.changed_at) })] : null)),
+                    item.changed_at ? [' · ', t('admin.set_changed', { who: item.changed_by_name || '?', when: formatStamp(item.changed_at) })] : null,
+                    reset)),
             h('div', { class: 'admin-setting-control' },
-                control || h('span', null, settingDisplay(item), ' ', UI.link(t('admin.set_open_limits'), Router.href('security', '', { tab: 'limits' }))),
-                control ? UI.btn(t('admin.save'), () => {
-                    const value = edit();
-                    if (value === null || value === undefined) return;
-                    if (value === item.value) { showToast(t('admin.set_unchanged')); return; }
-                    Act.open({ title: t(labelKey), text: t('admin.set_change_text', { from: settingDisplay(item), to: settingDisplay({ ...item, value }) }), danger: true,
-                        run: (v) => Api.patch('/api/admin/settings', { changes: { [item.key]: value }, reason: v.reason }), done: reload });
-                }) : null,
-                item.overridden && control ? UI.btn(t('admin.reset_default'), () => Act.open({ title: t('admin.reset_default'), text: t(labelKey),
-                    run: (v) => Api.patch('/api/admin/settings', { changes: { [item.key]: null }, reason: v.reason }), done: reload }), { kind: 'secondary' }) : null));
-        return row;
+                control || h('span', { class: 'admin-setting-note' }, settingDisplay(item), ' ', UI.link(t('admin.set_open_limits'), Router.href('security', '', { tab: 'limits' }))),
+                save));
     },
 };
 
@@ -1011,7 +1035,7 @@ const DetailDialog = {
             [t('admin.col_time'), formatStamp(item.created_at)], [t('admin.col_admin'), (item.admin_name || '?') + ' (#' + item.admin_user_id + ')'],
             [t('admin.col_action'), item.action],
             [t('admin.col_target'), item.target_type ? item.target_type + (item.target_id ? ' · ' + item.target_id : '') : ''],
-            [t('admin.col_ip'), item.ip || ''], [t('admin.d_user_agent'), item.user_agent || ''], [t('admin.col_reason'), item.reason || ''],
+            [t('admin.col_ip'), item.ip || ''], [t('admin.d_user_agent'), item.user_agent || '', { wide: true }], [t('admin.col_reason'), item.reason || ''],
         ]));
         const details = item.details;
         if (details && details.before && details.after && typeof details.before === 'object' && typeof details.after === 'object') {

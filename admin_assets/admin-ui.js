@@ -85,6 +85,11 @@ const UI = {
             children);
     },
 
+    // Egymás melletti kártyák (széles képernyőn több oszlop)
+    cardGrid(...cards) {
+        return h('div', { class: 'admin-card-grid' }, cards);
+    },
+
     // Címsor + magyarázat + gombok egy nézet tetején
     header(title, note, ...actions) {
         return h('div', { class: 'admin-view-header' },
@@ -110,10 +115,11 @@ const UI = {
     // Címke–érték lista; az üres értékek kimaradnak
     kv(rows) {
         const list = h('dl', { class: 'admin-kv' });
-        for (const [label, value] of rows) {
+        // A sor harmadik eleme `{wide: true}`: hosszú érték (commit, cím, böngésző), amely a teljes sort megkapja
+        for (const [label, value, options] of rows) {
             if (value === null || value === undefined || value === '' || value === false) continue;
-            list.appendChild(h('dt', null, label));
-            list.appendChild(h('dd', null, value));
+            list.appendChild(h('div', { class: 'admin-kv-row' + (options && options.wide ? ' admin-kv-wide' : '') },
+                h('dt', null, label), h('dd', null, value)));
         }
         return list;
     },
@@ -160,7 +166,9 @@ const UI = {
             const row = h('tr', { class: rowClass ? rowClass(item) : null });
             for (const column of columns) {
                 const content = column.cell(item);
-                const cell = h('td', { class: column.cls, dataset: { label: column.label } });
+                const short = (typeof content === 'number' || (typeof content === 'string' && content.length <= 28))
+                    ? ' cell-short' : '';
+                const cell = h('td', { class: ((column.cls || '') + short).trim() || null, dataset: { label: column.label } });
                 if (content !== null && content !== undefined && content !== false) appendChildren(cell, [content]);
                 row.appendChild(cell);
             }
@@ -303,9 +311,16 @@ function mountList(view, params, config) {
         Router.go(config.section, '', query);
     };
 
-    view.appendChild(UI.header(config.title, config.note,
-        ...(config.headerActions || []),
-        UI.btn(t('admin.refresh'), () => load(), { kind: 'secondary' })));
+    // A fülön belüli lista (keep: ['tab']) nem kap saját címsort: a nézet fejléce és a fülek már megnevezik; a frissítés
+    // gomb az eszköztárba kerül, a magyarázat sima szöveg
+    const embedded = (config.keep || []).includes('tab');
+    if (embedded) {
+        if (config.note) view.appendChild(h('p', { class: 'form-hint' }, config.note));
+    } else {
+        view.appendChild(UI.header(config.title, config.note,
+            ...(config.headerActions || []),
+            UI.btn(t('admin.refresh'), () => load(), { kind: 'secondary' })));
+    }
     if (config.banner) view.appendChild(config.banner);
     if (config.filters && config.filters.length) view.appendChild(renderFilterForm(config.filters, params, (query) => {
         for (const [key, value] of keepQuery().entries()) query.set(key, value);
@@ -333,7 +348,9 @@ function mountList(view, params, config) {
         const bar = h('div', { class: 'admin-toolbar' },
             h('span', { class: 'text-secondary text-sm' },
                 total ? t('admin.audit_range', { from: state.offset + 1, to: state.offset + items.length, total }) : ''),
-            h('div', { class: 'admin-toolbar-actions' }, config.toolbar ? config.toolbar(data) : null,
+            h('div', { class: 'admin-toolbar-actions' }, embedded ? config.headerActions || null : null,
+                embedded ? UI.btn(t('admin.refresh'), () => load(), { kind: 'secondary' }) : null,
+                config.toolbar ? config.toolbar(data) : null,
                 config.csv === false ? null : UI.download(t('admin.export_csv'), config.path,
                     new URLSearchParams([...activeFilters().entries(), ['format', 'csv']]))));
         results.appendChild(bar);
@@ -374,10 +391,13 @@ function renderFilterForm(filters, params, onApply, onReset) {
             control = h('input', { type: 'checkbox', name: filter.name, checked: params.get(filter.name) === '1' });
         } else {
             control = h('input', { type: filter.type || 'text', name: filter.name, autocomplete: 'off',
-                value: params.get(filter.name) || '', placeholder: filter.placeholder || null });
+                value: params.get(filter.name) || '', placeholder: filter.placeholder || (filter.type === 'number' ? '0' : null),
+                min: filter.type === 'number' ? 0 : null });
         }
-        const field = h('label', { class: 'admin-field' + (filter.type === 'checkbox' ? ' admin-field-check' : '') },
-            h('span', { class: 'admin-field-label' }, filter.label), control);
+        // A jelölőnégyzet a felirat előtt áll (a többi mezőnél a felirat van felül)
+        const field = filter.type === 'checkbox'
+            ? h('label', { class: 'admin-field admin-field-check' }, control, h('span', { class: 'admin-field-label' }, filter.label))
+            : h('label', { class: 'admin-field' }, h('span', { class: 'admin-field-label' }, filter.label), control);
         form.appendChild(field);
     }
     const apply = h('button', { type: 'submit', class: 'small-btn' }, t('admin.apply'));
@@ -583,27 +603,65 @@ function durationOptions(permanent = true) {
 
 // ----- Grafikonok (SVG) -----
 
+// A tengely „szép” felosztása: a lépés 1 / 2 / 5 × 10^n, legfeljebb ~5 vízszintes vonal (a darabszámnál nincs törtérték)
+function niceAxis(max, whole) {
+    const raw = Math.max(max, whole ? 1 : 0.0001) / 5;
+    const pow = 10 ** Math.floor(Math.log10(raw));
+    const f = raw / pow;
+    let step = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * pow;
+    if (whole) step = Math.max(1, Math.round(step));
+    return { step, top: Math.max(step, Math.ceil(max / step) * step) };
+}
+
 const Chart = {
+    DEFAULT_WIDTH: 640,
+
     // spec: {days: [...], series: [{label, values: [...], cls}], type: 'bar'|'line'|'stack', yLabel}
+    // Az SVG a tároló tényleges szélességére rajzolódik (1:1 léptékkel: a betűk és a vonalak nem nőnek meg a nagy
+    // képernyőn), átméretezéskor újrarajzolódik
     render(spec) {
-        const width = 640;
-        const height = 220;
-        const pad = { left: 38, right: 8, top: 10, bottom: 22 };
+        const holder = h('div', { class: 'admin-chart-holder' });
+        const draw = (width) => holder.replaceChildren(this.svg(spec, width));
+        draw(this.DEFAULT_WIDTH);
+        if ('ResizeObserver' in window) {
+            let last = this.DEFAULT_WIDTH;
+            const observer = new ResizeObserver(() => {
+                const width = Math.round(holder.clientWidth);
+                if (width < 160 || Math.abs(width - last) < 8) return;     // nem látszik / apró változás
+                last = width;
+                draw(width);
+            });
+            observer.observe(holder);
+            if (typeof Router !== 'undefined') Router.onLeave(() => observer.disconnect());
+        }
+        const legend = h('div', { class: 'admin-legend' });
+        spec.series.forEach((series, index) => {
+            legend.appendChild(h('span', { class: 'admin-legend-item' },
+                h('span', { class: 'legend-swatch chart-s' + (series.cls ?? index) }), series.label));
+        });
+        return h('figure', { class: 'admin-figure' }, spec.title ? h('figcaption', null, spec.title) : null, holder, legend);
+    },
+
+    svg(spec, width) {
+        const height = width >= 700 ? 260 : 220;
+        const pad = { left: 44, right: 10, top: 12, bottom: 26 };
         const days = spec.days;
         const count = Math.max(1, days.length);
         const stacked = spec.type === 'stack';
         const totals = days.map((_, i) => stacked
             ? spec.series.reduce((sum, s) => sum + (s.values[i] || 0), 0)
             : Math.max(0, ...spec.series.map((s) => s.values[i] || 0)));
-        const max = Math.max(1, ...totals);
+        const whole = spec.series.every((s) => s.values.every((v) => Number.isInteger(v || 0)));
+        const axis = niceAxis(Math.max(0, ...totals), whole);
+        const max = axis.top;
         const innerW = width - pad.left - pad.right;
         const innerH = height - pad.top - pad.bottom;
         const svg = svgEl('svg', { viewBox: `0 0 ${width} ${height}`, class: 'admin-chart', role: 'img' });
-        for (const fraction of [0, 0.5, 1]) {
-            const y = pad.top + innerH * (1 - fraction);
+        for (let value = 0; value <= max + axis.step / 2; value += axis.step) {
+            const y = pad.top + innerH * (1 - value / max);
             svg.appendChild(svgEl('line', { x1: pad.left, x2: width - pad.right, y1: y, y2: y, class: 'chart-grid' }));
-            svg.appendChild(svgEl('text', { x: pad.left - 5, y: y + 3, class: 'chart-axis', 'text-anchor': 'end' },
-                fmtNum(Math.round(max * fraction * 10) / 10, 1)));
+            svg.appendChild(svgEl('text', { x: pad.left - 8, y: y + 4, class: 'chart-axis', 'text-anchor': 'end' },
+                fmtNum(Math.round(value * 10) / 10, 1)));
         }
         const step = innerW / count;
         if (spec.type === 'line') {
@@ -629,30 +687,30 @@ const Chart = {
                 spec.series.forEach((series, index) => {
                     const value = series.values[i] || 0;
                     const barH = innerH * value / max;
-                    const x = pad.left + step * i + step * 0.12;
-                    const w = stacked ? step * 0.76 : step * 0.76 / spec.series.length;
+                    // a sávok szélessége a napok számától függ: kevés napnál nem lesznek óriási oszlopok
+                    const bar = Math.min(step * 0.76, 36);
+                    const x = pad.left + step * i + (step - bar) / 2;
+                    const w = stacked ? bar : bar / spec.series.length;
                     const xx = stacked ? x : x + w * index;
                     const y = pad.top + innerH - barH - (stacked ? innerH * base / max : 0);
                     const rect = svgEl('rect', { x: xx.toFixed(1), y: y.toFixed(1), width: Math.max(0.5, w - 0.5).toFixed(1),
-                        height: Math.max(0, barH).toFixed(1), rx: 1.5, class: 'chart-bar chart-s' + (series.cls ?? index) });
+                        height: Math.max(0, barH).toFixed(1), rx: 2, class: 'chart-bar chart-s' + (series.cls ?? index) });
                     rect.appendChild(svgEl('title', null, tip));
                     svg.appendChild(rect);
                     if (stacked) base += value;
                 });
             });
         }
-        const labelIdx = Array.from(new Set([0, Math.floor((count - 1) / 2), count - 1]));
-        for (const i of labelIdx) {
+        // Dátumfeliratok: legalább ~90 px távolságra egymástól, a legutolsó nap mindig látszik
+        const every = Math.max(1, Math.ceil(90 / step));
+        for (let i = count - 1; i >= 0; i -= every) {
             if (!days[i]) continue;
-            svg.appendChild(svgEl('text', { x: pad.left + step * (i + 0.5), y: height - 6, class: 'chart-axis',
-                'text-anchor': i === 0 ? 'start' : (i === count - 1 ? 'end' : 'middle') }, formatDay(days[i])));
+            const x = pad.left + step * (i + 0.5);
+            const anchor = x + 40 > width ? 'end' : (x - 40 < pad.left ? 'start' : 'middle');
+            svg.appendChild(svgEl('text', { x: anchor === 'end' ? width - pad.right : (anchor === 'start' ? pad.left : x),
+                y: height - 7, class: 'chart-axis', 'text-anchor': anchor }, formatDay(days[i])));
         }
-        const legend = h('div', { class: 'admin-legend' });
-        spec.series.forEach((series, index) => {
-            legend.appendChild(h('span', { class: 'admin-legend-item' },
-                h('span', { class: 'legend-swatch chart-s' + (series.cls ?? index) }), series.label));
-        });
-        return h('figure', { class: 'admin-figure' }, spec.title ? h('figcaption', null, spec.title) : null, svg, legend);
+        return svg;
     },
 
     // 7 × 24-es hőtérkép (hét napja × óra)
