@@ -687,6 +687,33 @@ class Game:
         self._set_last_action(f"{player.name} feladta a játékot.", type='resigned', player=player.name)
         return True, "A játék feladva."
 
+    # --- Admin beavatkozások ---
+
+    def force_resolve_pending(self, accept):
+        """Admin: a szavazásra váró lerakás elfogadásának vagy elutasításának kikényszerítése.
+        Visszatér: (success, result, message) — mint az `accept_pending`."""
+        if not self.pending_challenge:
+            return False, None, "Nincs függő lerakás."
+        if accept:
+            self._finalize_accept()
+            result = 'vote_accepted'
+        else:
+            self._finalize_reject()
+            result = 'vote_rejected'
+        return True, result, self._make_vote_message(result)
+
+    def force_end(self):
+        """Admin: a játék befejezése a jelenlegi állással (normál végső elszámolás). A szavazásra váró lerakás
+        betűi előbb visszakerülnek a lerakó kezébe. Visszatér: True, ha véget ért a játék."""
+        if not self.started or self.finished:
+            return False
+        if self.pending_challenge:
+            pc = self.pending_challenge
+            self.players[pc.player_idx].hand.extend(pc.removed_from_hand)
+            self.pending_challenge = None
+        self._end_game(None)
+        return True
+
     # --- Helpers ---
 
     def _register_scoreless_turn(self):

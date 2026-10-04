@@ -49,6 +49,7 @@
     <!-- Ikonkészlet (egységes vonalas ikonok, színük a szövegszínt követi) -->
     <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
         <symbol id="i-user" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+        <symbol id="i-flag" viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></symbol>
         <symbol id="i-volume" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></symbol>
         <symbol id="i-volume-low" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/></symbol>
         <symbol id="i-volume-high" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></symbol>
@@ -87,6 +88,7 @@
     </svg>
 
     <div id="connection-banner" class="connection-banner hidden" role="status" aria-live="polite"></div>
+    <div id="announcement-bar" class="announcement-bar hidden" role="status" aria-live="polite"></div>
 
     <!-- Téma váltó gomb (csak a bejelentkező képernyőn; a többin a felső sávban van) -->
     <button class="theme-toggle btn-theme-toggle" id="theme-toggle" type="button" aria-label="Téma váltás" data-i18n-title="common.theme">
@@ -940,6 +942,9 @@
                         <button class="topbar-btn btn-exit-panel" type="button" aria-label="Kilépés a játékból" title="Kilépés" data-i18n-title="game.leave">
                             <svg class="icon"><use href="#i-back"/></svg>
                         </button>
+                        <button class="topbar-btn btn-report hidden" type="button" aria-label="Bejelentés" title="Bejelentés" data-i18n-title="report.button">
+                            <svg class="icon"><use href="#i-flag"/></svg>
+                        </button>
                         <button class="topbar-btn btn-profile-nav" type="button" aria-label="Profil" title="Profilom" data-i18n-title="common.profile">
                             <svg class="icon"><use href="#i-user"/></svg>
                         </button>
@@ -1377,6 +1382,36 @@
             </div>
             <p class="dialog-text" id="hint-text"></p>
             <div id="hint-list" class="hint-list"></div>
+        </div>
+    </div>
+
+    <!-- Bejelentés a moderátoroknak (játékos vagy chat üzenet) -->
+    <div id="report-dialog" class="dialog dialog-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="report-title">
+        <div class="dialog-content">
+            <div class="sound-settings-header">
+                <h3 id="report-title" data-i18n="report.title">Bejelentés a moderátoroknak</h3>
+                <button id="btn-close-report" class="topbar-btn" type="button" aria-label="Bezárás" data-i18n-title="common.close">
+                    <svg class="icon"><use href="#i-close"/></svg>
+                </button>
+            </div>
+            <p class="dialog-text" data-i18n="report.intro">Ha valaki megsérti a szabályokat, jelezd a moderátoroknak.</p>
+            <label class="form-label" for="report-player" data-i18n="report.player">Játékos</label>
+            <select id="report-player"></select>
+            <label class="form-label" for="report-kind" data-i18n="report.kind">Mit jelentesz be?</label>
+            <select id="report-kind">
+                <option value="player" data-i18n="report.kind_player">A játékos viselkedését</option>
+                <option value="chat" data-i18n="report.kind_chat">Egy chat üzenetet</option>
+            </select>
+            <div id="report-message-wrap" class="hidden">
+                <label class="form-label" for="report-message" data-i18n="report.message">Üzenet</label>
+                <select id="report-message"></select>
+            </div>
+            <label class="form-label" for="report-reason" data-i18n="report.reason">Megjegyzés (nem kötelező)</label>
+            <textarea id="report-reason" rows="3" maxlength="300" placeholder="Röviden írd le, mi a gond" data-i18n-placeholder="report.reason_ph"></textarea>
+            <div class="dialog-buttons">
+                <button id="btn-report-cancel" type="button" class="secondary" data-i18n="common.cancel">Mégsem</button>
+                <button id="btn-report-submit" type="button" data-i18n="report.submit">Bejelentés küldése</button>
+            </div>
         </div>
     </div>
 

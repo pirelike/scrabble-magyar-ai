@@ -11,6 +11,7 @@ import csv
 import io
 import ipaddress
 import json
+import unicodedata
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -101,7 +102,7 @@ class _Action:
 
 
 @contextmanager
-def action(ctx, name, target_type=None, target_id=None, reason=None, details=None):
+def action(ctx, name, target_type=None, target_id=None, reason=None, details=None, require_reason=True):
     """Módosító admin művelet naplózva, EGY tranzakcióban.
 
         with admin.action(ctx, 'user.ban', 'user', 42, reason=reason) as act:
@@ -111,10 +112,13 @@ def action(ctx, name, target_type=None, target_id=None, reason=None, details=Non
     Indoklás nélkül (túl rövid) a művelet el sem indul (`AdminError`). A naplósor a blokk végén íródik be
     ugyanabba a tranzakcióba, ezért ha a blokk vagy a naplózás hibázik, minden visszagördül. A memóriabeli
     mellékhatásokat (socket bontás, szoba állapota) a blokk UTÁN kell elvégezni.
+
+    `require_reason=False`: az olyan műveleteknél, ahol a tartalom maga az indoklás (közlemény, push, e-mail): az
+    indoklás elhagyható, de ha van, kötelezően ellenőrzött és naplózott.
     """
-    clean_reason = normalize_reason(reason)
+    clean_reason = normalize_reason(reason) if (require_reason or reason) else None
     with auth.transaction() as conn:
-        act_details = {'reason': clean_reason}
+        act_details = {'reason': clean_reason} if clean_reason else {}
         act_details.update({k: v for k, v in (details or {}).items() if k != 'reason'})
         act = _Action(conn, act_details)
         yield act
@@ -221,6 +225,84 @@ def record_failed_password(ctx, name):
     """Rossz jelszó megadása (`admin.sudo_failed` / `admin.reauth_failed`): csak napló, nincs más hatása."""
     with auth.transaction() as conn:
         record(conn, ctx, name)
+
+
+# ===== Közös segédek a listákhoz és az időtartamokhoz =====
+
+def fold(text):
+    """Kis-nagybetű és ékezet nélküli alak a kereséshez (a magyar ő / ű is: o / u)."""
+    if not isinstance(text, str):
+        return text
+    decomposed = unicodedata.normalize('NFD', text.lower())
+    return ''.join(ch for ch in decomposed if not unicodedata.combining(ch))
+
+
+def register_sql_helpers(conn):
+    """A `py_fold` SQL függvény a kapcsolaton: ékezet- és kisbetű-független LIKE keresésekhez."""
+    conn.create_function('py_fold', 1, fold)
+
+
+def like_contains(text):
+    """LIKE minta a (kisbetűs, ékezet nélküli) szöveg tartalmazására; ESCAPE '\\'."""
+    return _like(fold(text))
+
+
+def page_args(args, default=50, maximum=200):
+    """`limit` / `offset` a kérésből, korlátok között."""
+    return (_int_arg(args.get('limit'), default, 1, maximum), _int_arg(args.get('offset'), 0, 0, 10 ** 9))
+
+
+def order_by(sort, order, allowed, default):
+    """ORDER BY rész egy fehérlistából (a rendezés oszlopa sosem jön közvetlenül a felhasználótól).
+
+    allowed: {kulcs: SQL-kifejezés}; az `order` 'asc' / 'desc'. Visszatér: 'kifejezés ASC|DESC'."""
+    column = allowed.get(sort) or allowed[default]
+    return f"{column} {'ASC' if str(order).lower() == 'asc' else 'DESC'}"
+
+
+_RELATIVE_UNTIL = {'1h': timedelta(hours=1), '1d': timedelta(days=1), '7d': timedelta(days=7),
+                   '30d': timedelta(days=30)}
+
+
+def parse_until(value, permanent_ok=True, now=None):
+    """Lejárat megadása: relatív érték (1h / 1d / 7d / 30d), pontos időpont, vagy None / 'permanent' (végleges).
+
+    Visszatér: adatbázis-időbélyeg (a végleges a `auth.PERMANENT_UNTIL`)."""
+    now = now or auth.utcnow()
+    if value is None or value == 'permanent':
+        if not permanent_ok:
+            raise AdminError('Érvénytelen időtartam.', 400, field='until')
+        return auth.PERMANENT_UNTIL
+    if not isinstance(value, str):
+        raise AdminError('Érvénytelen időtartam.', 400, field='until')
+    if value in _RELATIVE_UNTIL:
+        return auth.format_ts(now + _RELATIVE_UNTIL[value])
+    stamp, _ = _parse_bound(value)
+    if auth.parse_ts(stamp) <= now:
+        raise AdminError('A lejárat nem lehet a múltban.', 400, field='until')
+    return stamp
+
+
+def clean_text(value, field, maximum, required=True):
+    """Szöveges mező tisztítása (szóközök levágva, hossz ellenőrizve)."""
+    text = value.strip() if isinstance(value, str) else ''
+    if required and not text:
+        raise AdminError('A mező kitöltése kötelező.', 400, field=field)
+    if len(text) > maximum:
+        raise AdminError('A szöveg túl hosszú.', 400, field=field)
+    return text
+
+
+def bool_field(value, field):
+    if not isinstance(value, bool):
+        raise AdminError('Érvénytelen kérés.', 400, field=field)
+    return value
+
+
+def int_field(value, field, low, high):
+    if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+        raise AdminError('Érvénytelen szám.', 400, field=field)
+    return value
 
 
 # ===== Napló lekérdezése =====

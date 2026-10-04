@@ -50,3 +50,40 @@ def _send_email(to_email, code):
     except Exception as e:
         print(f'  [EMAIL HIBA] {e}')
         print(f'  [VERIFIKÁCIÓ] Email: {to_email} | Kód: {code}')
+
+
+def send_plain_email(to_email, subject, body, wait=False):
+    """Egyszerű szöveges e-mail (értesítések, admin üzenetek). Visszatér: (elküldve-e, hibaüzenet).
+
+    SMTP nélkül a konzolra ír és (False, 'smtp_not_configured')-et ad. `wait`: a küldés megvárása (a hibát
+    visszaadja); különben háttérszálon megy, és a visszatérés csak azt jelzi, hogy elindult."""
+    if not SMTP_CONFIGURED:
+        print(f'\n  [EMAIL] Címzett: {to_email} | Tárgy: {subject}\n  {body}\n')
+        return False, 'smtp_not_configured'
+
+    def deliver():
+        msg = MIMEText(body, 'plain', 'utf-8')
+        msg['Subject'] = subject
+        msg['From'] = SMTP_FROM
+        msg['To'] = to_email
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
+            server.starttls()
+            server.login(SMTP_USER, SMTP_PASSWORD)
+            server.sendmail(SMTP_FROM, to_email, msg.as_string())
+
+    if wait:
+        try:
+            deliver()
+            return True, None
+        except Exception as exc:
+            print(f'  [EMAIL HIBA] {exc}')
+            return False, str(exc)[:200]
+
+    def background():
+        try:
+            deliver()
+        except Exception as exc:
+            print(f'  [EMAIL HIBA] {exc}')
+
+    threading.Thread(target=background, daemon=True).start()
+    return True, None

@@ -15,6 +15,12 @@ _init_attempted = False  # a szótár inicializálását csak egyszer próbálju
 _REJECTED_PATH = os.path.join(_DICT_DIR, 'hu_rejected.txt')
 _rejected_listed = frozenset()
 _rejected_voted = set()
+# Admin felülbírálatok (kisbetűs szavak): `allow` — a szó a szavazatok / a tartós lista ellenére érvényes (de a
+# szótárban nem szereplő szót nem teszi érvényessé), `reject` — a szó érvénytelen, `additions` — saját szavak,
+# amelyek a szótárban nem szerepelnek, de a játékban elfogadottak
+_override_allow = frozenset()
+_override_reject = frozenset()
+_additions = frozenset()
 _rejected_version = 0  # minden változásnál nő: a szótárból számolt gyorsítótárak ebből látják, hogy elavultak
 
 # Magánhangzó nélküli tételek a szótárban: betűnevek (B, CS), rövidítések (KG, DB, SMS, TV, PDF)
@@ -88,10 +94,14 @@ def is_available():
 
 def _lookup(word):
     """Egyetlen kisbetűs szó keresése a szótárban (ragozott alakokkal együtt)."""
-    if word in _rejected_listed or word in _rejected_voted:
+    if word in _override_reject:
+        return False
+    if word not in _override_allow and (word in _rejected_listed or word in _rejected_voted):
         return False
     if not _HAS_VOWEL_RE.search(word) and word not in _VOWELLESS_INTERJECTIONS:
         return False
+    if word in _additions:
+        return True
     return _checker.check(word)
 
 
@@ -118,7 +128,53 @@ def is_rejected(word):
     """Igaz, ha a (bármilyen kis/nagybetűs) szót elutasították — akkor is, ha a szótár elfogadná."""
     _ensure_init()
     word = word.lower()
-    return word in _rejected_listed or word in _rejected_voted
+    if word in _override_reject:
+        return True
+    return word not in _override_allow and (word in _rejected_listed or word in _rejected_voted)
+
+
+def voted_rejected():
+    """A szavazatok alapján elutasított szavak (kisbetűs halmaz)."""
+    _ensure_init()
+    return frozenset(_rejected_voted)
+
+
+def admin_lists():
+    """Az admin felülbírálatok: (allow, reject, additions) kisbetűs halmazok."""
+    _ensure_init()
+    return _override_allow, _override_reject, _additions
+
+
+def set_admin_lists(allow, reject, additions):
+    """Az admin felülbírálatok és saját szavak teljes cseréje (indításkor és minden módosítás után)."""
+    global _override_allow, _override_reject, _additions, _rejected_version
+    _ensure_init()
+    _override_allow = frozenset(w.lower() for w in allow)
+    _override_reject = frozenset(w.lower() for w in reject)
+    _additions = frozenset(w.lower() for w in additions)
+    _rejected_version += 1
+    _valid_cache.clear()
+
+
+def reload_rejected(path=None):
+    """A tartós lista (`dict/hu_rejected.txt`) újraolvasása a fájlból (az admin panel módosítása után)."""
+    global _rejected_listed, _rejected_version
+    _ensure_init()
+    _rejected_listed = load_rejected(path or _REJECTED_PATH)
+    _rejected_version += 1
+    _valid_cache.clear()
+    return len(_rejected_listed)
+
+
+def rejected_path():
+    return _REJECTED_PATH
+
+
+def clear_valid_cache():
+    """A szavak érvényességének gyorsítótára (a következő ellenőrzés újraszámol). Visszatér: a törölt tételek száma."""
+    count = len(_valid_cache)
+    _valid_cache.clear()
+    return count
 
 
 def set_voted_rejected(words):

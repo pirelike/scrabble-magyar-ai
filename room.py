@@ -1,4 +1,5 @@
 import secrets
+import time
 
 
 class Room:
@@ -25,6 +26,13 @@ class Room:
         self.notified_turn = -1  # levelezős játék: melyik körről értesítettük a lobbyban lévő játékost
         self.persisted_sig = None  # levelezős játék: a legutóbb mentett állapot ujjlenyomata
         self.chat_messages = []
+        # A chat üzenetek kiegészítő adatai (a `chat_messages` elemei változatlanok): {'ts', 'user_id'} soronként
+        self.chat_meta = []
+        self.created_at = time.time()
+        self.last_activity = self.created_at   # az utolsó állapotküldés ideje (elakadás-jelzéshez)
+        self.bot_scheduled_at = None           # a legutóbbi robotlépés-ütemezés ideje, ha van függő
+        self.timer_paused_left = None          # szüneteltetett körtimer hátralévő ideje (mp)
+        self.admin_watchers = set()            # az élő szobát figyelő admin kapcsolatok (SID)
         self._challenge_timer_id = 0
         self._turn_timer_id = 0
         self._bot_turn_id = 0
@@ -41,11 +49,20 @@ class Room:
         # Visszaállított játékból hiányzó játékosok, akik menet közben még csatlakozhatnak
         self.late_join_names = {}
 
-    def add_chat_message(self, name, message):
-        """Chat üzenet hozzáadása (max 100 darab)."""
-        self.chat_messages.append({'name': name, 'message': message})
+    def add_chat_message(self, name, message, user_id=None, system=False):
+        """Chat üzenet hozzáadása (max 100 darab). `system`: rendszerüzenet (kiemelten jelenik meg)."""
+        entry = {'name': name, 'message': message}
+        if system:
+            entry['system'] = True
+        self.chat_messages.append(entry)
+        self.chat_meta.append({'ts': time.time(), 'user_id': user_id})
         if len(self.chat_messages) > self.MAX_CHAT_MESSAGES:
             self.chat_messages = self.chat_messages[-self.MAX_CHAT_MESSAGES:]
+            self.chat_meta = self.chat_meta[-self.MAX_CHAT_MESSAGES:]
+
+    def touch(self):
+        """Az utolsó tevékenység ideje (állapotküldéskor frissül)."""
+        self.last_activity = time.time()
 
     def invalidate_challenge_timer(self):
         """Érvényteleníti az aktuális challenge timert. Visszaadja az új timer id-t."""

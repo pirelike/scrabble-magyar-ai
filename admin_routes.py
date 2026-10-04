@@ -238,6 +238,50 @@ def sudo_end():
     return jsonify(_session_payload())
 
 
+# ===== Közös segédek az API modulokhoz =====
+
+def json_ok(**data):
+    return jsonify({'success': True, **data})
+
+
+def reason_of(body):
+    """Az indoklás a kérés törzséből (a hiányát / rövidségét az `admin.action` jelzi)."""
+    return body.get('reason')
+
+
+def body_or_empty():
+    return _json_body()
+
+
+def csv_response(filename, fields, rows):
+    """CSV letöltés (UTF-8, a képletként értelmezhető cellák elé `'` kerül)."""
+    import csv
+    import io
+    out = io.StringIO()
+    writer = csv.writer(out, lineterminator='\r\n')
+    writer.writerow(fields)
+    for row in rows:
+        writer.writerow([admin._csv_cell(row.get(f) if isinstance(row, dict) else row[i])
+                         for i, f in enumerate(fields)])
+    response = make_response(out.getvalue())
+    response.headers['Content-Type'] = 'text/csv; charset=utf-8'
+    response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+def wants_csv():
+    return request.args.get('format') == 'csv'
+
+
+def flat(value):
+    """Lista / szótár cellák CSV-hez: egyszerű szöveggé alakítva."""
+    if isinstance(value, (list, tuple)):
+        return '; '.join(str(flat(v)) for v in value)
+    if isinstance(value, dict):
+        return '; '.join(f'{k}={flat(v)}' for k, v in value.items())
+    return value
+
+
 # ===== Admin napló =====
 
 _AUDIT_FILTERS = ('admin', 'action', 'target_type', 'target_id', 'since', 'until', 'q')
@@ -271,3 +315,11 @@ def audit_list():
 
     result = admin.query_audit(**filters, limit=args.get('limit'), offset=args.get('offset'))
     return jsonify({'success': True, **result})
+
+
+# A további admin végpontok külön modulokban vannak (ugyanazon a blueprinten, ugyanazzal az őrrel)
+import admin_api_users  # noqa: E402,F401
+import admin_api_game  # noqa: E402,F401
+import admin_api_dict  # noqa: E402,F401
+import admin_api_comm  # noqa: E402,F401
+import admin_api_system  # noqa: E402,F401

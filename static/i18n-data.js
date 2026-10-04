@@ -602,7 +602,23 @@ window.I18N_DATA = {
   "spec.banner": "Megfigyelő mód — {n} néző",
   "pwa.install": "Alkalmazás telepítése",
   "pwa.installed": "Az alkalmazás telepítve!",
-  "pwa.ios_hint": "Telepítés: koppints a Megosztás ikonra, majd a „Főképernyőhöz adás” menüpontra."
+  "pwa.ios_hint": "Telepítés: koppints a Megosztás ikonra, majd a „Főképernyőhöz adás” menüpontra.",
+  "announce.close": "Közlemény bezárása",
+  "announce.countdown": "Hátralévő idő: {time}",
+  "auth.banned_until": "A fiókod {until}-ig ki van tiltva. Indoklás: {reason}",
+  "auth.banned_forever": "A fiókod véglegesen ki van tiltva. Indoklás: {reason}",
+  "report.button": "Bejelentés",
+  "report.title": "Bejelentés a moderátoroknak",
+  "report.intro": "Ha valaki megsérti a szabályokat, jelezd a moderátoroknak. A bejelentést bizalmasan kezeljük.",
+  "report.player": "Játékos",
+  "report.kind": "Mit jelentesz be?",
+  "report.kind_player": "A játékos viselkedését",
+  "report.kind_chat": "Egy chat üzenetet",
+  "report.message": "Üzenet",
+  "report.reason": "Megjegyzés (nem kötelező)",
+  "report.reason_ph": "Röviden írd le, mi a gond",
+  "report.submit": "Bejelentés küldése",
+  "report.no_messages": "Ettől a játékostól nincs üzenet a chatben."
  },
  "en": {
   "app.title": "Hungarian Scrabble",
@@ -1381,7 +1397,21 @@ window.I18N_DATA = {
     "Nincs érvényes verifikációs kód. Kérj újat.": "No valid verification code. Request a new one.",
     "Túl sok próbálkozás. Kérj új kódot.": "Too many attempts. Request a new code.",
     "Érvénytelen kvízmód.": "Invalid quiz mode.",
-    "Érvénytelen gyakorlás.": "Invalid practice type."
+    "Érvénytelen gyakorlás.": "Invalid practice type.",
+    "A fiókod ki van tiltva.": "Your account is suspended.",
+    "A regisztráció jelenleg le van zárva.": "Registration is currently closed.",
+    "Ez a név nem engedélyezett.": "This name is not allowed.",
+    "Ez a szobanév nem engedélyezett.": "This room name is not allowed.",
+    "A vendég mód jelenleg ki van kapcsolva.": "Guest mode is currently turned off.",
+    "A szerver karbantartás alatt van, új játék most nem indítható.": "The server is under maintenance; new games cannot be started right now.",
+    "Ez a funkció jelenleg ki van kapcsolva.": "This feature is currently turned off.",
+    "Új szoba létrehozása jelenleg le van tiltva.": "Creating new rooms is currently disabled.",
+    "Szobát csak regisztrált felhasználó hozhat létre.": "Only registered users can create rooms.",
+    "Eltávolítottak a szobából.": "You were removed from the room.",
+    "A szótár-építő használata le van tiltva a fiókodnál.": "Word reviewing is disabled for your account.",
+    "Bejelentés elküldve. Köszönjük!": "Report sent. Thank you!",
+    "Bejelentést csak regisztrált felhasználó tehet.": "Only registered users can send reports.",
+    "Érvénytelen bejelentés.": "Invalid report."
    },
    "patterns": [
     [
@@ -1433,6 +1463,22 @@ window.I18N_DATA = {
      "$1 tiles exchanged."
     ]
    ]
-  }
+  },
+  "announce.close": "Dismiss notice",
+  "announce.countdown": "Time left: {time}",
+  "auth.banned_until": "Your account is suspended until {until}. Reason: {reason}",
+  "auth.banned_forever": "Your account is permanently suspended. Reason: {reason}",
+  "report.button": "Report",
+  "report.title": "Report to the moderators",
+  "report.intro": "If someone breaks the rules, let the moderators know. Reports are handled in confidence.",
+  "report.player": "Player",
+  "report.kind": "What are you reporting?",
+  "report.kind_player": "The player's behaviour",
+  "report.kind_chat": "A chat message",
+  "report.message": "Message",
+  "report.reason": "Comment (optional)",
+  "report.reason_ph": "Briefly describe the problem",
+  "report.submit": "Send report",
+  "report.no_messages": "This player has no messages in the chat."
  }
 };

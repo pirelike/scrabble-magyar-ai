@@ -13,6 +13,8 @@ SMTP_CONFIGURED = all([SMTP_USER, SMTP_PASSWORD, SMTP_FROM])
 
 # --- Auth konfiguráció ---
 DB_PATH = os.environ.get('SCRABBLE_DB_PATH', 'scrabble.db')
+# Az adatbázis-mentések (admin panel) mappája; relatív út esetén a program mappájához képest
+BACKUP_DIR = os.environ.get('SCRABBLE_BACKUP_DIR', 'backups')
 SESSION_MAX_AGE_DAYS = 30
 VERIFICATION_CODE_EXPIRY_MINUTES = 10
 VERIFICATION_MAX_ATTEMPTS = 5
@@ -37,6 +39,7 @@ AUTH_RATE_LIMITS = {
     'practice': (120, 60),       # 120 kérés / 1 perc (kvíz, rövid szavak)
     'push': (20, 60),            # 20 kérés / 1 perc (push feliratkozás)
     'word_review': (240, 60),    # 240 kérés / 1 perc (szótár-építő: egy kérés egy döntés)
+    'announcements': (60, 60),   # 60 kérés / 1 perc (nyilvános közlemények)
     'admin': (120, 60),          # 120 kérés / 1 perc (admin panel, minden admin végpont)
     'admin_danger': (20, 60),    # 20 kérés / 1 perc (az admin panel romboló műveletei)
 }
