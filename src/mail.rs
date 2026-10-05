@@ -288,7 +288,8 @@ pub fn classify_error(err: &lettre::transport::smtp::Error) -> &'static str {
         }
         source = inner.source();
     }
-    if err.is_tls() || text.contains("tls") || text.contains("certificate") {
+    let tls_protocol = ["corrupt message", "invalidcontenttype", "handshake", "invalidmessage"].iter().any(|w| text.contains(w));
+    if err.is_tls() || tls_protocol || text.contains("tls") || text.contains("certificate") {
         if text.contains("certificate") || text.contains("unknownissuer") || text.contains("notvalid") {
             return "certificate";
         }
@@ -309,13 +310,17 @@ pub fn classify_error(err: &lettre::transport::smtp::Error) -> &'static str {
     if text.contains("not supported") || text.contains("unsupported") {
         return "unsupported";
     }
-    if text.contains("recipient") || text.contains("rcpt") {
-        return "recipient";
-    }
-    if text.contains("sender") || text.contains("mail from") {
+    // a lettre nem árulja el, melyik SMTP parancs bukott el: a szöveg és a kiterjesztett állapotkód (RFC 3463:
+    // 5.1.1–5.1.3, 5.1.6 a címzett, 5.1.7–5.1.8 a feladó címe) alapján döntünk
+    if ["5.1.7", "5.1.8"].iter().any(|c| text.contains(c)) || text.contains("sender") || text.contains("mail from") {
         return "sender";
     }
-    if io_kind == Some(std::io::ErrorKind::UnexpectedEof) || text.contains("connection closed") || text.contains("disconnected") {
+    if ["5.1.1", "5.1.2", "5.1.3", "5.1.6"].iter().any(|c| text.contains(c))
+        || ["recipient", "rcpt", "user unknown", "no such user", "mailbox unavailable", "relay"].iter().any(|w| text.contains(w))
+    {
+        return "recipient";
+    }
+    if io_kind == Some(std::io::ErrorKind::UnexpectedEof) || text.contains("connection closed") || text.contains("disconnected") || text.contains("incomplete response") {
         return "disconnected";
     }
     if err.is_response() || err.is_permanent() || err.is_transient() || err.is_client() {

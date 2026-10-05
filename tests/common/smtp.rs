@@ -87,24 +87,28 @@ fn decode_qp(text: &str) -> String {
 
 fn decode_header(value: &str) -> String {
     // =?utf-8?b?....?= vagy =?utf-8?q?....?= (több szó szóközzel elválasztva)
+    // az egymás melletti kódolt szavak közti szóköz elhagyandó, a sima szó és a kódolt szó között megmarad
     let mut out = String::new();
+    let mut previous_encoded = false;
     for part in value.split(' ') {
         if let Some(inner) = part.strip_prefix("=?").and_then(|p| p.strip_suffix("?=")) {
             let pieces: Vec<&str> = inner.splitn(3, '?').collect();
             if pieces.len() == 3 {
-                match pieces[1].to_lowercase().as_str() {
+                let decoded = match pieces[1].to_lowercase().as_str() {
                     "b" => {
                         use base64::Engine;
-                        if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(pieces[2]) {
-                            out.push_str(&String::from_utf8_lossy(&bytes));
-                            continue;
-                        }
+                        base64::engine::general_purpose::STANDARD.decode(pieces[2]).ok().map(|bytes| String::from_utf8_lossy(&bytes).to_string())
                     }
-                    "q" => {
-                        out.push_str(&decode_qp(&pieces[2].replace('_', " ")));
-                        continue;
+                    "q" => Some(decode_qp(&pieces[2].replace('_', " "))),
+                    _ => None,
+                };
+                if let Some(text) = decoded {
+                    if !out.is_empty() && !previous_encoded {
+                        out.push(' ');
                     }
-                    _ => {}
+                    out.push_str(&text);
+                    previous_encoded = true;
+                    continue;
                 }
             }
         }
@@ -112,6 +116,7 @@ fn decode_header(value: &str) -> String {
             out.push(' ');
         }
         out.push_str(part);
+        previous_encoded = false;
     }
     out
 }
