@@ -1,20 +1,18 @@
-.venv/
-__pycache__/
-*.pyc
-.pytest_cache/
-scrabble.db
-*.db
-__pycache__/
-*.py[cod]
+# Rust
+/target
+
+# Helyi adatok és beállítások (nincs a git tárban; a GitHubos frissítés nem írja felül)
+.env
 *.db
 *.db-shm
 *.db-wal
-.venv/
-.env
 backups/
 
-
-# Added by cargo
-
-/target
+# Mérések és összevetések munkaterülete (scripts/perf.sh, tests/compat/run.sh)
 /.perf/
+/.compat/
+
+# Python (csak az összehasonlító szkriptekhez, tests/compat és tests/golden/generators)
+__pycache__/
+*.py[cod]
+.venv/
