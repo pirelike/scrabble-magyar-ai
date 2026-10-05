@@ -99,6 +99,11 @@ pub struct App {
 impl App {
     /// Új alkalmazás-állapot a megadott konfigurációval és adatbázissal.
     pub fn new(config: Arc<Config>, db: Arc<Db>) -> Arc<App> {
+        App::with_base_dir(config, db, config::base_dir().to_path_buf())
+    }
+
+    /// Ugyanez a program mappájának megadásával (a frissítés tesztjeihez: ideiglenes git tár).
+    pub fn with_base_dir(config: Arc<Config>, db: Arc<Db>, base_dir: PathBuf) -> Arc<App> {
         let settings = Settings::new(db.clone(), config.word_reject_threshold);
         let mailer = Arc::new(Mailer::new(db.clone(), config.clone()));
         let mailer_for_push = mailer.clone();
@@ -115,7 +120,7 @@ impl App {
             tunnel: Tunnel::new(),
             banned_words: BannedWords::default(),
             ip_bans: IpBans::default(),
-            base_dir: config::base_dir().to_path_buf(),
+            base_dir,
             started_at: util::now(),
             analysis_jobs: Mutex::new(HashMap::new()),
             jobs: Mutex::new(HashMap::new()),

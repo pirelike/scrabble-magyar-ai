@@ -248,12 +248,15 @@ pub fn spawn_background_tasks(app: &Arc<App>) {
 
 /// A szerver indítása a megadott porton (a folyamat leállásáig fut).
 pub async fn serve(app: Arc<App>, port: u16) -> std::io::Result<()> {
-    let router = build_router(&app);
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await?;
     println!("  [*] A szerver fut: http://localhost:{port}");
-    axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>())
-        .with_graceful_shutdown(shutdown_signal())
-        .await
+    serve_on(app, listener, shutdown_signal()).await
+}
+
+/// A szerver futtatása egy már megnyitott figyelőn, a megadott leállítási jelig (a tesztek ezt használják).
+pub async fn serve_on(app: Arc<App>, listener: tokio::net::TcpListener, shutdown: impl std::future::Future<Output = ()> + Send + 'static) -> std::io::Result<()> {
+    let router = build_router(&app);
+    axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).with_graceful_shutdown(shutdown).await
 }
 
 async fn shutdown_signal() {
