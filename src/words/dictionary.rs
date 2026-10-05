@@ -79,11 +79,7 @@ pub fn load_rejected(path: &Path) -> HashSet<String> {
 /// A beágyazott hu_HU szótár ellenőrzője a használati lista (`hu_attested.txt`) nélkül is betölthető.
 pub fn load_checker(dir: &Path) -> std::io::Result<AffixChecker> {
     let attested = dir.join("hu_attested.txt");
-    AffixChecker::load(
-        &dir.join("hu_HU.aff"),
-        &dir.join("hu_HU.dic"),
-        if attested.exists() { Some(attested.as_path()) } else { None },
-    )
+    AffixChecker::load(&dir.join("hu_HU.aff"), &dir.join("hu_HU.dic"), if attested.exists() { Some(attested.as_path()) } else { None })
 }
 
 fn init_checker() {
@@ -307,12 +303,7 @@ pub fn check_words<S: AsRef<str>>(words: &[S]) -> (bool, Vec<String>) {
     // A táblán a szavak nagybetűsek, de kisbetűvel kell keresni: a nagy kezdőbetűs alak a tulajdonneveket
     // (BUDAPEST, DUNA) is elfogadná, a Scrabble-ban pedig azok nem érvényesek.
     let lists = LISTS.read();
-    let invalid: Vec<String> = words
-        .iter()
-        .map(|w| w.as_ref())
-        .filter(|w| !lookup_with(&checker, &lists, &w.to_lowercase()))
-        .map(|w| w.to_string())
-        .collect();
+    let invalid: Vec<String> = words.iter().map(|w| w.as_ref()).filter(|w| !lookup_with(&checker, &lists, &w.to_lowercase())).map(|w| w.to_string()).collect();
     (invalid.is_empty(), invalid)
 }
 
@@ -355,10 +346,13 @@ pub fn filter_valid<'a, I: IntoIterator<Item = &'a str>>(words: I) -> HashSet<St
     let results: Vec<(String, &str, bool)> = match &checker {
         Some(checker) => {
             let lists = LISTS.read();
-            unknown.into_iter().map(|(key, word)| {
-                let ok = lookup_with(checker, &lists, &key);
-                (key, word, ok)
-            }).collect()
+            unknown
+                .into_iter()
+                .map(|(key, word)| {
+                    let ok = lookup_with(checker, &lists, &key);
+                    (key, word, ok)
+                })
+                .collect()
         }
         None => unknown.into_iter().map(|(key, word)| (key, word, true)).collect(), // szótár híján minden érvényes
     };

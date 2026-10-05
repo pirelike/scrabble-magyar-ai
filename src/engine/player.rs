@@ -73,8 +73,5 @@ pub fn tiles_to_json(tiles: &[Tile]) -> Value {
 
 /// Zsetonok JSON-ból (ismeretlen betűket kihagy).
 pub fn tiles_from_json(value: &Value) -> Vec<Tile> {
-    value
-        .as_array()
-        .map(|a| a.iter().filter_map(|v| v.as_str().and_then(Tile::from_str)).collect())
-        .unwrap_or_default()
+    value.as_array().map(|a| a.iter().filter_map(|v| v.as_str().and_then(Tile::from_str)).collect()).unwrap_or_default()
 }

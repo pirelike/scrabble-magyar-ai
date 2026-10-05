@@ -82,10 +82,7 @@ mod tests {
     #[test]
     fn verifies_hashes_made_by_werkzeug() {
         // a Python werkzeug `generate_password_hash` valódi kimenete
-        assert!(check_password_hash(
-            "pbkdf2:sha256:1000$3l7nq5hS$ee316dfe3830406c728991501fdfdde0f5189df2f31faacfe5931fcef4eb0ab7",
-            "titok123"
-        ));
+        assert!(check_password_hash("pbkdf2:sha256:1000$3l7nq5hS$ee316dfe3830406c728991501fdfdde0f5189df2f31faacfe5931fcef4eb0ab7", "titok123"));
         let hash = "pbkdf2:sha256:260000$PxxF4QrUob13H5pC$74fe0a317a0dbf08a0d4552646d061224455d9e4fe1bde5a947cade772c6b3f2";
         assert!(check_password_hash(hash, "Jelszó-ékezet ő"));
         assert!(!check_password_hash(hash, "Jelszó-ékezet o"));

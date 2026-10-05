@@ -61,10 +61,7 @@ impl MoveLog {
     /// A mentett (adatbázisból jövő) lépésből.
     pub fn from_stored(move_number: i64, player_name: &str, action_type: &str, details_json: Option<&str>, snapshot_json: Option<&str>) -> MoveLog {
         let details = details_json.and_then(|t| serde_json::from_str::<Value>(t).ok()).filter(|v| v.is_object()).unwrap_or_else(|| json!({}));
-        let board = snapshot_json
-            .and_then(|t| serde_json::from_str::<Value>(t).ok())
-            .map(|v| Board::from_json(&v))
-            .unwrap_or_default();
+        let board = snapshot_json.and_then(|t| serde_json::from_str::<Value>(t).ok()).map(|v| Board::from_json(&v)).unwrap_or_default();
         MoveLog { move_number, player_name: player_name.to_string(), action_type: action_type.to_string(), details, board }
     }
 
@@ -323,10 +320,10 @@ impl Game {
                     needs_next_turn = true;
                 }
             }
-            if let Some(pc) = &mut self.pending_challenge {
-                if removed_idx < pc.player_idx {
-                    pc.player_idx -= 1;
-                }
+            if let Some(pc) = &mut self.pending_challenge
+                && removed_idx < pc.player_idx
+            {
+                pc.player_idx -= 1;
             }
         } else {
             self.current_player_idx = 0;
@@ -373,10 +370,7 @@ impl Game {
             if self.players[idx].skip_next_turn {
                 self.players[idx].skip_next_turn = false;
                 let name = self.players[idx].name.clone();
-                self.set_last_action(
-                    format!("{name} kihagy egy kört (sikertelen megtámadás)"),
-                    json!({"type": "skip", "player": name}),
-                );
+                self.set_last_action(format!("{name} kihagy egy kört (sikertelen megtámadás)"), json!({"type": "skip", "player": name}));
             } else {
                 break;
             }
@@ -387,11 +381,7 @@ impl Game {
 
     /// Levelezős játékban az új kör határideje.
     pub fn reset_deadline(&mut self) {
-        self.turn_deadline = if self.async_mode && self.turn_hours != 0 {
-            Some(util::now() + (self.turn_hours * 3600) as f64)
-        } else {
-            None
-        };
+        self.turn_deadline = if self.async_mode && self.turn_hours != 0 { Some(util::now() + (self.turn_hours * 3600) as f64) } else { None };
     }
 
     /// Ha a soron lévő játékos lecsatlakozott, tovább lépteti a kört.
@@ -425,11 +415,7 @@ impl Game {
                     hand.remove(i);
                 }
                 None => {
-                    return Err(if p.is_blank {
-                        "Nincs üres zsetonod.".to_string()
-                    } else {
-                        format!("Nincs '{}' betűd.", p.letter.as_str())
-                    });
+                    return Err(if p.is_blank { "Nincs üres zsetonod.".to_string() } else { format!("Nincs '{}' betűd.", p.letter.as_str()) });
                 }
             }
         }
@@ -485,10 +471,7 @@ impl Game {
             puzzle.score = Some(score);
         }
         let name = self.players[player_idx].name.clone();
-        self.set_last_action(
-            format!("{name}: {} ({score} pont)", words.join(", ")),
-            json!({"type": "puzzle", "player": name, "words": words, "score": score}),
-        );
+        self.set_last_action(format!("{name}: {} ({score} pont)", words.join(", ")), json!({"type": "puzzle", "player": name, "words": words, "score": score}));
     }
 
     /// Él-e a megtámadási (szavazásos) mód a lerakónál? Csak akkor, ha van legalább egy másik emberi játékos,
@@ -558,8 +541,7 @@ impl Game {
 
         if challenge_active {
             let removed = Self::remove_tiles_from_hand(&mut self.players[idx], tiles);
-            self.pending_challenge =
-                Some(Challenge::new(tiles.to_vec(), formed, word_strs.clone(), total_score, idx, removed));
+            self.pending_challenge = Some(Challenge::new(tiles.to_vec(), formed, word_strs.clone(), total_score, idx, removed));
             let name = self.players[idx].name.clone();
             self.set_last_action(
                 format!("{name}: {} ({total_score} pont) — szavazásra vár", word_strs.join(", ")),
@@ -647,11 +629,7 @@ impl Game {
     }
 
     fn make_vote_message(result: VoteResult) -> String {
-        if result == VoteResult::Accepted {
-            "A szavak elfogadva szavazással.".to_string()
-        } else {
-            "A szavak elutasítva szavazással!".to_string()
-        }
+        if result == VoteResult::Accepted { "A szavak elfogadva szavazással.".to_string() } else { "A szavak elutasítva szavazással!".to_string() }
     }
 
     /// Játékos szavaz a függő lerakásra. Visszatér: (eredmény, üzenet) vagy a hibaüzenet.
@@ -713,10 +691,7 @@ impl Game {
         let pc = self.pending_challenge.take().unwrap();
         self.players[idx].hand.extend(pc.removed_from_hand.iter().copied());
         let name = self.players[idx].name.clone();
-        self.set_last_action(
-            format!("{name} visszavonta a lerakását."),
-            json!({"type": "withdrawn", "player": name, "words": pc.word_strs}),
-        );
+        self.set_last_action(format!("{name} visszavonta a lerakását."), json!({"type": "withdrawn", "player": name, "words": pc.word_strs}));
         Ok("Lerakás visszavonva.")
     }
 
@@ -726,11 +701,7 @@ impl Game {
             return Err("Nincs függő lerakás.".to_string());
         }
         let result = self.resolve_and_finalize();
-        let message = if result == VoteResult::Accepted {
-            "Szavak elfogadva (időtúllépés)."
-        } else {
-            "Szavak elutasítva (időtúllépés)."
-        };
+        let message = if result == VoteResult::Accepted { "Szavak elfogadva (időtúllépés)." } else { "Szavak elutasítva (időtúllépés)." };
         Ok((result, message.to_string()))
     }
 
@@ -933,10 +904,7 @@ impl Game {
         self.winners = self.players.iter().filter(|p| p.score == top_score).cloned().collect();
         if self.winners.len() == 1 {
             let name = self.winners[0].name.clone();
-            self.set_last_action(
-                format!("Játék vége! Győztes: {name} ({top_score} pont)"),
-                json!({"type": "game_over", "player": name, "score": top_score}),
-            );
+            self.set_last_action(format!("Játék vége! Győztes: {name} ({top_score} pont)"), json!({"type": "game_over", "player": name, "score": top_score}));
         } else {
             let names: Vec<String> = self.winners.iter().map(|p| p.name.clone()).collect();
             self.set_last_action(
@@ -1047,12 +1015,8 @@ impl Game {
     pub fn from_save_dict(data: &Value) -> Fallible<Game> {
         let id = data.get("id").and_then(|v| v.as_str()).ok_or("hiányzó játékazonosító")?.to_string();
         let int = |key: &str, default: i64| data.get(key).and_then(util::py_int).unwrap_or(default);
-        let mut game = Game::new(
-            &id,
-            data.get("challenge_mode").map(util::truthy).unwrap_or(false),
-            int("turn_time_limit", 0),
-            int("hint_limit", DEFAULT_HINT_LIMIT),
-        );
+        let mut game =
+            Game::new(&id, data.get("challenge_mode").map(util::truthy).unwrap_or(false), int("turn_time_limit", 0), int("hint_limit", DEFAULT_HINT_LIMIT));
         game.hints_used = int("hints_used", 0).max(0);
         game.started = data.get("started").map(util::truthy).unwrap_or(false);
         game.finished = data.get("finished").map(util::truthy).unwrap_or(false);
@@ -1083,11 +1047,7 @@ impl Game {
             let player_id = pd.get("id").and_then(|v| v.as_str()).ok_or("hiányzó játékosazonosító")?;
             let name = pd.get("name").and_then(|v| v.as_str()).ok_or("hiányzó játékosnév")?;
             let is_bot = pd.get("is_bot").map(util::truthy).unwrap_or(false);
-            let mut player = if is_bot {
-                Player::new_bot(player_id, name, pd.get("difficulty").unwrap_or(&Value::Null))
-            } else {
-                Player::new(player_id, name)
-            };
+            let mut player = if is_bot { Player::new_bot(player_id, name, pd.get("difficulty").unwrap_or(&Value::Null)) } else { Player::new(player_id, name) };
             player.hand = tiles_from_json(pd.get("hand").unwrap_or(&Value::Null));
             player.score = pd.get("score").and_then(util::py_int).unwrap_or(0) as i32;
             player.skip_next_turn = pd.get("skip_next_turn").map(util::truthy).unwrap_or(false);
@@ -1193,19 +1153,13 @@ impl Game {
         put("turn_deadline", self.turn_deadline.map(Value::from).unwrap_or(Value::Null));
         put("hint_limit", json!(self.hint_limit));
         put("hints_left", json!(self.hints_left()));
-        put(
-            "pending_challenge",
-            self.pending_challenge.as_ref().map(|pc| pc.to_state(&self.players)).unwrap_or(Value::Null),
-        );
+        put("pending_challenge", self.pending_challenge.as_ref().map(|pc| pc.to_state(&self.players)).unwrap_or(Value::Null));
         state
     }
 
     fn state_from_shared(&self, shared: &Map<String, Value>, for_player_id: Option<&str>) -> Value {
         let mut state = shared.clone();
-        state.insert(
-            "players".to_string(),
-            Value::Array(self.players.iter().map(|p| p.to_json(Some(p.id.as_str()) == for_player_id)).collect()),
-        );
+        state.insert("players".to_string(), Value::Array(self.players.iter().map(|p| p.to_json(Some(p.id.as_str()) == for_player_id)).collect()));
         Value::Object(state)
     }
 
@@ -1218,11 +1172,7 @@ impl Game {
     /// Az összes (nem robot) játékos állapota egyszerre; a közös részt csak egyszer számítja ki.
     pub fn get_all_states(&self) -> Vec<(String, Value)> {
         let shared = self.shared_state();
-        self.players
-            .iter()
-            .filter(|p| !p.is_bot)
-            .map(|p| (p.id.clone(), self.state_from_shared(&shared, Some(&p.id))))
-            .collect()
+        self.players.iter().filter(|p| !p.is_bot).map(|p| (p.id.clone(), self.state_from_shared(&shared, Some(&p.id)))).collect()
     }
 
     /// Megfigyelői nézet: ugyanaz, mint a játékosoké, de egyetlen kéz sem látszik.

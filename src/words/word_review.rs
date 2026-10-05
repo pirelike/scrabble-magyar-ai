@@ -103,10 +103,10 @@ pub fn stats(db: &Db, user_id: i64) -> Value {
 fn word_pools() -> Arc<Pools> {
     let vocabulary = ai::get_vocabulary();
     let mut guard = POOLS.lock();
-    if let Some(pools) = guard.as_ref() {
-        if Arc::ptr_eq(&pools.vocabulary, &vocabulary) {
-            return pools.clone();
-        }
+    if let Some(pools) = guard.as_ref()
+        && Arc::ptr_eq(&pools.vocabulary, &vocabulary)
+    {
+        return pools.clone();
     }
     let stem_set: HashSet<&String> = practice::stem_words().iter().collect();
     let inflected: Vec<u32> = (0..vocabulary.len()).filter(|i| !stem_set.contains(&vocabulary.word(*i).to_string())).map(|i| i as u32).collect();
@@ -125,7 +125,7 @@ fn draw<R: Rng + ?Sized>(size: usize, get: &dyn Fn(usize) -> String, want: usize
         let k = size.min((want - found.len()) * 4 + 8);
         let sample: Vec<String> = practice::sample_indices(rng, size, k)
             .into_iter()
-            .map(|i| get(i))
+            .map(get)
             .filter(|w| !taken.contains(&w.to_lowercase()) && (MIN_LENGTH..=MAX_LENGTH).contains(&w.chars().count()))
             .collect();
         let valid = dictionary::filter_valid(sample.iter().map(|s| s.as_str()));

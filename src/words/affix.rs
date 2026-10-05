@@ -31,13 +31,8 @@ const RISK_POSS: u8 = 4; // birtokos személyjel / birtokjel: melléknéven kock
 const RISK_DERIVED: u8 = 8; // ugyanabban a szabályban képző + az előbbiek kockázatos párosítása
 const RISK_DERIVATION: u8 = 16; // -né képző
 const RISK_ALWAYS: u8 = RISK_FAMILIAR | RISK_DERIVED | RISK_DERIVATION;
-const RISK_NAMES: [(u8, &str); 5] = [
-    (RISK_FAMILIAR, "familiar"),
-    (RISK_ESSIVE, "essive"),
-    (RISK_POSS, "possessive"),
-    (RISK_DERIVED, "derived"),
-    (RISK_DERIVATION, "derivation"),
-];
+const RISK_NAMES: [(u8, &str); 5] =
+    [(RISK_FAMILIAR, "familiar"), (RISK_ESSIVE, "essive"), (RISK_POSS, "possessive"), (RISK_DERIVED, "derived"), (RISK_DERIVATION, "derivation")];
 
 const RISKY_DERIVATIONS: [&[u8]; 1] = [b"ds:n\xc3\xa9_MRS_"];
 const ADJ_LIKE_DERIVATIONS: [&[u8]; 1] = [b"ds:s_OCCUPATION_"];
@@ -489,9 +484,7 @@ impl AffixChecker {
                     loader.morph_aliases.push(trim_ws(&stripped[2.min(stripped.len())..]).to_vec());
                 }
                 b"NEEDAFFIX" => self.needaffix = parts.get(1).and_then(|p| p.first().copied()),
-                b"ONLYROOT" if self.needaffix.is_none() => {
-                    self.needaffix = parts.get(1).and_then(|p| p.first().copied())
-                }
+                b"ONLYROOT" if self.needaffix.is_none() => self.needaffix = parts.get(1).and_then(|p| p.first().copied()),
                 b"ONLYINCOMPOUND" => self.onlyincompound = parts.get(1).and_then(|p| p.first().copied()),
                 b"FORBIDDENWORD" => self.forbidden = parts.get(1).and_then(|p| p.first().copied()),
                 b"PFX" => rules.push((true, parts)),
@@ -606,11 +599,7 @@ impl AffixChecker {
                 Some(i) => &flags[..i],
                 None => flags,
             };
-            let flag_set: Arc<[u8]> = if flags.is_empty() {
-                Arc::from(&b""[..])
-            } else {
-                loader.alias(flags).unwrap_or_else(|| Arc::from(&b""[..]))
-            };
+            let flag_set: Arc<[u8]> = if flags.is_empty() { Arc::from(&b""[..]) } else { loader.alias(flags).unwrap_or_else(|| Arc::from(&b""[..])) };
             let kind = if morph_field.is_empty() { 0 } else { entry_kind(word, &loader.morph(morph_field)) };
             self.entries.entry(lossy(word)).or_default().push(Entry { flags: flag_set, kind });
         }
@@ -649,28 +638,21 @@ impl AffixChecker {
         })
     }
 
-    fn stem_ok(
-        &self,
-        stem: &str,
-        rule: &Rule,
-        pfx: Option<&Rule>,
-        outer_flag: Option<u8>,
-        outer_rule: Option<&Rule>,
-        allow_risky: bool,
-    ) -> bool {
+    fn stem_ok(&self, stem: &str, rule: &Rule, pfx: Option<&Rule>, outer_flag: Option<u8>, outer_rule: Option<&Rule>, allow_risky: bool) -> bool {
         for entry in self.usable_entries(stem) {
             if !entry.flags.contains(&rule.flag) && !pfx.is_some_and(|p| p.cont_has(rule.flag)) {
                 continue;
             }
-            if let Some(p) = pfx {
-                if !entry.flags.contains(&p.flag) && !rule.cont_has(p.flag) {
-                    continue;
-                }
+            if let Some(p) = pfx
+                && !entry.flags.contains(&p.flag)
+                && !rule.cont_has(p.flag)
+            {
+                continue;
             }
-            if let Some(of) = outer_flag {
-                if !rule.cont_has(of) {
-                    continue;
-                }
+            if let Some(of) = outer_flag
+                && !rule.cont_has(of)
+            {
+                continue;
             }
             if !allow_risky && is_risky(entry.kind, rule, outer_rule) {
                 continue;
@@ -708,14 +690,7 @@ impl AffixChecker {
     }
 
     /// Szótő + egy végződés (a `pfx` előtaggal keresztezve, ha meg van adva).
-    fn suffix_check(
-        &self,
-        word: &str,
-        pfx: Option<&Rule>,
-        outer_flag: Option<u8>,
-        outer_rule: Option<&Rule>,
-        allow_risky: bool,
-    ) -> bool {
+    fn suffix_check(&self, word: &str, pfx: Option<&Rule>, outer_flag: Option<u8>, outer_rule: Option<&Rule>, allow_risky: bool) -> bool {
         for (add, rules) in self.suffix_candidates(word) {
             let base = &word[..word.len() - add.len()];
             for rule in rules {
@@ -728,10 +703,10 @@ impl AffixChecker {
                 if outer_flag.is_none() && rule.need_affix && !pfx.is_some_and(|p| !p.need_affix) {
                     continue;
                 }
-                if let Some(p) = pfx {
-                    if !(rule.cross && p.cross) {
-                        continue;
-                    }
+                if let Some(p) = pfx
+                    && !(rule.cross && p.cross)
+                {
+                    continue;
                 }
                 let stem = format!("{base}{}", rule.strip);
                 if !rule.cond_ok_suffix(&stem) {
@@ -753,10 +728,10 @@ impl AffixChecker {
                 if !self.cont_flags[rule.flag as usize] || rule.only_in_compound {
                     continue;
                 }
-                if let Some(p) = pfx {
-                    if !(rule.cross && p.cross) {
-                        continue;
-                    }
+                if let Some(p) = pfx
+                    && !(rule.cross && p.cross)
+                {
+                    continue;
                 }
                 let stem = format!("{base}{}", rule.strip);
                 if !rule.cond_ok_suffix(&stem) {
@@ -869,15 +844,16 @@ impl AffixChecker {
             if !entry.flags.contains(&rule.flag) && !pfx.is_some_and(|p| p.cont_has(rule.flag)) {
                 continue;
             }
-            if let Some(p) = pfx {
-                if !entry.flags.contains(&p.flag) && !rule.cont_has(p.flag) {
-                    continue;
-                }
+            if let Some(p) = pfx
+                && !entry.flags.contains(&p.flag)
+                && !rule.cont_has(p.flag)
+            {
+                continue;
             }
-            if let Some(of) = outer_flag {
-                if !rule.cont_has(of) {
-                    continue;
-                }
+            if let Some(of) = outer_flag
+                && !rule.cont_has(of)
+            {
+                continue;
             }
             return Some(entry.kind);
         }
@@ -899,10 +875,10 @@ impl AffixChecker {
                 if outer_flag.is_none() && rule.need_affix && !pfx.is_some_and(|p| !p.need_affix) {
                     continue;
                 }
-                if let Some(p) = pfx {
-                    if !(rule.cross && p.cross) {
-                        continue;
-                    }
+                if let Some(p) = pfx
+                    && !(rule.cross && p.cross)
+                {
+                    continue;
                 }
                 let stem = format!("{base}{}", rule.strip);
                 if !rule.cond_ok_suffix(&stem) {
@@ -928,36 +904,31 @@ impl AffixChecker {
     pub fn explain(&self, word: &str, limit: usize) -> Vec<Explanation> {
         let mut found: Vec<Explanation> = Vec::new();
 
-        let add = |found: &mut Vec<Explanation>,
-                       stem: &str,
-                       prefix: Option<&str>,
-                       suffixes: Vec<String>,
-                       rule: Option<&Rule>,
-                       kind: u8,
-                       outer: Option<&Rule>| {
-            if found.len() >= limit {
-                return;
-            }
-            let risky = rule.is_some_and(|r| is_risky(kind, r, outer));
-            let mut risk = Self::risk_names(rule);
-            if outer.is_some() {
-                risk.extend(Self::risk_names(outer));
-            }
-            risk.sort();
-            risk.dedup();
-            let entry = Explanation {
-                stem: stem.to_string(),
-                prefix: prefix.map(|p| p.to_string()),
-                suffixes,
-                risky,
-                risk,
-                adjective: kind & KIND_ADJ != 0,
-                derived: rule.and_then(|r| r.derived).map(|d| d.as_str()),
+        let add =
+            |found: &mut Vec<Explanation>, stem: &str, prefix: Option<&str>, suffixes: Vec<String>, rule: Option<&Rule>, kind: u8, outer: Option<&Rule>| {
+                if found.len() >= limit {
+                    return;
+                }
+                let risky = rule.is_some_and(|r| is_risky(kind, r, outer));
+                let mut risk = Self::risk_names(rule);
+                if outer.is_some() {
+                    risk.extend(Self::risk_names(outer));
+                }
+                risk.sort();
+                risk.dedup();
+                let entry = Explanation {
+                    stem: stem.to_string(),
+                    prefix: prefix.map(|p| p.to_string()),
+                    suffixes,
+                    risky,
+                    risk,
+                    adjective: kind & KIND_ADJ != 0,
+                    derived: rule.and_then(|r| r.derived).map(|d| d.as_str()),
+                };
+                if !found.contains(&entry) {
+                    found.push(entry);
+                }
             };
-            if !found.contains(&entry) {
-                found.push(entry);
-            }
-        };
 
         if self.has_stem(word) {
             add(&mut found, word, None, Vec::new(), None, 0, None);
@@ -1021,9 +992,7 @@ impl AffixChecker {
                 let wanted = adds.contains(rule.add.as_str()) || {
                     let mut chars = rule.add.chars();
                     match chars.next() {
-                        Some(first) if (rule.strip == "a" || rule.strip == "e") && (first == 'á' || first == 'é') => {
-                            adds.contains(chars.as_str())
-                        }
+                        Some(first) if (rule.strip == "a" || rule.strip == "e") && (first == 'á' || first == 'é') => adds.contains(chars.as_str()),
                         _ => false,
                     }
                 };

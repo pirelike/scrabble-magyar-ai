@@ -216,10 +216,10 @@ impl ServerState {
 
     /// Szoba és a hozzá tartozó join code törlése.
     pub fn remove_room(&mut self, room_id: &str) {
-        if let Some(room) = self.rooms.remove(room_id) {
-            if self.join_codes.get(&room.join_code).is_some_and(|id| id == room_id) {
-                self.join_codes.remove(&room.join_code);
-            }
+        if let Some(room) = self.rooms.remove(room_id)
+            && self.join_codes.get(&room.join_code).is_some_and(|id| id == room_id)
+        {
+            self.join_codes.remove(&room.join_code);
         }
     }
 
@@ -294,12 +294,12 @@ impl ServerState {
 
     /// Online tracking eltávolítása SID alapján (disconnect-kor).
     pub fn remove_online_user(&mut self, sid: &str) {
-        if let Some(user_id) = self.sid_to_user_id.remove(sid) {
-            if let Some(sids) = self.online_users.get_mut(&user_id) {
-                sids.remove(sid);
-                if sids.is_empty() {
-                    self.online_users.remove(&user_id);
-                }
+        if let Some(user_id) = self.sid_to_user_id.remove(sid)
+            && let Some(sids) = self.online_users.get_mut(&user_id)
+        {
+            sids.remove(sid);
+            if sids.is_empty() {
+                self.online_users.remove(&user_id);
             }
         }
     }
@@ -334,10 +334,8 @@ impl ServerState {
     /// Meghívás létrehozása.
     pub fn create_invite(&mut self, from_uid: i64, to_uid: i64, room_id: &str, from_sid: &str) -> i64 {
         self.invite_counter += 1;
-        self.pending_invites.insert(
-            self.invite_counter,
-            Invite { from_user_id: from_uid, to_user_id: to_uid, room_id: room_id.to_string(), from_sid: from_sid.to_string() },
-        );
+        self.pending_invites
+            .insert(self.invite_counter, Invite { from_user_id: from_uid, to_user_id: to_uid, room_id: room_id.to_string(), from_sid: from_sid.to_string() });
         self.invite_counter
     }
 

@@ -19,11 +19,7 @@ pub const SECONDS_PER_MOVE: f64 = 0.8;
 const TURN_TYPES: [&str; 4] = ["place", "challenge_accept", "exchange", "pass"];
 
 fn details_of(mv: &StoredMove) -> Value {
-    mv.details_json
-        .as_deref()
-        .and_then(|t| serde_json::from_str::<Value>(t).ok())
-        .filter(|v| v.is_object())
-        .unwrap_or_else(|| json!({}))
+    mv.details_json.as_deref().and_then(|t| serde_json::from_str::<Value>(t).ok()).filter(|v| v.is_object()).unwrap_or_else(|| json!({}))
 }
 
 fn is_turn(mv: &StoredMove, details: &Value) -> bool {
@@ -49,10 +45,10 @@ pub fn analyze_game(moves: &[StoredMove], vocab: &Vocabulary, seconds: f64, mut 
                 cb(entries.len(), total);
             }
         }
-        if let Some(snapshot) = mv.board_snapshot_json.as_deref().filter(|s| !s.is_empty()) {
-            if let Ok(value) = serde_json::from_str::<Value>(snapshot) {
-                board = Board::from_json(&value);
-            }
+        if let Some(snapshot) = mv.board_snapshot_json.as_deref().filter(|s| !s.is_empty())
+            && let Ok(value) = serde_json::from_str::<Value>(snapshot)
+        {
+            board = Board::from_json(&value);
         }
     }
     let players = summarize(&entries);
@@ -122,10 +118,7 @@ fn summarize(entries: &[Value]) -> Vec<Value> {
         }
         let bigger = p["biggest_miss"].is_null() || lost > p["biggest_miss"]["lost"].as_i64().unwrap_or(0);
         if lost > 0 && bigger {
-            p.insert(
-                "biggest_miss".into(),
-                json!({"n": e["n"], "lost": lost, "best_words": e["best_words"], "best_score": best, "score": score}),
-            );
+            p.insert("biggest_miss".into(), json!({"n": e["n"], "lost": lost, "best_words": e["best_words"], "best_score": best, "score": score}));
         }
     }
     order
@@ -172,7 +165,13 @@ mod tests {
 
     #[test]
     fn old_games_without_racks_are_not_analyzable() {
-        let old = StoredMove { move_number: 1, player_name: "A".into(), action_type: "place".into(), details_json: Some("{\"score\": 5}".into()), board_snapshot_json: None };
+        let old = StoredMove {
+            move_number: 1,
+            player_name: "A".into(),
+            action_type: "place".into(),
+            details_json: Some("{\"score\": 5}".into()),
+            board_snapshot_json: None,
+        };
         let new = StoredMove {
             move_number: 2,
             player_name: "A".into(),
@@ -180,7 +179,13 @@ mod tests {
             details_json: Some("{\"rack\": [\"A\"], \"score\": 0}".into()),
             board_snapshot_json: None,
         };
-        let reject = StoredMove { move_number: 3, player_name: "A".into(), action_type: "challenge_reject".into(), details_json: Some("{\"rack\": [], \"score\": 0}".into()), board_snapshot_json: None };
+        let reject = StoredMove {
+            move_number: 3,
+            player_name: "A".into(),
+            action_type: "challenge_reject".into(),
+            details_json: Some("{\"rack\": [], \"score\": 0}".into()),
+            board_snapshot_json: None,
+        };
         assert_eq!(analyzable_turns(&[old, new, reject]).len(), 1);
     }
 }

@@ -190,9 +190,7 @@ impl Mailer {
         let (to, code) = (to_email.to_string(), code.to_string());
         std::thread::spawn(move || {
             let cfg = mailer.current();
-            let text = format!(
-                "A verifikációs kódod: {code}\n\nEz a kód 10 percig érvényes.\nHa nem te kérted, hagyd figyelmen kívül ezt az emailt."
-            );
+            let text = format!("A verifikációs kódod: {code}\n\nEz a kód 10 percig érvényes.\nHa nem te kérted, hagyd figyelmen kívül ezt az emailt.");
             let html = format!(
                 "<div style=\"font-family: Arial, sans-serif; max-width: 400px; margin: 0 auto; padding: 20px; background: #1a1a2e; color: #eee; border-radius: 12px;\">\
                  <h2 style=\"color: #e8b930; text-align: center;\">Magyar Scrabble</h2>\
@@ -200,8 +198,8 @@ impl Mailer {
                  <div style=\"text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #e8b930; padding: 20px; background: #16213e; border-radius: 8px; margin: 16px 0;\">{code}</div>\
                  <p style=\"text-align: center; color: #aaa; font-size: 14px;\">Ez a kód 10 percig érvényes.</p></div>"
             );
-            let result = build_message(&cfg, &to, "Magyar Scrabble - Verifikációs kód", Body::Alternative(text, html))
-                .and_then(|msg| send(&cfg, &msg, SEND_TIMEOUT));
+            let result =
+                build_message(&cfg, &to, "Magyar Scrabble - Verifikációs kód", Body::Alternative(text, html)).and_then(|msg| send(&cfg, &msg, SEND_TIMEOUT));
             match result {
                 Ok(()) => println!("  [EMAIL] Verifikációs kód elküldve: {to}"),
                 Err(e) => {
@@ -298,7 +296,11 @@ pub fn classify_error(err: &lettre::transport::smtp::Error) -> &'static str {
     if err.is_timeout() || io_kind == Some(std::io::ErrorKind::TimedOut) || text.contains("timed out") {
         return "timeout";
     }
-    if text.contains("failed to lookup") || text.contains("name or service not known") || text.contains("nodename nor servname") || text.contains("no address associated") {
+    if text.contains("failed to lookup")
+        || text.contains("name or service not known")
+        || text.contains("nodename nor servname")
+        || text.contains("no address associated")
+    {
         return "dns";
     }
     if io_kind == Some(std::io::ErrorKind::ConnectionRefused) || text.contains("connection refused") {
@@ -320,7 +322,11 @@ pub fn classify_error(err: &lettre::transport::smtp::Error) -> &'static str {
     {
         return "recipient";
     }
-    if io_kind == Some(std::io::ErrorKind::UnexpectedEof) || text.contains("connection closed") || text.contains("disconnected") || text.contains("incomplete response") {
+    if io_kind == Some(std::io::ErrorKind::UnexpectedEof)
+        || text.contains("connection closed")
+        || text.contains("disconnected")
+        || text.contains("incomplete response")
+    {
         return "disconnected";
     }
     if err.is_response() || err.is_permanent() || err.is_transient() || err.is_client() {

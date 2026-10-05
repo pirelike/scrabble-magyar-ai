@@ -87,8 +87,7 @@ impl Challenge {
     /// Szerializálás a kliensnek.
     pub fn to_state(&self, players: &[Player]) -> Value {
         let placer = &players[self.player_idx];
-        let votes: serde_json::Map<String, Value> =
-            self.votes.iter().map(|(k, v)| (k.clone(), Value::from(v.as_str()))).collect();
+        let votes: serde_json::Map<String, Value> = self.votes.iter().map(|(k, v)| (k.clone(), Value::from(v.as_str()))).collect();
         json!({
             "player_id": placer.id,
             "player_name": placer.name,

@@ -116,11 +116,7 @@ impl Board {
     }
 
     pub fn get(&self, row: i32, col: i32) -> Option<Cell> {
-        if (0..BOARD_SIZE as i32).contains(&row) && (0..BOARD_SIZE as i32).contains(&col) {
-            self.cells[row as usize][col as usize]
-        } else {
-            None
-        }
+        if (0..BOARD_SIZE as i32).contains(&row) && (0..BOARD_SIZE as i32).contains(&col) { self.cells[row as usize][col as usize] } else { None }
     }
 
     pub fn set(&mut self, row: usize, col: usize, letter: Tile, is_blank: bool) {
@@ -289,15 +285,7 @@ impl Board {
     }
 
     /// Összegyűjti az összes képzett szót (fő + mellékszavak).
-    fn collect_words(
-        &self,
-        positions: &[(usize, usize)],
-        new_positions: &Mask,
-        horizontal: bool,
-        fixed: usize,
-        start: usize,
-        end: usize,
-    ) -> Vec<FormedWord> {
+    fn collect_words(&self, positions: &[(usize, usize)], new_positions: &Mask, horizontal: bool, fixed: usize, start: usize, end: usize) -> Vec<FormedWord> {
         let mut formed = Vec::new();
         if end > start {
             formed.push(self.extract_word(fixed, start, end, horizontal, new_positions));
@@ -350,13 +338,7 @@ impl Board {
         None
     }
 
-    fn validate_words(
-        &self,
-        positions: &[(usize, usize)],
-        new_positions: &Mask,
-        horizontal: bool,
-        skip_dictionary: bool,
-    ) -> Result<Vec<FormedWord>, String> {
+    fn validate_words(&self, positions: &[(usize, usize)], new_positions: &Mask, horizontal: bool, skip_dictionary: bool) -> Result<Vec<FormedWord>, String> {
         let (fixed, start, end) = Self::get_main_bounds(positions, horizontal);
         let (start, end) = self.find_word_bounds(fixed, start, end, horizontal);
 
@@ -374,9 +356,7 @@ impl Board {
             let mut letters = digraph.chars();
             let a = letters.next().unwrap();
             let b = letters.next().unwrap();
-            return Err(format!(
-                "Kétjegyű betű ({digraph}) csak a saját zsetonjával rakható ki, {a} + {b} külön zsetonnal nem."
-            ));
+            return Err(format!("Kétjegyű betű ({digraph}) csak a saját zsetonjával rakható ki, {a} + {b} külön zsetonnal nem."));
         }
         if !skip_dictionary {
             let words: Vec<&str> = formed.iter().map(|w| w.word.as_str()).collect();
@@ -407,10 +387,10 @@ impl Board {
         for p in placed {
             temp.cells[p.row as usize][p.col as usize] = Some(Cell { letter: p.letter, is_blank: p.is_blank });
         }
-        if self.is_empty {
-            if let Some(error) = temp.validate_first_move(placed, &new_positions) {
-                return Err(error);
-            }
+        if self.is_empty
+            && let Some(error) = temp.validate_first_move(placed, &new_positions)
+        {
+            return Err(error);
         }
         if placed.len() == 1 {
             let (h, has_neighbor) = temp.determine_direction_single(placed[0].row, placed[0].col);
@@ -503,10 +483,7 @@ mod tests {
     #[test]
     fn blank_scores_zero_and_split_digraph_is_rejected() {
         let mut board = Board::new();
-        let tiles = vec![
-            Placed::new(7, 6, Tile::from_str("A").unwrap(), true),
-            Placed::new(7, 7, Tile::from_str("L").unwrap(), false),
-        ];
+        let tiles = vec![Placed::new(7, 6, Tile::from_str("A").unwrap(), true), Placed::new(7, 7, Tile::from_str("L").unwrap(), false)];
         let words = board.validate_placement(&tiles, true).unwrap();
         assert_eq!(words[0].score, 2); // joker 0 + L 1, a csillagon DW → 1*2
         board.apply_placement(&tiles);

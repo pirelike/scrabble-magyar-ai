@@ -7,7 +7,7 @@
 
 use crate::ai::{self, Action, Vocabulary};
 use crate::board::Board;
-use crate::db::{Db, DailyPuzzle};
+use crate::db::{DailyPuzzle, Db};
 use crate::game::{Game, HAND_SIZE};
 use crate::tiles::{TILE_DISTRIBUTION, Tile};
 use crate::util;
@@ -56,9 +56,7 @@ pub fn today_str() -> String {
 }
 
 pub fn previous_date(date_str: &str) -> String {
-    NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
-        .map(|d| (d - Duration::days(1)).format("%Y-%m-%d").to_string())
-        .unwrap_or_default()
+    NaiveDate::parse_from_str(date_str, "%Y-%m-%d").map(|d| (d - Duration::days(1)).format("%Y-%m-%d").to_string()).unwrap_or_default()
 }
 
 pub fn is_valid_date(text: &str) -> bool {

@@ -65,10 +65,7 @@ impl RateLimiter {
             for name in names {
                 let default = defaults.get(name).map(|l| json!([l.0, l.1]));
                 let current = overrides.get(name).or_else(|| defaults.get(name)).map(|l| json!([l.0, l.1]));
-                map.insert(
-                    name.clone(),
-                    json!({"default": default, "current": current, "overridden": overrides.contains_key(name)}),
-                );
+                map.insert(name.clone(), json!({"default": default, "current": current, "overridden": overrides.contains_key(name)}));
             }
             Value::Object(map)
         };

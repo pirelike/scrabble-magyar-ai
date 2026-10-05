@@ -121,12 +121,7 @@ fn random_secret() -> SecretKey {
 
 impl Push {
     pub fn new(db: Arc<Db>, from_address: Box<dyn Fn() -> String + Send + Sync>) -> Push {
-        Push {
-            db,
-            keys: OnceLock::new(),
-            subject_override: std::env::var("VAPID_SUBJECT").ok().filter(|s| !s.is_empty()),
-            from_address,
-        }
+        Push { db, keys: OnceLock::new(), subject_override: std::env::var("VAPID_SUBJECT").ok().filter(|s| !s.is_empty()), from_address }
     }
 
     pub fn is_available(&self) -> bool {
@@ -154,10 +149,10 @@ impl Push {
         });
         let secret = from_env.unwrap_or_else(|| {
             let stored = self.db.get_setting("vapid_private_pem").unwrap_or_default();
-            if stored.starts_with("-----") {
-                if let Some(key) = parse_private_key(&stored) {
-                    return key;
-                }
+            if stored.starts_with("-----")
+                && let Some(key) = parse_private_key(&stored)
+            {
+                return key;
             }
             let key = random_secret();
             if let Ok(pem) = key.to_pkcs8_pem(LineEnding::LF) {
@@ -199,11 +194,8 @@ impl Push {
         };
         let exp = crate::util::now() as u64 + 12 * 3600;
         let Some(authorization) = self.authorization(endpoint, exp) else { return Outcome::Error };
-        let agent: ureq::Agent = ureq::Agent::config_builder()
-            .timeout_global(Some(std::time::Duration::from_secs(10)))
-            .http_status_as_error(false)
-            .build()
-            .into();
+        let agent: ureq::Agent =
+            ureq::Agent::config_builder().timeout_global(Some(std::time::Duration::from_secs(10))).http_status_as_error(false).build().into();
         let response = agent
             .post(endpoint)
             .header("Content-Encoding", "aes128gcm")
@@ -434,8 +426,8 @@ mod tests {
         assert_eq!(claims["sub"], "mailto:admin@example.com");
         assert_eq!(claims["exp"], 2_000_000_000u64);
         // az aláírás ellenőrizhető a nyilvános kulccsal
-        use p256::ecdsa::signature::Verifier;
         use p256::ecdsa::VerifyingKey;
+        use p256::ecdsa::signature::Verifier;
         let public = URL_SAFE_NO_PAD.decode(key).unwrap();
         let verifying = VerifyingKey::from_sec1_bytes(&public).unwrap();
         let signature = Signature::from_slice(&URL_SAFE_NO_PAD.decode(parts[2]).unwrap()).unwrap();

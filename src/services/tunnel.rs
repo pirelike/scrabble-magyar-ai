@@ -70,11 +70,8 @@ impl Tunnel {
             return;
         };
         println!("\n  [*] Cloudflare tunnel indítása...");
-        let spawned = Command::new(cloudflared)
-            .args(["tunnel", "--url", &format!("http://localhost:{port}")])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn();
+        let spawned =
+            Command::new(cloudflared).args(["tunnel", "--url", &format!("http://localhost:{port}")]).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn();
         let mut child = match spawned {
             Ok(child) => child,
             Err(e) => {

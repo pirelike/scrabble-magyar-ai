@@ -10,8 +10,8 @@ use crate::dictionary;
 use crate::tiles::{self, TILE_DISTRIBUTION, Tile, forms_digraph, tokenize_word, word_base_score};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
-use rand::{Rng, RngExt};
 use rand::seq::SliceRandom;
+use rand::{Rng, RngExt};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
@@ -123,11 +123,7 @@ pub fn stem_words() -> &'static [String] {
             .entry_words()
             .filter(|w| {
                 let n = w.chars().count();
-                (2..=15).contains(&n)
-                    && tokenize_word(w).is_some()
-                    && has_vowel(w)
-                    && **w == w.to_lowercase()
-                    && w.chars().any(|c| c.is_lowercase())
+                (2..=15).contains(&n) && tokenize_word(w).is_some() && has_vowel(w) && **w == w.to_lowercase() && w.chars().any(|c| c.is_lowercase())
             })
             .map(|w| w.to_uppercase())
             .collect();
@@ -142,10 +138,10 @@ pub fn short_words(length: usize) -> Vec<Value> {
     let version = dictionary::rejected_version();
     {
         let cache = SHORT_CACHE.lock();
-        if let Some((v, list)) = cache.get(&length) {
-            if *v == version {
-                return list.clone();
-            }
+        if let Some((v, list)) = cache.get(&length)
+            && *v == version
+        {
+            return list.clone();
         }
     }
     // egy újonnan elutasított szó kikerül a listából
@@ -459,7 +455,13 @@ pub fn rack_words(rack: &[Tile]) -> Vec<Value> {
     let mut prefix = String::new();
     walk(&mut prefix, 0, 0, None, rack.len(), &types, &mut counts, &vocab, &mut best);
     let valid = if best.is_empty() { HashSet::new() } else { dictionary::filter_valid(best.keys().map(|s| s.as_str())) };
-    let mut words: Vec<(String, u32, usize)> = valid.into_iter().map(|w| { let (score, used) = best[&w]; (w, score, used) }).collect();
+    let mut words: Vec<(String, u32, usize)> = valid
+        .into_iter()
+        .map(|w| {
+            let (score, used) = best[&w];
+            (w, score, used)
+        })
+        .collect();
     words.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
     words.into_iter().map(|(w, score, used)| json!({"word": w, "score": score, "tiles": used})).collect()
 }
@@ -481,22 +483,21 @@ fn bingo_rack<R: Rng + ?Sized>(rng: &mut R) -> Result<Vec<Tile>, String> {
     let vocab = ai::get_vocabulary();
     for _ in 0..400 {
         let use_stems = rng.random::<f64>() < BINGO_STEM_SHARE;
-        let (n, get): (usize, Box<dyn Fn(usize) -> String>) = if use_stems {
-            (stems.len(), Box::new(|i| stems[i].clone()))
-        } else {
-            (vocab.len(), Box::new(|i| vocab.word(i).to_string()))
-        };
+        let (n, get): (usize, Box<dyn Fn(usize) -> String>) =
+            if use_stems { (stems.len(), Box::new(|i| stems[i].clone())) } else { (vocab.len(), Box::new(|i| vocab.word(i).to_string())) };
         for i in sample_indices(rng, n, 300) {
             let word = get(i);
             let chars = word.chars().count();
             if !(7..=14).contains(&chars) {
                 continue;
             }
-            if let Some(mut tokens) = tokenize_word(&word) {
-                if tokens.len() == RACK_SIZE && count_ok(&tokens) && is_valid(&word) {
-                    tokens.shuffle(rng);
-                    return Ok(tokens);
-                }
+            if let Some(mut tokens) = tokenize_word(&word)
+                && tokens.len() == RACK_SIZE
+                && count_ok(&tokens)
+                && is_valid(&word)
+            {
+                tokens.shuffle(rng);
+                return Ok(tokens);
             }
         }
     }
@@ -563,12 +564,12 @@ fn assign(word: &[char], counts: &mut HashMap<String, i32>, score: u32, last: &s
         let value = tiles::tile_value(&piece);
         let rest = assign(&word[size..], counts, score + value, &piece, split_ok);
         *counts.get_mut(&piece).unwrap() += 1;
-        if let Some((rest_score, rest_tiles)) = rest {
-            if best.as_ref().is_none_or(|(b, _)| rest_score > *b) {
-                let mut used = vec![piece];
-                used.extend(rest_tiles);
-                best = Some((rest_score, used));
-            }
+        if let Some((rest_score, rest_tiles)) = rest
+            && best.as_ref().is_none_or(|(b, _)| rest_score > *b)
+        {
+            let mut used = vec![piece];
+            used.extend(rest_tiles);
+            best = Some((rest_score, used));
         }
     }
     best

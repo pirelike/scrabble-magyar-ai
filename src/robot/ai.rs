@@ -69,9 +69,7 @@ pub fn parse_level(value: &Value) -> Option<u8> {
         }
         Value::String(s) => {
             let text = s.trim().to_lowercase();
-            legacy_level(&text).or_else(|| {
-                text.parse::<u8>().ok().filter(|n| (MIN_LEVEL..=MAX_LEVEL).contains(n) && n.to_string() == text)
-            })
+            legacy_level(&text).or_else(|| text.parse::<u8>().ok().filter(|n| (MIN_LEVEL..=MAX_LEVEL).contains(n) && n.to_string() == text))
         }
         _ => None,
     }
@@ -132,7 +130,6 @@ pub fn adaptive_level<R: rand::Rng + ?Sized>(average: Option<f64>, turns: usize,
     let level = if rng.random::<f64>() < target - low { low + 1.0 } else { low };
     (level as i64).clamp(MIN_LEVEL as i64, MAX_LEVEL as i64) as u8
 }
-
 
 // ===================================================================================================
 // Szókincs
@@ -422,10 +419,7 @@ fn allowed_letters(ctxs: [&Contexts; 2], letters: &[Tile], vocab: &Vocabulary) -
         }
     }
     let valid_unknown = if unknown.is_empty() { HashSet::new() } else { dictionary::filter_valid(unknown.iter().map(|s| s.as_str())) };
-    let mut result: [Allowed; 2] = [
-        ctxs[0].keys().map(|k| (*k, 0u64)).collect(),
-        ctxs[1].keys().map(|k| (*k, 0u64)).collect(),
-    ];
+    let mut result: [Allowed; 2] = [ctxs[0].keys().map(|k| (*k, 0u64)).collect(), ctxs[1].keys().map(|k| (*k, 0u64)).collect()];
     for e in entries {
         if vocab.contains(&e.word) || valid_unknown.contains(&e.word) {
             *result[e.which].get_mut(&e.square).unwrap() |= tile_bit(e.letter);
@@ -872,7 +866,13 @@ pub fn choose_exchange<R: rand::Rng + ?Sized>(rack: &[Tile], rng: &mut R) -> Vec
             return 100;
         }
         let value = tile.value();
-        let base = if value <= 1 { 6 } else if value <= 3 { 3 } else { 0 };
+        let base = if value <= 1 {
+            6
+        } else if value <= 3 {
+            3
+        } else {
+            0
+        };
         base + if tile.is_vowel() { 2 } else { 0 }
     }
     let mut order: Vec<(i32, f64, usize)> = (0..rack.len()).map(|i| (-keep_worth(rack[i]), rng.random::<f64>(), i)).collect();
@@ -946,7 +946,7 @@ pub fn choose_action<R: rand::Rng + ?Sized>(
 /// A `count` legjobb (szótár szerint érvényes) lépés tippként, pontszám szerint rendezve.
 pub fn best_moves(board: &Board, rack: &[Tile], count: usize, vocab: &Vocabulary, seconds: Option<f64>) -> Vec<Move> {
     let mut moves = generate_moves(board, rack, vocab, true, HAND_SIZE, seconds.unwrap_or(HINT_TIME_BUDGET));
-    moves.sort_by(|a, b| b.score.cmp(&a.score));
+    moves.sort_by_key(|m| std::cmp::Reverse(m.score));
     first_valid(&moves, count)
 }
 

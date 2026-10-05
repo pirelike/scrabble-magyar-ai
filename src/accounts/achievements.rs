@@ -11,19 +11,8 @@ use std::collections::{HashMap, HashSet};
 pub const HAND_SIZE: usize = 7;
 
 /// A megjelenítés sorrendje is ez; a nevek / leírások a kliens i18n `badge.<kulcs>` kulcsaiban vannak.
-pub const BADGES: [&str; 11] = [
-    "first_game",
-    "first_win",
-    "bingo",
-    "score_100",
-    "long_word",
-    "joker_play",
-    "game_300",
-    "bot_slayer",
-    "wins_10",
-    "games_25",
-    "daily_best",
-];
+pub const BADGES: [&str; 11] =
+    ["first_game", "first_win", "bingo", "score_100", "long_word", "joker_play", "game_300", "bot_slayer", "wins_10", "games_25", "daily_best"];
 
 pub const BIG_MOVE_SCORE: i64 = 100;
 pub const LONG_WORD_TILES: usize = 8;
@@ -100,8 +89,8 @@ pub fn cumulative_badges(games_played: i64, games_won: i64) -> HashSet<&'static 
 mod tests {
     use super::*;
     use crate::ai::Difficulty;
-    use crate::game::MoveLog;
     use crate::board::Board;
+    use crate::game::MoveLog;
     use crate::player::Player;
     use serde_json::json;
 
