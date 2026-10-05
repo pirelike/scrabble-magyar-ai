@@ -608,3 +608,55 @@ pub fn check_rack_word(rack: &[String], word: &str) -> Value {
         "score": score + if bingo { BINGO_BONUS } else { 0 }, "bingo": bingo,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+
+    #[test]
+    fn length_swap_mutation() {
+        let mut rng = StdRng::seed_from_u64(0);
+        assert_eq!(mutate_length("KRT", &mut rng), None);
+        let swapped = mutate_length("ALMA", &mut rng).unwrap();
+        assert!(swapped != "ALMA" && swapped.chars().count() == 4);
+        assert_eq!(swapped.chars().zip("ALMA".chars()).filter(|(a, b)| a != b).count(), 1);
+        assert_eq!(mutate_length("ŐZ", &mut rng).as_deref(), Some("ÖZ"));
+    }
+
+    #[test]
+    fn every_length_pair_is_symmetric() {
+        for c in "aáeéiíoóöőuúüű".chars() {
+            assert_eq!(length_pair(length_pair(c).unwrap()), Some(c), "{c}");
+        }
+        assert_eq!(length_pair('k'), None);
+    }
+
+    #[test]
+    fn tricky_fakes_come_from_different_words() {
+        dictionary::warm_up();
+        let sources: Vec<String> = ["ARANYÉR", "TERVEZD", "CELLULÓZ", "DEZODOR"].iter().map(|s| s.to_string()).collect();
+        let fakes = fake_words(&sources, 4, &mut StdRng::seed_from_u64(1), None, mutate_length::<StdRng>);
+        // négy különböző forrásszóból négy különböző hamis szó (nincs két átírás ugyanabból)
+        assert_eq!(fakes.iter().collect::<HashSet<_>>().len(), 4, "{fakes:?}");
+    }
+
+    #[test]
+    fn fake_words_are_plausible_edits() {
+        dictionary::warm_up();
+        let sources: Vec<String> = ["ALMA", "KÖRTE", "SZÉK"].iter().map(|s| s.to_string()).collect();
+        let fakes = fake_words(&sources, 8, &mut StdRng::seed_from_u64(7), None, mutate::<StdRng>);
+        assert_eq!(fakes.len(), 8);
+        assert!(dictionary::filter_valid(fakes.iter().map(|s| s.as_str())).is_empty(), "{fakes:?}");
+        assert!(fakes.iter().all(|w| has_vowel_upper(w)), "{fakes:?}");
+    }
+
+    #[test]
+    fn a_rack_must_fit_the_bag() {
+        let tiles = |letters: &[&str]| -> Vec<Tile> { letters.iter().map(|l| Tile::from_str(l).unwrap()).collect() };
+        assert!(count_ok(&tiles(&["A", "A", "A", "Ó", "Ó", "Ó"])));
+        assert!(!count_ok(&tiles(&["Ó", "Ó", "Ó", "Ó"])));
+        assert!(!count_ok(&tiles(&["CS", "CS"])));
+    }
+}
