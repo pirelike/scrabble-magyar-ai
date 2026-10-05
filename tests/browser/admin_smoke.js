@@ -1,4 +1,4 @@
-// Az admin felület böngészős füstpróbája (a `test_admin_browser.py` futtatja): minden menüpont betöltődik, nincs JS hiba,
+// Az admin felület böngészős füstpróbája (a `tests/admin_browser.rs` futtatja): minden menüpont betöltődik, nincs JS hiba,
 // a legfontosabb műveletek (párbeszéd, sudo, kereső) és az élő Socket.IO események működnek.
 // Környezet: ADMIN_SMOKE_BASE, PLAYWRIGHT_MODULE, PLAYWRIGHT_CHROMIUM.
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE);
