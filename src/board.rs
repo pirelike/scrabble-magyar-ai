@@ -65,7 +65,7 @@ pub struct Cell {
 
 /// Egy lerakott zseton: (sor, oszlop, betű, joker-e). A koordináták előjelesek, hogy a határon kívüli
 /// érték is ellenőrizhető legyen.
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
 pub struct Placed {
     pub row: i32,
     pub col: i32,
