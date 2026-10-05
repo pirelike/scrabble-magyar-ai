@@ -7,6 +7,7 @@
 
 pub mod admin;
 pub mod push;
+pub mod smtp;
 
 use futures_util::{SinkExt, StreamExt};
 use parking_lot::Mutex;
@@ -514,6 +515,18 @@ impl Sio {
         self.room_code.lock().clone().expect("nincs szobakód")
     }
 
+    /// A szobakód: megvárja, hogy megérkezzen (a fix várakozás terhelt gépen nem elég).
+    pub async fn wait_code(&self) -> String {
+        let end = tokio::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            if let Some(code) = self.room_code.lock().clone() {
+                return code;
+            }
+            assert!(tokio::time::Instant::now() < end, "nincs szobakód");
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
+
     pub fn room(&self) -> String {
         self.room_id.lock().clone().expect("nincs szoba")
     }
@@ -573,8 +586,8 @@ pub async fn started_pair(server: &TestServer, options: Value) -> (Sio, Sio) {
     let a = server.player(1).await;
     let b = server.player(2).await;
     a.emit("create_room", options);
-    a.settle().await;
-    b.emit("join_room", json!({"code": a.code()}));
+    let code = a.wait_code().await;
+    b.emit("join_room", json!({"code": code}));
     b.settle().await;
     a.emit0("start_game");
     a.settle_long().await;
