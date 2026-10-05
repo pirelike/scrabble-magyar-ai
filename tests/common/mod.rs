@@ -355,6 +355,17 @@ impl Http {
 // ===================================================================================================
 
 /// Socket.IO (Engine.IO v4, websocket) kliens. Az eseményeket sorba gyűjti.
+trait IntoRequestHelper {
+    fn into_client_request_helper(self) -> tokio_tungstenite::tungstenite::handshake::client::Request;
+}
+
+impl IntoRequestHelper for &str {
+    fn into_client_request_helper(self) -> tokio_tungstenite::tungstenite::handshake::client::Request {
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+        self.into_client_request().unwrap()
+    }
+}
+
 pub struct Sio {
     tx: mpsc::UnboundedSender<String>,
     events: Arc<Mutex<Vec<(String, Value)>>>,
@@ -376,8 +387,38 @@ impl Sio {
         sio
     }
 
+    /// Kapcsolat extra kérésfejlécekkel (pl. `X-Forwarded-For` a kliens címének megadásához).
+    pub async fn connect_with_headers(server: &TestServer, headers: &[(&str, &str)]) -> Sio {
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+        let url = format!("ws://127.0.0.1:{}/socket.io/?EIO=4&transport=websocket", server.port);
+        let mut request = url.into_client_request().unwrap();
+        for (name, value) in headers {
+            let name = tokio_tungstenite::tungstenite::http::HeaderName::from_bytes(name.as_bytes()).unwrap();
+            request.headers_mut().insert(name, value.parse().unwrap());
+        }
+        let mut sio = Sio::connect_request(request).await;
+        sio.app = Some(server.app.clone());
+        sio
+    }
+
+    /// Igaz, ha a kiszolgáló a kapcsolódást már a kézfogásnál elutasítja (pl. tiltott IP: 403).
+    pub async fn handshake_refused(server: &TestServer, headers: &[(&str, &str)]) -> bool {
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+        let url = format!("ws://127.0.0.1:{}/socket.io/?EIO=4&transport=websocket", server.port);
+        let mut request = url.into_client_request().unwrap();
+        for (name, value) in headers {
+            let name = tokio_tungstenite::tungstenite::http::HeaderName::from_bytes(name.as_bytes()).unwrap();
+            request.headers_mut().insert(name, value.parse().unwrap());
+        }
+        matches!(tokio_tungstenite::connect_async(request).await, Err(tokio_tungstenite::tungstenite::Error::Http(response)) if response.status() == 403)
+    }
+
     pub async fn connect_url(url: &str) -> Sio {
-        let (stream, _) = tokio_tungstenite::connect_async(url).await.expect("websocket");
+        Sio::connect_request(url.into_client_request_helper()).await
+    }
+
+    async fn connect_request(request: tokio_tungstenite::tungstenite::handshake::client::Request) -> Sio {
+        let (stream, _) = tokio_tungstenite::connect_async(request).await.expect("websocket");
         let (mut sink, mut source) = stream.split();
         let (tx, mut rx) = mpsc::unbounded_channel::<String>();
         let events: Arc<Mutex<Vec<(String, Value)>>> = Arc::new(Mutex::new(Vec::new()));
@@ -407,6 +448,10 @@ impl Sio {
                     let _ = ptx.send("3".to_string());
                 } else if text.starts_with("40") {
                     cn.notify_one();
+                } else if text.starts_with("44") {
+                    // a kapcsolatot a szerver elutasította (pl. tiltott IP)
+                    cn.notify_one();
+                    break;
                 } else if text.starts_with("41") {
                     break;
                 } else if let Some(body) = text.strip_prefix("42") {
