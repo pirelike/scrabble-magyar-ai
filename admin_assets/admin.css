@@ -174,10 +174,20 @@
 }
 
 /* A közös stíluskészlet a dátummezőt nem fedi le: ugyanúgy néz ki, mint a szövegmezők */
-.admin-field input[type="date"] {
+.admin-field input[type="date"],
+.admin-form-field input[type="date"],
+.admin-field input[type="datetime-local"],
+.admin-form-field input[type="datetime-local"] {
+    -webkit-appearance: none;
+    appearance: none;
+    box-sizing: border-box;
     display: block;
     width: 100%;
+    min-width: 0;
+    max-width: 100%;
     min-height: var(--control-h);
+    line-height: var(--control-h);
+    text-align: left;
     padding: 0 var(--space-4);
     border: 1px solid var(--border-input);
     border-radius: var(--radius-md);
@@ -189,9 +199,22 @@
     transition: border-color var(--t-fast), box-shadow var(--t-fast);
 }
 
-.admin-field input[type="date"]:focus {
+.admin-field input[type="date"]:focus,
+.admin-form-field input[type="date"]:focus,
+.admin-field input[type="datetime-local"]:focus,
+.admin-form-field input[type="datetime-local"]:focus {
     border-color: var(--accent);
     box-shadow: var(--focus-ring);
+}
+
+/* iOS Safari: a belső értékmező ne húzza szélesebbre a mezőt, és az üres mező se törjön */
+.admin-field input[type="date"]::-webkit-date-and-time-value,
+.admin-form-field input[type="date"]::-webkit-date-and-time-value,
+.admin-field input[type="datetime-local"]::-webkit-date-and-time-value,
+.admin-form-field input[type="datetime-local"]::-webkit-date-and-time-value {
+    text-align: left;
+    min-height: 1.2em;
+    margin: 0;
 }
 
 .admin-field-label {
