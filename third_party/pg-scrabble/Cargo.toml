@@ -1,0 +1,46 @@
+[package]
+name = "pg-scrabble"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+authors = ["Pranav Gundu <pranav@gundu.me>"]
+description = "Vendored, patched copy of the `scrabble` 0.1.0 crate (pranavgundu/scrabble) with 64-bit letter masks so alphabets of up to 62 letters (e.g. Hungarian, 38) work. See PATCHES.md."
+readme = "README.md"
+license = "MIT"
+repository = "https://github.com/pranavgundu/scrabble"
+keywords = ["crossword", "wordgame", "gaddag", "solver", "game"]
+categories = ["games", "algorithms"]
+publish = false
+
+[lib]
+name = "pg_scrabble"
+path = "src/lib.rs"
+
+[features]
+default = ["std", "ai", "formats", "rayon"]
+std = []
+ai = ["std"]
+formats = ["std"]
+rayon = ["dep:rayon", "std"]
+serde = ["dep:serde", "std"]
+train = ["ai", "rayon"]
+
+[dependencies]
+rayon = { version = "1.10", optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+
+[dev-dependencies]
+proptest = "1"
+serde_json = "1"
+
+[[test]]
+name = "game"
+path = "tests/game.rs"
+
+[[test]]
+name = "movegen"
+path = "tests/movegen.rs"
+
+[[test]]
+name = "wide"
+path = "tests/wide.rs"

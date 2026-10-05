@@ -299,7 +299,7 @@ fn server_messages() -> std::collections::BTreeMap<String, String> {
     let skipped_context = re(r"(?:println|eprintln|panic|assert\w*|write|writeln|unreachable)!\(\s*$|\.expect\(\s*$");
     let mut found = std::collections::BTreeMap::new();
     for (path, source) in rust_sources() {
-        if path.starts_with("src/admin/") || skipped.contains(&path.as_str()) {
+        if path.starts_with("src/admin/") || path.starts_with("src/bin/") || path.starts_with("src/engine_duel/") || skipped.contains(&path.as_str()) {
             continue;
         }
         for m in re(r#""((?:[^"\\\n]|\\.)*)""#).captures_iter(&source) {

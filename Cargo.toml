@@ -3,6 +3,15 @@ name = "scrabble"
 version = "0.1.0"
 edition = "2024"
 
+# A külső motor (third_party/pg-scrabble) tagja a munkaterületnek: a tesztjei `cargo test -p pg-scrabble --all-features`
+# paranccsal futnak, de a sima `cargo build` / `cargo test` csak a szervert fordítja.
+[workspace]
+members = ["third_party/pg-scrabble"]
+
+[features]
+# A robot és egy független külső Scrabble motor párharca (src/engine_duel/, src/bin/engine_duel.rs, docs/ENGINE_DUEL.md)
+engine-duel = ["dep:pg-scrabble"]
+
 [dependencies]
 aes-gcm = "0.11.1"
 axum = "0.8.9"
@@ -36,6 +45,7 @@ tower = { version = "0.5.3", features = ["util"] }
 tower-http = { version = "0.7.1", features = ["fs", "set-header"] }
 unicode-normalization = "0.1.25"
 ureq = "3.4.2"
+pg-scrabble = { path = "third_party/pg-scrabble", optional = true, default-features = false, features = ["std", "ai"] }
 
 # Kisebb tesztfájlok és gyorsabb fordítás: a hibakereséshez elég a sorinformáció
 [profile.dev]
@@ -53,6 +63,17 @@ strip = true
 
 [dev-dependencies]
 tokio-tungstenite = "0.30.0"
+
+# A párharc a `engine-duel` kapcsolóval fordul: `cargo run --release --features engine-duel --bin engine_duel -- help`
+[[bin]]
+name = "engine_duel"
+path = "src/bin/engine_duel.rs"
+required-features = ["engine-duel"]
+
+[[test]]
+name = "engine_duel"
+path = "tests/engine_duel.rs"
+required-features = ["engine-duel"]
 
 # Teljesítményteszt a Python és a Rust verzió között: `cargo bench --bench compare` (lásd scripts/perf.sh)
 [[bench]]

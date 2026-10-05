@@ -1,0 +1,1 @@
+# upstream formatting (rustfmt defaults); the repository-wide rustfmt.toml does not apply to this vendored crate

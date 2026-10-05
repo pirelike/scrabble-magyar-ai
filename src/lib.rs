@@ -12,7 +12,8 @@
 //! | `db/` | SQLite réteg (séma: `db/schema.sql`) |
 //! | `server/` | HTTP útvonalak és Socket.IO események, szobák és szerverállapot |
 //! | `admin/` | admin panel (logika és HTTP réteg) |
-//! | `bin/` | karbantartó eszközök (`bot_arena`, `word_review`, `build_attested`) |
+//! | `bin/` | karbantartó eszközök (`bot_arena`, `word_review`, `build_attested`, `engine_duel`) |
+//! | `engine_duel/` | a robot és egy külső Scrabble motor párharca (`--features engine-duel`; `docs/ENGINE_DUEL.md`) |
 //!
 //! A moduloknak rövid, lapos elérési útjuk is van (`crate::tiles` = `crate::engine::tiles`): az alábbi
 //! újraexportálások miatt a kód és a tesztek nem a mappaszerkezethez kötődnek.
@@ -24,6 +25,8 @@ pub mod async_games;
 pub mod config;
 pub mod db;
 pub mod engine;
+#[cfg(feature = "engine-duel")]
+pub mod engine_duel;
 pub mod robot;
 pub mod server;
 pub mod services;

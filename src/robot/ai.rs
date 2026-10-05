@@ -753,7 +753,8 @@ pub fn leave_value(leave: &[Tile]) -> f64 {
     value
 }
 
-fn remaining_after(rack: &[Tile], mv: &Move) -> Vec<Tile> {
+/// A lerakás után a kézben maradó zsetonok.
+pub fn remaining_after(rack: &[Tile], mv: &Move) -> Vec<Tile> {
     let mut left = rack.to_vec();
     for p in &mv.tiles {
         let target = p.hand_tile();
@@ -765,7 +766,7 @@ fn remaining_after(rack: &[Tile], mv: &Move) -> Vec<Tile> {
 }
 
 /// Kitölti a lépések `equity` értékét (az értékeléses fokozatokhoz).
-fn rate(moves: &mut [Move], rack: &[Tile], bag_remaining: usize) {
+pub fn rate(moves: &mut [Move], rack: &[Tile], bag_remaining: usize) {
     for mv in moves.iter_mut() {
         let leave = remaining_after(rack, mv);
         if bag_remaining == 0 {
@@ -842,7 +843,7 @@ fn uses_equity(level: u8) -> bool {
 /// Célpontszámos fokozatnál a körönként sorsolt célpontszámhoz legközelebbi pontszámú lépés az első;
 /// értékeléses fokozatnál a legnagyobb (zajjal terhelt) `equity`. Az összes lépés megmarad tartaléknak arra
 /// az esetre, ha a legkedvezőbbet a játék szótára elutasítja.
-fn ordered_candidates<R: rand::Rng + ?Sized>(moves: Vec<Move>, level: u8, rng: &mut R) -> Vec<Move> {
+pub fn ordered_candidates<R: rand::Rng + ?Sized>(moves: Vec<Move>, level: u8, rng: &mut R) -> Vec<Move> {
     let p = profile(level);
     let mut keyed: Vec<(f64, f64, Move)> = if let Some(mu) = p.mu {
         let target = mu * gauss(rng, -TARGET_CV * TARGET_CV / 2.0, TARGET_CV).exp();

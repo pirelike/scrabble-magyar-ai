@@ -1,0 +1,6 @@
+pg-scrabble 0.1.0 is a modified copy of "scrabble" 0.1.0
+  upstream:  https://github.com/pranavgundu/scrabble  (crates.io: scrabble 0.1.0)
+  author:    Pranav Gundu <pranav@gundu.me>
+  licence:   MIT (LICENSE, unchanged)
+Modifications (64-bit letter masks, alphabets of up to 63 letters) are listed in
+PATCHES.md. This is not an official release of the upstream project.
