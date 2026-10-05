@@ -116,12 +116,28 @@ fn decode_header(value: &str) -> String {
     out
 }
 
+/// A hamis kiszolgáló beállítható viselkedése.
+#[derive(Default)]
+struct Behavior {
+    /// ha be van állítva, a RCPT TO erre a kóddal válaszol (pl. "550 no such user")
+    reject_recipient: Option<String>,
+    /// a MAIL FROM erre válaszol
+    reject_sender: Option<String>,
+    /// a DATA végén erre válaszol (pl. "554 spam")
+    reject_data: Option<String>,
+    /// kötelező bejelentkezés: (felhasználó, jelszó); hibás adatra 535
+    login: Option<(String, String)>,
+    /// az üdvözlés után azonnal bontja a kapcsolatot
+    hang_up: bool,
+    /// a sikeres bejelentkezések felhasználónevei
+    logins: Vec<String>,
+}
+
 pub struct FakeSmtp {
     pub addr: SocketAddr,
     mails: Arc<Mutex<Vec<Mail>>>,
     stop: Arc<AtomicBool>,
-    /// ha be van állítva, a RCPT TO erre a kóddal válaszol (pl. "550 no such user")
-    reject_recipient: Arc<Mutex<Option<String>>>,
+    behavior: Arc<Mutex<Behavior>>,
 }
 
 impl FakeSmtp {
@@ -131,8 +147,8 @@ impl FakeSmtp {
         let addr = listener.local_addr().unwrap();
         let mails: Arc<Mutex<Vec<Mail>>> = Arc::new(Mutex::new(Vec::new()));
         let stop = Arc::new(AtomicBool::new(false));
-        let reject: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
-        let (m, s, r) = (mails.clone(), stop.clone(), reject.clone());
+        let behavior: Arc<Mutex<Behavior>> = Arc::new(Mutex::new(Behavior::default()));
+        let (m, s, r) = (mails.clone(), stop.clone(), behavior.clone());
         std::thread::spawn(move || {
             while !s.load(Ordering::SeqCst) {
                 match listener.accept() {
@@ -144,7 +160,7 @@ impl FakeSmtp {
                 }
             }
         });
-        FakeSmtp { addr, mails, stop, reject_recipient: reject }
+        FakeSmtp { addr, mails, stop, behavior }
     }
 
     pub fn port(&self) -> u16 {
@@ -160,7 +176,30 @@ impl FakeSmtp {
     }
 
     pub fn reject_recipients_with(&self, reply: Option<&str>) {
-        *self.reject_recipient.lock() = reply.map(|r| r.to_string());
+        self.behavior.lock().reject_recipient = reply.map(|r| r.to_string());
+    }
+
+    pub fn reject_sender_with(&self, reply: Option<&str>) {
+        self.behavior.lock().reject_sender = reply.map(|r| r.to_string());
+    }
+
+    pub fn reject_data_with(&self, reply: Option<&str>) {
+        self.behavior.lock().reject_data = reply.map(|r| r.to_string());
+    }
+
+    /// Bejelentkezést követel (AUTH PLAIN / LOGIN) ezekkel az adatokkal.
+    pub fn require_login(&self, user: &str, password: &str) {
+        self.behavior.lock().login = Some((user.to_string(), password.to_string()));
+    }
+
+    /// Az üdvözlés után azonnal bontja a kapcsolatot.
+    pub fn hang_up_after_greeting(&self, on: bool) {
+        self.behavior.lock().hang_up = on;
+    }
+
+    /// A sikeresen bejelentkezett felhasználónevek.
+    pub fn logins(&self) -> Vec<String> {
+        self.behavior.lock().logins.clone()
     }
 
     /// Várakozás, amíg legalább `n` levél beér.
@@ -182,7 +221,7 @@ impl Drop for FakeSmtp {
     }
 }
 
-fn serve(stream: std::net::TcpStream, mails: Arc<Mutex<Vec<Mail>>>, reject: Arc<Mutex<Option<String>>>) {
+fn serve(stream: std::net::TcpStream, mails: Arc<Mutex<Vec<Mail>>>, behavior: Arc<Mutex<Behavior>>) {
     let _ = stream.set_nonblocking(false);
     let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
     let mut writer = match stream.try_clone() {
@@ -195,6 +234,9 @@ fn serve(stream: std::net::TcpStream, mails: Arc<Mutex<Vec<Mail>>>, reject: Arc<
         let _ = w.flush();
     };
     say(&mut writer, "220 hamis-smtp ESMTP kesz");
+    if behavior.lock().hang_up {
+        return;
+    }
     let (mut from, mut to): (String, Vec<String>) = (String::new(), Vec::new());
     let mut line = String::new();
     loop {
@@ -207,15 +249,60 @@ fn serve(stream: std::net::TcpStream, mails: Arc<Mutex<Vec<Mail>>>, reject: Arc<
         let upper = command.to_uppercase();
         if upper.starts_with("EHLO") {
             say(&mut writer, "250-hamis-smtp");
+            if behavior.lock().login.is_some() {
+                say(&mut writer, "250-AUTH PLAIN LOGIN");
+            }
             say(&mut writer, "250 8BITMIME");
+        } else if upper.starts_with("AUTH") {
+            let expected = behavior.lock().login.clone();
+            let parts: Vec<&str> = command.split_whitespace().collect();
+            let credentials = match (parts.get(1).map(|m| m.to_uppercase()).as_deref(), parts.get(2)) {
+                (Some("PLAIN"), Some(initial)) => decode_b64(initial).map(|raw| {
+                    let mut fields = raw.split('\0');
+                    fields.next();
+                    (fields.next().unwrap_or("").to_string(), fields.next().unwrap_or("").to_string())
+                }),
+                (Some("PLAIN"), None) => {
+                    say(&mut writer, "334 ");
+                    line.clear();
+                    let _ = reader.read_line(&mut line);
+                    decode_b64(line.trim()).map(|raw| {
+                        let mut fields = raw.split('\0');
+                        fields.next();
+                        (fields.next().unwrap_or("").to_string(), fields.next().unwrap_or("").to_string())
+                    })
+                }
+                (Some("LOGIN"), _) => {
+                    say(&mut writer, "334 VXNlcm5hbWU6");
+                    line.clear();
+                    let _ = reader.read_line(&mut line);
+                    let user = decode_b64(line.trim()).unwrap_or_default();
+                    say(&mut writer, "334 UGFzc3dvcmQ6");
+                    line.clear();
+                    let _ = reader.read_line(&mut line);
+                    Some((user, decode_b64(line.trim()).unwrap_or_default()))
+                }
+                _ => None,
+            };
+            match (expected, credentials) {
+                (Some((u, p)), Some((cu, cp))) if u == cu && p == cp => {
+                    behavior.lock().logins.push(cu);
+                    say(&mut writer, "235 2.7.0 bejelentkezve");
+                }
+                _ => say(&mut writer, "535 5.7.8 hibas felhasznalonev vagy jelszo"),
+            }
         } else if upper.starts_with("HELO") {
             say(&mut writer, "250 hamis-smtp");
         } else if upper.starts_with("MAIL FROM") {
+            if let Some(reply) = behavior.lock().reject_sender.clone() {
+                say(&mut writer, &reply);
+                continue;
+            }
             from = between_angle(&command);
             to.clear();
             say(&mut writer, "250 OK");
         } else if upper.starts_with("RCPT TO") {
-            if let Some(reply) = reject.lock().clone() {
+            if let Some(reply) = behavior.lock().reject_recipient.clone() {
                 say(&mut writer, &reply);
             } else {
                 to.push(between_angle(&command));
@@ -235,6 +322,10 @@ fn serve(stream: std::net::TcpStream, mails: Arc<Mutex<Vec<Mail>>>, reject: Arc<
                 }
                 // a pont-kitöltés (dot-stuffing) visszafejtése
                 data.push_str(line.strip_prefix('.').filter(|_| line.starts_with("..")).unwrap_or(&line));
+            }
+            if let Some(reply) = behavior.lock().reject_data.clone() {
+                say(&mut writer, &reply);
+                continue;
             }
             let raw = data.strip_suffix("\r\n").unwrap_or(&data).to_string();
             mails.lock().push(Mail { from: from.clone(), to: to.clone(), raw });
@@ -257,4 +348,9 @@ fn between_angle(command: &str) -> String {
         (Some(a), Some(b)) if b > a => command[a + 1..b].to_string(),
         _ => command.split(':').nth(1).unwrap_or("").trim().to_string(),
     }
+}
+
+fn decode_b64(text: &str) -> Option<String> {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.decode(text).ok().map(|b| String::from_utf8_lossy(&b).to_string())
 }
