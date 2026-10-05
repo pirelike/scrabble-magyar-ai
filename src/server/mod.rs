@@ -3,6 +3,7 @@
 pub mod core;
 pub mod events;
 pub mod extras;
+pub mod http;
 pub mod net;
 pub mod play;
 
@@ -114,4 +115,110 @@ pub fn build_socketio(app: &Arc<App>) -> (SocketIoLayer, SocketIo) {
     io.ns("/", on_connect.with(ip_guard));
     app.set_io(io.clone());
     (layer, io)
+}
+
+// ===================================================================================================
+// HTTP szolgáltatás és háttérfolyamatok
+// ===================================================================================================
+
+use axum::Router;
+use axum::extract::Request;
+use axum::http::{HeaderValue, StatusCode, header};
+use axum::middleware::{Next, from_fn_with_state};
+use axum::response::{IntoResponse, Response};
+use tower_http::services::ServeDir;
+use tower_http::set_header::SetResponseHeaderLayer;
+
+/// A 403-as válasz a kitiltott IP-nek (minden útvonalra ugyanaz, így nem árul el semmit).
+fn forbidden() -> Response {
+    let body = "<!doctype html>\n<html lang=en>\n<title>403 Forbidden</title>\n<h1>Forbidden</h1>\n<p>You don't have the permission to access the requested resource. It is either read-protected or not readable by the server.</p>\n";
+    let mut response = (StatusCode::FORBIDDEN, body).into_response();
+    response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
+    response
+}
+
+/// Az őr az egész alkalmazás előtt (az útvonal-illesztés előtt): kitiltott IP, majd az admin útvonalak őre.
+async fn guard(axum::extract::State(app): axum::extract::State<Arc<App>>, request: Request, next: Next) -> Response {
+    let peer = request.extensions().get::<ConnectInfo<SocketAddr>>().map(|c| c.0.ip());
+    let ip = net::client_ip(request.headers(), peer);
+    if app.ip_bans.is_banned(&app.db, &ip) {
+        return forbidden();
+    }
+    next.run(request).await
+}
+
+/// A teljes HTTP + Socket.IO szolgáltatás.
+pub fn build_router(app: &Arc<App>) -> Router {
+    let static_files = tower::ServiceBuilder::new()
+        .layer(SetResponseHeaderLayer::if_not_present(header::CACHE_CONTROL, HeaderValue::from_static("no-cache")))
+        .service(ServeDir::new(app.base_dir.join("static")));
+    let (sio_layer, _io) = build_socketio(app);
+    let inner = Router::new()
+        .merge(http::public_routes())
+        .nest_service("/static", static_files)
+        .fallback(|| async { http::not_found() })
+        .with_state(app.clone())
+        .layer(sio_layer);
+    Router::new().fallback_service(inner).layer(from_fn_with_state(app.clone(), guard))
+}
+
+/// Háttérfolyamatok: levelezős határidők, admin számlálók, ütemezett karbantartás.
+pub fn spawn_background_tasks(app: &Arc<App>) {
+    let a = app.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            let app = a.clone();
+            let result = tokio::task::spawn_blocking(move || core::expire_async_turns(&app, None)).await;
+            match result {
+                Ok(count) => a.job_ran("async_sweeper", true, Some(count.to_string())),
+                Err(e) => {
+                    a.job_ran("async_sweeper", false, Some(e.to_string()));
+                    println!("[async] Hiba a határidők ellenőrzésénél: {e}");
+                }
+            }
+        }
+    });
+    let a = app.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            if a.room_member_count(core::ADMIN_ROOM) > 0 {
+                let overview = {
+                    let st = a.state.lock();
+                    crate::admin::live::overview_light(&a, &st)
+                };
+                a.emit_room(core::ADMIN_ROOM, "admin_overview", &overview);
+            }
+            a.job_ran("admin_broadcaster", true, None);
+        }
+    });
+}
+
+/// A szerver indítása a megadott porton (a folyamat leállásáig fut).
+pub async fn serve(app: Arc<App>, port: u16) -> std::io::Result<()> {
+    let router = build_router(&app);
+    let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await?;
+    println!("  [*] A szerver fut: http://localhost:{port}");
+    axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>())
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        if let Ok(mut signal) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            signal.recv().await;
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
 }

@@ -165,7 +165,7 @@ pub const VERIFICATION_CODE_EXPIRY_MINUTES: i64 = 10;
 pub const VERIFICATION_MAX_ATTEMPTS: i64 = 5;
 pub const EMAIL_VERIFIED_WINDOW_MINUTES: i64 = 30;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Config {
     pub smtp_host: String,
     pub smtp_port: u16,

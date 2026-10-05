@@ -6,9 +6,11 @@
 //!  * a napló csak hozzáfűzhető: a táblán adatbázis-trigger tiltja a módosítást és a törlést;
 //!  * a személyes adat megtekintése is naplózódik (`view.*`), indoklás nélkül (`record`).
 
+pub mod comm;
 pub mod live;
 pub mod moderation;
 pub mod security;
+pub mod system;
 
 use crate::config::IpNet;
 use crate::db::Db;

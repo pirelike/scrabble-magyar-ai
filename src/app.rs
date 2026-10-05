@@ -135,24 +135,28 @@ impl App {
         self.io.get()
     }
 
-    /// Esemény egyetlen kapcsolatnak (minden kapcsolat a saját SID nevű szobájában van).
+    /// Esemény egyetlen kapcsolatnak. Az elküldés szinkron (a sorrend megmarad: a kapcsolat saját sorába kerül).
     pub fn emit_to<T: Serialize + ?Sized>(&self, sid: &str, event: &str, data: &T) {
-        if let Some(io) = self.io.get() {
-            let _ = io.to(sid.to_string()).emit(event, data);
+        if let Some(socket) = self.socket(sid) {
+            let _ = socket.emit(event, data);
         }
     }
 
     /// Esemény egy szobának (Socket.IO szoba).
     pub fn emit_room<T: Serialize + ?Sized>(&self, room: &str, event: &str, data: &T) {
         if let Some(io) = self.io.get() {
-            let _ = io.to(room.to_string()).emit(event, data);
+            for socket in io.to(room.to_string()).sockets() {
+                let _ = socket.emit(event, data);
+            }
         }
     }
 
     /// Esemény minden csatlakozott kapcsolatnak.
     pub fn emit_all<T: Serialize + ?Sized>(&self, event: &str, data: &T) {
         if let Some(io) = self.io.get() {
-            let _ = io.broadcast().emit(event, data);
+            for socket in io.sockets() {
+                let _ = socket.emit(event, data);
+            }
         }
     }
 
