@@ -150,3 +150,8 @@ pub fn items_of(response: &Resp, key: &str) -> Vec<Value> {
 pub fn audit_of(server: &TestServer, prefix: &str) -> Vec<Value> {
     audit_rows(server).into_iter().filter(|r| r["action"].as_str().unwrap_or("").starts_with(prefix)).collect()
 }
+
+/// Futásidejű beállítás közvetlenül az adatbázisban (az `app.settings` gyorsítótára is frissül).
+pub fn set_setting(server: &TestServer, key: &str, value: Value) {
+    server.app.db.with(|tx| server.app.settings.store(tx, key, &value, None).map(|_| ()).map_err(|e| rusqlite::Error::InvalidParameterName(e.0))).unwrap();
+}
