@@ -914,7 +914,7 @@ impl Game {
     }
 
     /// Játék vége, végső pontozás.
-    fn end_game(&mut self, finisher: Option<usize>) {
+    pub fn end_game(&mut self, finisher: Option<usize>) {
         self.finished = true;
         self.pending_challenge = None;
 
