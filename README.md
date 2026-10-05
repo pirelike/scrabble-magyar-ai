@@ -249,6 +249,7 @@ Ugyanazon a gépen (4 mag), ugyanarról a mintaadatbázisról (400 felhasználó
 | `target/release/bot_arena` | A robot-fokozatok erejének mérése bot–bot játékokkal (`ladder`, `match`, `adapt`) |
 | `target/release/build_attested` | A `dict/hu_attested.txt` előállítása szógyakorisági listából |
 | `scripts/perf.sh` | Teljesítményteszt a Python és a Rust verzió között (`docs/PERFORMANCE.md`) |
+| `target/release/engine_duel` | A robot párharca egy külső Scrabble motorral (`cargo build --release --features engine-duel --bin engine_duel`; leírás és eredmények: [docs/ENGINE_DUEL.md](docs/ENGINE_DUEL.md)) |
 
 ---
 

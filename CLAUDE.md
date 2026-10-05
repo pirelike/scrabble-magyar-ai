@@ -31,9 +31,10 @@ Környezeti változók (mind opcionális): `PORT` (5000), `ADMIN_EMAILS`, `ADMIN
 ├── dict/                              — hu_HU szótár (hu_HU.aff / .dic), hu_attested.txt, hu_rejected.txt
 ├── tests/                             — integrációs tesztek (`*.rs`), `common/`, `frontend_support/`, `golden/`, `compat/`, `browser/`
 ├── benches/compare.rs                 — teljesítményteszt a Python és a Rust verzió között
+├── third_party/pg-scrabble/           — a külső `scrabble` 0.1.0 motor vendorolt, 64 bites betűmaszkokra kiszélesített másolata (MIT; csak a `engine-duel` kapcsolóval fordul)
 ├── scripts/                           — run.sh (indítás), perf.sh (mérés), python-baseline.sh (a régi verzió előkészítése)
 ├── deploy/scrabble.service            — systemd egység az otthoni szerverhez
-└── docs/                              — ADMIN_PANEL.md (specifikáció), PERFORMANCE.md (mérési eredmények)
+└── docs/                              — ADMIN_PANEL.md (specifikáció), PERFORMANCE.md (Python–Rust mérés), ENGINE_DUEL.md (robot–külső motor párharc), engine_duel/ (a tanult maradék-értékek)
 ```
 
 A régi Python (Flask + Socket.IO) verzió a `python-final` ágon / címkén van (a repo fő ágából az átírás után kikerült);
@@ -71,9 +72,11 @@ A moduloknak rövid, lapos elérési útjuk is van (`crate::tiles` = `crate::eng
 - `db/` — SQLite (rusqlite, WAL): `schema.sql` (a séma, a Python verzióval azonos), `users.rs` (regisztráció, login, session, kitiltás / némítás, belépési napló), `games.rs` (játék mentés/visszatöltés/lépésnaplózás, ranglista), `misc.rs` (beállítások, push, szótár-építő, napi feladvány, barátok…); `admin_audit` tábla (triggerekkel csak hozzáfűzhető), az admin panel táblái (lásd „Admin panel”)
 - `server/` — `mod.rs` (az útvonalak és a Socket.IO bekötése: `InOrder` kinyerő, `SYNC_EVENTS` táblázat, kapcsolat-őr), `http.rs` (HTTP útvonalak: auth (+ push feliratkozás), game (lépések, megosztás, elemzés, levelezős lista), public (ranglista, szótár-ellenőrző, napi feladvány, gyakorló módok), index + PWA: `/manifest.webmanifest`, `/sw.js`), `events.rs` (szobák, lobby, csatlakozás, türelmi idők), `play.rs` (lerakás, csere, passz, szavazás, chat, előnézet, bejelentés), `extras.rs` (napi feladvány, levelezős játék, megfigyelők, barátok, admin események), `core.rs` (robotlépések — `schedule_bot_turn` / `play_bot_turn` —, mentés, időzítők, push a saját körre), `net.rs` (kliens-IP, sütik), `room.rs` (`Room`: szoba állapot, owner, beállítások, chat, timer invalidálás, megfigyelők, robotlépés-azonosító), `state.rs` (`ServerState`: szobák, játékosok, tokenek, reconnect tracking, megfigyelők, élő játékok)
 - `admin/` — Admin panel: `mod.rs` (napló — `action`: kötelező indoklás, a művelettel egy tranzakcióban; `record`: `view.*` események indoklás nélkül —, közös segédek: `clean_text`, `order_by`, `parse_until`…, `ip_allowed`), `session.rs` (munkamenet: `session_status`, `touch`, `sudo_active`, `reauth`, `grant_sudo`, `end_sudo`), `audit.rs` (naplólekérdezés és CSV), `routes.rs` (az őr: 404 / IP-lista / forgalomkorlát / CSRF / tétlenség; jogosultsági szintek: `Normal` / `Danger` / `Sudo`; `route_table` a hozzáférési tesztekhez), `api/*.rs` (a végpontok: `users`, `game`, `dict`, `comm`, `system`), `users.rs`, `live.rs` (élő szobák, beavatkozások, számlálók, figyelmeztetések, grafikonok), `games.rs`, `dict.rs`, `comm.rs`, `stats.rs`, `moderation.rs`, `security.rs`, `system.rs`, `mail.rs` (a levelező szerver beállításának ellenőrzése, mentése, visszaállítása, kapcsolat-próbája), `update.rs` (frissítés GitHubról — `check`, `apply` — és újraindítás; lásd „Frissítés GitHubról és újraindítás”)
+- `engine_duel/` — a robot és a külső motor párharca (`--features engine-duel`): `lexicon` (a motor szabályai és szótára: a robot szókincse minden jogos zsetonbontásban), `bridge` (tábla / kéz / lépés átalakítása, tisztességes nem látott készlet), `sides` (`BotSide`: 8–10. fokozat szókincsre szűrve, mohó, éles; `EngineSide`: mohó / gyári / tanult értékelés, szimuláció, pontos végjáték; `View` — az oldalak csak ezt látják), `referee` (egy játék a saját `Game`-mel, magból épített tükrözött zsák, invariánsok, hibánál megszakítás), `leaves` (a motor magyar maradék-értéke: lineáris + páros modell, önjátékból tanítva, normálegyenlet, kivárt hiba), `runner` / `report` / `stats` (párok futtatása, JSONL napló, párszintű statisztika), `crosscheck` (a két független lépésgenerátor összevetése), `spec` (az oldalak szöveges leírása); lásd „Motor-összevetés”
 - `bin/` — karbantartó eszközök (nem részei a szervernek)
   - `bot_arena.rs` — Robot-aréna: a fokozatok erejének mérése bot–bot játékokkal (`ladder`, `match`, `adapt`; kalibrációhoz)
   - `build_attested.rs` — a `dict/hu_attested.txt` előállítása egy szógyakorisági listából (elírásszűrővel)
+  - `engine_duel.rs` — a párharc parancssora (`--features engine-duel`): `duel A B`, `train`, `solve`, `crosscheck`, `report`, `info`
   - `word_review.rs` — a szótár-építő tömeges párja: `sample` (véletlen szavak átnézésre, pl. AI-nak), `apply` (az elutasított szavak felvétele a `dict/hu_rejected.txt`-be), `stats`
 
 ### `web/` és `dict/`
@@ -305,6 +308,8 @@ Az integrációs tesztek **valódi szervert** indítanak egy véletlen porton, i
 
 **Összesen: 1270 teszt**
 
+Ezen felül, a `--features engine-duel` kapcsolóval: `tests/engine_duel.rs` (30 teszt: szabályazonosság, híd, a két független lépésgenerátor egyezése, játékvezető és hibakezelés, ismételhetőség, tanítás, futtató / jelentés) és 13 egységteszt az `engine_duel` modulban (statisztika, maradék-modell); a vendorolt motor tesztjei: `cargo test -p pg-scrabble --all-features` (196). Futtatás: `cargo test --features engine-duel --test engine_duel`.
+
 Segédek: `tests/common/mod.rs` — `TestServer` (szerver ideiglenes mappával, `start_with` a konfiguráció módosításához, `start_in` másik programmappához), `Http` (süti-kezelés, admin kérések: `admin_get` / `admin_post` / `sudo()`), `Sio` (Socket.IO kliens: `emit`, `call`, `wait`, `settle`, `wait_code`, `my_turn`…), `with_room`; `tests/common/admin.rs` — `make_user`, `audit_rows`, `finished_game`, `live_room`, `set_setting`…; `tests/common/smtp.rs`, `push.rs` — hamis SMTP kiszolgáló és push szolgáltatás; `tests/frontend_support/` — a kliens-tesztek segédei (node futtatás, HTML bejárás, a Rust forrás üzeneteinek kigyűjtése).
 
 Tudnivalók a tesztek írásához:
@@ -313,6 +318,17 @@ Tudnivalók a tesztek írásához:
 - Időzítés: `Sio::settle()` a szerver feldolgozás alatt álló eseményeinek számlálóját (`events_in_flight`) is megvárja; fix `sleep` helyett `wait_code`, `wait_registered` jellegű várakozás kell.
 
 **Aranyfájlok** (`tests/golden/`): a régi Python implementációval előállított adatok (szóellenőrzés, robot lépések, gyakorló módok, szókincs, játékállapotok, SQLite fájl), amelyekkel a Rust tesztek a viselkedés egyezését őrzik; a generátorok és az újragenerálás leírása a `tests/golden/README.md`-ben van. **Differenciális összevetés** (`tests/compat/`): ugyanazok a forgatókönyvek a régi és az új szerveren (`tests/compat/run.sh`). **Teljesítmény**: `scripts/perf.sh` (`benches/compare.rs`), eredmények: `docs/PERFORMANCE.md`.
+
+## Motor-összevetés (robot ↔ külső Scrabble motor)
+
+Részletek, módszertan és eredmények: **`docs/ENGINE_DUEL.md`**. Röviden:
+- A külső motor a crates.io `scrabble` 0.1.0 (Pranav Gundu, MIT) vendorolt másolata (`third_party/pg-scrabble`, csomagnév `pg-scrabble`), 64 bites betűmaszkokkal (a magyar ábécé 38 betűje nem fér az eredeti 30-ba); a változtatások: `third_party/pg-scrabble/PATCHES.md`. A csomag a munkaterület tagja, de a szerver alap-fordítását nem érinti (opcionális függőség).
+- Fordítás és futtatás: `cargo build --release --features engine-duel --bin engine_duel`; `engine_duel duel bot:10 eng:leaves:sim+eg --leaves docs/engine_duel/leaves-hu.json --pairs 400 --first-pair 100001 -j 4`.
+- A játékvezető a saját `Game`-ünk; a motor csak lépést javasol. Közös szókincs: a robot szókincse minden jogos zsetonbontásban; a robot a párharcban a szókincsére szűrt (`bot:10`), az éles működés külön (`bot:10:full`).
+- Tükrözött párok (ugyanaz a zsák, felcserélt kezdés), pármagok: fejlesztői < 100 000, a végleges mérés 100 001-től; a tanító magok ≥ 10⁹ (a kiértékelő magok < 10⁶, a kód ellenőrzi).
+- A motor magyar maradék-értékét önjátékból tanítjuk (`engine_duel train` / `solve`, a robot kódját nem használja); a végleges táblázat `docs/engine_duel/leaves-hu.json`.
+- Új oldal hozzáadása: `src/engine_duel/spec.rs` (a leírás-nyelv), `sides.rs`; a `tests/engine_duel.rs` számon kéri a szabályazonosságot és az egyező lépéshalmazt.
+- Az `.perf/duel/` (gitignorált) a naplókat és a köztes modelleket tartalmazza.
 
 ## Challenge (megtámadás) rendszer — szavazásos
 
