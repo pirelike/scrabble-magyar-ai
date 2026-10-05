@@ -6,16 +6,18 @@ pub mod extras;
 pub mod http;
 pub mod net;
 pub mod play;
+pub mod room;
+pub mod state;
 
 use crate::app::App;
+use crate::state::ServerState;
 use axum::extract::ConnectInfo;
 use serde_json::Value;
-use crate::state::ServerState;
+use socketioxide::SocketIo;
 use socketioxide::adapter::LocalAdapter;
 use socketioxide::extract::{Event, SocketRef, State, TryData};
-use socketioxide::socket::Socket;
 use socketioxide::layer::SocketIoLayer;
-use socketioxide::SocketIo;
+use socketioxide::socket::Socket;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -84,7 +86,9 @@ impl socketioxide::handler::FromMessageParts<LocalAdapter> for InOrder {
     type Error = std::convert::Infallible;
 
     fn from_message_parts(socket: &Arc<Socket<LocalAdapter>>, payload: &mut socketioxide::handler::Value, ack: &Option<i64>) -> Result<Self, Self::Error> {
-        if let (Ok(Event(name)), Ok(State(app))) = (Event::from_message_parts(socket, payload, ack), State::<Arc<App>>::from_message_parts(socket, payload, ack)) {
+        if let (Ok(Event(name)), Ok(State(app))) =
+            (Event::from_message_parts(socket, payload, ack), State::<Arc<App>>::from_message_parts(socket, payload, ack))
+        {
             let data = match TryData::<Value>::from_message_parts(socket, payload, ack) {
                 Ok(TryData(data)) => data.unwrap_or(Value::Null),
                 Err(_) => Value::Null,
@@ -187,7 +191,7 @@ async fn guard(axum::extract::State(app): axum::extract::State<Arc<App>>, reques
 pub fn build_router(app: &Arc<App>) -> Router {
     let static_files = tower::ServiceBuilder::new()
         .layer(SetResponseHeaderLayer::if_not_present(header::CACHE_CONTROL, HeaderValue::from_static("no-cache")))
-        .service(ServeDir::new(app.base_dir.join("static")));
+        .service(ServeDir::new(app.base_dir.join("web/static")));
     let (sio_layer, _io) = build_socketio(app);
     let (admin_routes, _table) = crate::admin::routes::admin_router(app);
     let inner = Router::new()
@@ -224,10 +228,11 @@ async fn finish_response(request: axum::extract::Request, next: axum::middleware
         Some(value) => {
             let lower = value.to_ascii_lowercase();
             let textual = lower.starts_with("text/") || lower.contains("javascript");
-            if textual && !lower.contains("charset") {
-                if let Ok(updated) = HeaderValue::from_str(&format!("{value}; charset=utf-8")) {
-                    response.headers_mut().insert(header::CONTENT_TYPE, updated);
-                }
+            if textual
+                && !lower.contains("charset")
+                && let Ok(updated) = HeaderValue::from_str(&format!("{value}; charset=utf-8"))
+            {
+                response.headers_mut().insert(header::CONTENT_TYPE, updated);
             }
         }
     }
@@ -290,7 +295,11 @@ pub async fn serve(app: Arc<App>, port: u16) -> std::io::Result<()> {
 }
 
 /// A szerver futtatása egy már megnyitott figyelőn, a megadott leállítási jelig (a tesztek ezt használják).
-pub async fn serve_on(app: Arc<App>, listener: tokio::net::TcpListener, shutdown: impl std::future::Future<Output = ()> + Send + 'static) -> std::io::Result<()> {
+pub async fn serve_on(
+    app: Arc<App>,
+    listener: tokio::net::TcpListener,
+    shutdown: impl std::future::Future<Output = ()> + Send + 'static,
+) -> std::io::Result<()> {
     let router = build_router(&app);
     axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).with_graceful_shutdown(shutdown).await
 }

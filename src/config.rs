@@ -77,7 +77,7 @@ pub fn parse_ip_networks(raw: &str) -> Result<Vec<IpNet>, String> {
     Ok(networks)
 }
 
-/// A program mappája (ahol a `static/`, `templates/`, `dict/` van). A `SCRABBLE_BASE_DIR`, ennek híján a
+/// A program mappája (ahol a `web/`, `dict/` van). A `SCRABBLE_BASE_DIR`, ennek híján a
 /// futtatás mappája, a végrehajtható fájl környéke, végül a fordítás helye.
 pub fn base_dir() -> &'static Path {
     static BASE: OnceLock<PathBuf> = OnceLock::new();
@@ -104,7 +104,7 @@ pub fn base_dir() -> &'static Path {
         candidates.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")));
         candidates
             .into_iter()
-            .find(|dir| dir.join("static").is_dir() && dir.join("dict").is_dir())
+            .find(|dir| dir.join("web/static").is_dir() && dir.join("dict").is_dir())
             .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")))
     })
 }
@@ -138,9 +138,8 @@ pub fn load_env_file(path: &Path) -> Vec<String> {
                 value = &value[1..value.len() - 1];
             }
         }
-        let valid_key = !key.is_empty()
-            && key.replace('_', "").chars().all(|c| c.is_ascii_alphanumeric())
-            && !key.chars().next().is_some_and(|c| c.is_ascii_digit());
+        let valid_key =
+            !key.is_empty() && key.replace('_', "").chars().all(|c| c.is_ascii_alphanumeric()) && !key.chars().next().is_some_and(|c| c.is_ascii_digit());
         if valid_key && std::env::var_os(key).is_none() {
             // SAFETY: az indulás elején, a szálak elindítása előtt hívódik.
             unsafe { std::env::set_var(key, value) };
@@ -207,11 +206,7 @@ impl Config {
 
     /// A környezeti változókból (a `.env` betöltése után). Hibás `ADMIN_IP_ALLOWLIST`-nél hiba.
     pub fn from_env() -> Result<Config, String> {
-        let admin_emails = env_string("ADMIN_EMAILS", "")
-            .split(',')
-            .map(|e| e.trim().to_lowercase())
-            .filter(|e| !e.is_empty())
-            .collect();
+        let admin_emails = env_string("ADMIN_EMAILS", "").split(',').map(|e| e.trim().to_lowercase()).filter(|e| !e.is_empty()).collect();
         let secret_key = std::env::var("SECRET_KEY").ok().filter(|k| !k.is_empty()).unwrap_or_else(|| {
             let mut bytes = [0u8; 32];
             use rand::RngExt;

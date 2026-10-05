@@ -165,10 +165,7 @@ pub fn with_session_cookie(mut response: Response, token: &str, secure: bool) ->
 }
 
 pub fn without_session_cookie(mut response: Response) -> Response {
-    response.headers_mut().append(
-        header::SET_COOKIE,
-        HeaderValue::from_static("session_token=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Path=/"),
-    );
+    response.headers_mut().append(header::SET_COOKIE, HeaderValue::from_static("session_token=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Path=/"));
     response
 }
 
@@ -214,7 +211,7 @@ fn tiles_json(word: &str) -> Value {
 
 /// A kliens fájlok legutóbbi módosítási ideje (másodperc) — a gyorsítótár verziója.
 pub fn asset_version(app: &App) -> i64 {
-    ["static/app.js", "static/style.css", "static/i18n-data.js", "static/i18n.js", "templates/index.html"]
+    ["web/static/app.js", "web/static/style.css", "web/static/i18n-data.js", "web/static/i18n.js", "web/templates/index.html"]
         .iter()
         .filter_map(|rel| mtime(&app.base_dir.join(rel)))
         .max()
@@ -223,9 +220,7 @@ pub fn asset_version(app: &App) -> i64 {
 
 /// Az admin fájlok legutóbbi módosítási ideje.
 pub fn admin_asset_version(app: &App) -> i64 {
-    std::fs::read_dir(app.base_dir.join("admin_assets"))
-        .map(|dir| dir.flatten().filter_map(|e| mtime(&e.path())).max().unwrap_or(0))
-        .unwrap_or(0)
+    std::fs::read_dir(app.base_dir.join("web/admin")).map(|dir| dir.flatten().filter_map(|e| mtime(&e.path())).max().unwrap_or(0)).unwrap_or(0)
 }
 
 fn mtime(path: &std::path::Path) -> Option<i64> {
@@ -235,7 +230,7 @@ fn mtime(path: &std::path::Path) -> Option<i64> {
 
 /// A sablon szövege; a záró újsort (mint a Jinja alapértelmezése) levágja.
 fn read_template(app: &App, name: &str) -> Option<String> {
-    let text = std::fs::read_to_string(app.base_dir.join("templates").join(name)).ok()?;
+    let text = std::fs::read_to_string(app.base_dir.join("web/templates").join(name)).ok()?;
     Some(text.strip_suffix('\n').map(|t| t.to_string()).unwrap_or(text))
 }
 
@@ -257,12 +252,12 @@ pub fn render_admin_page(app: &App) -> Option<String> {
 async fn index(State(app): State<Arc<App>>) -> Response {
     match read_template(&app, "index.html") {
         Some(template) => html_response(template.replace("{{ asset_v }}", &asset_version(&app).to_string())),
-        None => (StatusCode::INTERNAL_SERVER_ERROR, "Hiányzik a templates/index.html").into_response(),
+        None => (StatusCode::INTERNAL_SERVER_ERROR, "Hiányzik a web/templates/index.html").into_response(),
     }
 }
 
 async fn manifest(State(app): State<Arc<App>>) -> Response {
-    match std::fs::read(app.base_dir.join("static/manifest.webmanifest")) {
+    match std::fs::read(app.base_dir.join("web/static/manifest.webmanifest")) {
         Ok(bytes) => {
             let mut response = (StatusCode::OK, bytes).into_response();
             response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("application/manifest+json"));
@@ -694,11 +689,8 @@ async fn push_subscribe(State(app): State<Arc<App>>, client: Client, body: Bytes
     fn valid(text: Option<&str>, low: usize, high: usize) -> Option<&str> {
         text.filter(|t| (low..=high).contains(&t.chars().count()))
     }
-    let (Some(endpoint), Some(p256dh), Some(auth_key)) = (
-        endpoint.filter(|e| PUSH_ENDPOINT_RE.is_match(e)),
-        valid(p256dh, 20, 200),
-        valid(auth_key, 8, 100),
-    ) else {
+    let (Some(endpoint), Some(p256dh), Some(auth_key)) = (endpoint.filter(|e| PUSH_ENDPOINT_RE.is_match(e)), valid(p256dh, 20, 200), valid(auth_key, 8, 100))
+    else {
         return fail(400, "Érvénytelen feliratkozás.");
     };
     let lang = data.get("lang").and_then(|l| l.as_str()).filter(|l| push::is_supported_lang(l)).unwrap_or(push::DEFAULT_LANG);
@@ -892,7 +884,13 @@ async fn word_review_stats(State(app): State<Arc<App>>, client: Client) -> Respo
 // Szótár-ellenőrző
 // ===================================================================================================
 
-async fn dictionary_check(State(app): State<Arc<App>>, client: Client, method: axum::http::Method, Query(query): Query<HashMap<String, String>>, body: Bytes) -> Response {
+async fn dictionary_check(
+    State(app): State<Arc<App>>,
+    client: Client,
+    method: axum::http::Method,
+    Query(query): Query<HashMap<String, String>>,
+    body: Bytes,
+) -> Response {
     if !app.limiter.check_ip(&client.ip, "dictionary") {
         return too_many();
     }
@@ -1075,16 +1073,15 @@ async fn game_analysis(State(app): State<Arc<App>>, client: Client, IdPath(game_
     if row.text("status") != "finished" {
         return fail(400, "Csak befejezett játék elemezhető.");
     }
-    if let Some((version, result_json)) = app.db.get_game_analysis(game_id) {
-        if version == analysis::ANALYSIS_VERSION {
-            if let Ok(Value::Object(result)) = serde_json::from_str::<Value>(&result_json) {
-                let mut payload = json!({"success": true, "status": "ready"});
-                for (k, v) in result {
-                    payload[k] = v;
-                }
-                return ok(payload);
-            }
+    if let Some((version, result_json)) = app.db.get_game_analysis(game_id)
+        && version == analysis::ANALYSIS_VERSION
+        && let Ok(Value::Object(result)) = serde_json::from_str::<Value>(&result_json)
+    {
+        let mut payload = json!({"success": true, "status": "ready"});
+        for (k, v) in result {
+            payload[k] = v;
         }
+        return ok(payload);
     }
     {
         let jobs = app.analysis_jobs.lock();

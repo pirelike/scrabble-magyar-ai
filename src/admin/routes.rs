@@ -104,11 +104,7 @@ impl AdminReq {
 
     /// Feltételes sudo-igény: a 401 `sudo_required` hibát adja, ha nincs érvényes megerősítés.
     pub fn require_sudo(&self) -> AdminResult<()> {
-        if self.sudo_active() {
-            Ok(())
-        } else {
-            Err(sudo_error())
-        }
+        if self.sudo_active() { Ok(()) } else { Err(sudo_error()) }
     }
 }
 
@@ -518,8 +514,7 @@ fn audit_list(req: &AdminReq) -> HResult {
         let result = query_audit(&req.app.db, &filters, Some(&limit), None, AUDIT_EXPORT_MAX)?;
         let rows = result["items"].as_array().map(|a| a.len()).unwrap_or(0);
         req.app.db.with(|tx| {
-            record(tx, req.ctx(), "view.audit_export", Some("audit"), None, &json!({"format": format, "filters": filters.active(), "rows": rows}))
-                .map(|_| ())
+            record(tx, req.ctx(), "view.audit_export", Some("audit"), None, &json!({"format": format, "filters": filters.active(), "rows": rows})).map(|_| ())
         })?;
         let items = result["items"].as_array().cloned().unwrap_or_default();
         if format == "csv" {
@@ -559,7 +554,7 @@ pub fn admin_router(app: &Arc<App>) -> (Router<Arc<App>>, Vec<(Method, String)>)
     super::api::register_all(&mut r);
 
     let AdminRouter { router, mut table } = r;
-    let assets = ServeDir::new(app.base_dir.join("admin_assets"));
+    let assets = ServeDir::new(app.base_dir.join("web/admin"));
     let router = router.route("/admin", get(admin_page)).nest_service("/admin/assets", assets);
     table.push((Method::GET, "/admin".to_string()));
     (router, table)
