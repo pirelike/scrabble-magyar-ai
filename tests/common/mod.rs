@@ -175,6 +175,16 @@ pub fn relax_ip_limits(app: &App) {
     app.limiter.set_overrides(ip, HashMap::new());
 }
 
+/// A megadott Socket.IO események forgalomkorlátjának felemelése (a hosszú, gépi játékokhoz); az IP-korlátok is lazák.
+pub fn relax_socket_limits(app: &App, events: &[&str]) {
+    let mut ip = HashMap::new();
+    for key in ["request_code", "login", "register", "admin", "admin_danger", "practice", "dictionary", "daily", "word_review", "search_users"] {
+        ip.insert(key.to_string(), (100_000u32, 60u32));
+    }
+    let socket: HashMap<String, (u32, u32)> = events.iter().map(|e| (e.to_string(), (100_000u32, 10u32))).collect();
+    app.limiter.set_overrides(ip, socket);
+}
+
 /// Az alapértelmezett (éles) korlátok visszaállítása.
 pub fn restore_default_limits(app: &App) {
     app.limiter.set_overrides(HashMap::new(), HashMap::new());

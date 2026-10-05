@@ -104,7 +104,7 @@ pub fn bot_tier(difficulty: Option<Difficulty>) -> &'static str {
 }
 
 /// Robot "gondolkodási" ideje másodpercben (min, max): a lépés ennyi várakozás után jelenik meg.
-fn think_delay(tier: &str) -> (f64, f64) {
+pub fn think_delay(tier: &str) -> (f64, f64) {
     match tier {
         "easy" => (1.5, 3.0),
         "medium" => (1.2, 2.6),
@@ -112,7 +112,7 @@ fn think_delay(tier: &str) -> (f64, f64) {
     }
 }
 
-fn bot_name_pool(tier: &str) -> [&'static str; 3] {
+pub fn bot_name_pool(tier: &str) -> [&'static str; 3] {
     match tier {
         "easy" => ["Robi", "Rozi", "Rudi"],
         "medium" => ["Rita", "Ricsi", "Réka"],
