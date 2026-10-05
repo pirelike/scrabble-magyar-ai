@@ -204,7 +204,10 @@ pub fn create_async_game(app: &Arc<App>, st: &mut ServerState, sid: &str, data: 
         .iter()
         .map(|id| (*id, sanitize_name_str(&friend_name(*id).unwrap_or_default()).unwrap_or_else(|| "Játékos".to_string())))
         .collect();
-    let (game, known) = async_games::build_game(&room_id, sid, &player_name, user_id, &friends, turn_hours, &mut rand::rng());
+    let (mut game, known) = async_games::build_game(&room_id, sid, &player_name, user_id, &friends, turn_hours, &mut rand::rng());
+    if let Some(first) = *app.async_starter.lock() {
+        game.current_player_idx = first % game.players.len();
+    }
 
     let auth = st.player_auth.get(sid).cloned();
     let token = st.generate_reconnect_token(&app.db, sid, &room_id, &player_name, auth.as_ref());

@@ -5,6 +5,8 @@
 
 #![allow(dead_code)]
 
+pub mod push;
+
 use futures_util::{SinkExt, StreamExt};
 use parking_lot::Mutex;
 use scrabble::app::App;

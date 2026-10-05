@@ -93,6 +93,8 @@ pub struct App {
     pub jobs: Mutex<HashMap<String, JobStatus>>,
     /// a futó folyamat indulási commitja (frissítés után az újraindítás jelzéséhez)
     pub running_commit: Mutex<Option<String>>,
+    /// a levelezős játék kezdő játékosa a létrehozás sorrendjében (`None`: véletlen); a tesztek állítják be
+    pub async_starter: Mutex<Option<usize>>,
     io: OnceLock<SocketIo>,
 }
 
@@ -125,6 +127,7 @@ impl App {
             analysis_jobs: Mutex::new(HashMap::new()),
             jobs: Mutex::new(HashMap::new()),
             running_commit: Mutex::new(None),
+            async_starter: Mutex::new(None),
             io: OnceLock::new(),
         })
     }
