@@ -849,6 +849,11 @@ impl AffixChecker {
         !self.compute(word, false) && self.compute(word, true)
     }
 
+    /// Igaz, ha a szó a kockázatos levezetések nélkül is érvényes (a használati listától függetlenül).
+    pub fn valid_without_risky(&self, word: &str) -> bool {
+        self.compute(word, false)
+    }
+
     pub fn is_attested(&self, word: &str) -> bool {
         self.attested.as_ref().is_some_and(|a| a.contains(word))
     }

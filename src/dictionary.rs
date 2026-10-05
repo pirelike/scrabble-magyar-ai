@@ -94,7 +94,7 @@ fn init_checker() {
     match load_checker(&config::dict_dir()) {
         Ok(checker) => {
             let listed = load_rejected(&rejected_path());
-            println!("Szótár: beágyazott hu_HU ({} szótő, {} elutasított szó)", checker.entry_count(), listed.len());
+            eprintln!("Szótár: beágyazott hu_HU ({} szótő, {} elutasított szó)", checker.entry_count(), listed.len());
             LISTS.write().rejected_listed = listed;
             VERSION.fetch_add(1, Ordering::SeqCst);
             *DICT.write() = Some(Dict { checker: Some(Arc::new(checker)) });
