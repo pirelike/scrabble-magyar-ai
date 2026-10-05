@@ -233,8 +233,10 @@ fn mtime(path: &std::path::Path) -> Option<i64> {
     modified.duration_since(std::time::UNIX_EPOCH).ok().map(|d| d.as_secs() as i64)
 }
 
+/// A sablon szövege; a záró újsort (mint a Jinja alapértelmezése) levágja.
 fn read_template(app: &App, name: &str) -> Option<String> {
-    std::fs::read_to_string(app.base_dir.join("templates").join(name)).ok()
+    let text = std::fs::read_to_string(app.base_dir.join("templates").join(name)).ok()?;
+    Some(text.strip_suffix('\n').map(|t| t.to_string()).unwrap_or(text))
 }
 
 pub fn html_response(body: String) -> Response {
