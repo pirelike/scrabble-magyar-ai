@@ -226,15 +226,18 @@ Az admin panelen (Rendszer → „Levelező szerver (SMTP)”) a levelező szerv
 
 A Web Push a `pywebpush` csomagot használja (a `requirements.txt` tartalmazza); ha nincs telepítve, az értesítések kikapcsolnak, a játék többi része változatlanul működik. Az értesítésekhez a böngészőnek HTTPS (vagy `localhost`) kell; iPhone-on az alkalmazást előbb a Főképernyőhöz kell adni.
 
+**Gépre jellemző beállítások (pl. másik `PORT`)**: a program mappájában lévő `.env` fájlt a szerver indításkor magától beolvassa (soronként `KULCS=érték`, opcionális `export`; a ténylegesen beállított környezeti változó erősebb). A fájl nincs a git tárban, ezért az admin panelről indított GitHubos frissítés sosem írja felül. **Ne írd át a portot a `server.py`-ban**: a követett fájl módosítása blokkolja a frissítést.
+
 <details>
-<summary>Példa .env fájl (opcionális, manuálisan kell source-olni)</summary>
+<summary>Példa .env fájl</summary>
 
 ```bash
-export SMTP_HOST=smtp.gmail.com
-export SMTP_PORT=587
-export SMTP_USER=yourscrabble@gmail.com
-export SMTP_PASSWORD=abcd-efgh-ijkl-mnop
-export SMTP_FROM=yourscrabble@gmail.com
+PORT=8080
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=yourscrabble@gmail.com
+SMTP_PASSWORD=abcd-efgh-ijkl-mnop
+SMTP_FROM=yourscrabble@gmail.com
 ```
 
 </details>

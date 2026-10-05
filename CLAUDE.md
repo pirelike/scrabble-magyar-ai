@@ -38,7 +38,7 @@ Böngészőben: http://localhost:5000
 - `settings.py` — Futásidejű beállítások (`app_settings`, `cfg.<kulcs>`): `DEFINITIONS` (típus, határok, alapérték), `get` / `store` / `validate` / `describe`, `maintenance()`; újraindítás nélkül hatnak
 - `admin_assets/` — Az admin felület kliens fájljai: `admin.js` (mag: API, munkamenet, zárolás, sudo), `admin-ui.js` (komponensek, szűrős listanézet, űrlap-párbeszéd, grafikonok, tábla), `admin-views-a.js` / `-b.js` / `-c.js` (menüpontok), `admin-main.js` (útvonalválasztó, élő kapcsolat, Ctrl+K kereső, indítás), `admin.css`, `admin-i18n.js`, `admin-boot.js`; szándékosan NEM a nyilvános `static/` mappában, csak az őrzött útvonalon érhetők el
 - `routes.py` — Flask blueprint-ek: auth (+ push feliratkozás), game (lépések, megosztás, elemzés, levelezős lista), public (ranglista, szótár-ellenőrző, napi feladvány, gyakorló módok), main (index + PWA: `/manifest.webmanifest`, `/sw.js`)
-- `config.py` — SMTP (környezeti alapérték), auth, DB, rate limit és admin (`ADMIN_EMAILS`, tétlenségi / sudo idő, IP-lista) konfigurációs konstansok (`os.environ`-ból)
+- `config.py` — a helyi `.env` fájl beolvasása (`load_env_file`; gitignorált, a frissítés nem írja felül — ide kerül pl. a `PORT`), SMTP (környezeti alapérték), auth, DB, rate limit és admin (`ADMIN_EMAILS`, tétlenségi / sudo idő, IP-lista) konfigurációs konstansok (`os.environ`-ból)
 - `auth.py` — SQLite DB kezelés, regisztráció, login, session, jelszó hash (PBKDF2), játék mentés/visszatöltés/lépésnaplózás, admin: `is_admin_user`, az admin munkamenet állapota (`admin_seen_at`, `sudo_until`), `admin_audit` tábla (triggerekkel csak hozzáfűzhető); kitiltás / némítás (`users.banned_until`, `chat_muted_until`), belépési napló, az admin panel táblái (lásd „Admin panel”)
 - `email_service.py` — SMTP küldés (verifikációs kód, egyszerű levelek; háttérszálon), a titkosítási mód szerint (`starttls` | `ssl` | `none`), ellenőrzött tanúsítvánnyal; `check_connection` / `classify_error` — az admin panel kapcsolat-próbája (biztonságos hibakódokkal)
 - `mail_config.py` — A levelező szerver beállítása: az admin panelen mentett felülbírálat (`app_settings`, `mail.smtp`) vagy a környezeti `SMTP_*` (`current`, `is_configured`, `public_view` — jelszó nélkül); lásd „Levelező szerver (SMTP)”
@@ -57,7 +57,7 @@ Böngészőben: http://localhost:5000
 - `tools/bot_arena.py` — Robot-aréna: a fokozatok erejének mérése bot–bot játékokkal (`ladder`, `match`, `adapt`; kalibrációhoz, nem része a szervernek)
 - `tools/build_attested.py` — a `dict/hu_attested.txt` előállítása egy szógyakorisági listából (elírás- és névszűrővel; nem része a szervernek)
 - `tools/word_review.py` — a szótár-építő tömeges párja: `sample` (véletlen szavak átnézésre, pl. AI-nak), `apply` (az elutasított szavak felvétele a `dict/hu_rejected.txt`-be), `stats` (nem része a szervernek)
-- `tests/` — Tesztek (pytest, 2277 teszt); `tests/admin_browser_server.py` + `admin_browser_smoke.js` — a böngészős admin teszt segédei (nem pytest-fájlok)
+- `tests/` — Tesztek (pytest, 2281 teszt); `tests/admin_browser_server.py` + `admin_browser_smoke.js` — a böngészős admin teszt segédei (nem pytest-fájlok)
 - `requirements.txt` — Python függőségek (flask, flask-socketio, gevent, gevent-websocket, opcionálisan pywebpush)
 - `.venv/` — Virtual environment
 
@@ -214,7 +214,7 @@ SMTP_USER=yourscrabble@gmail.com
 SMTP_PASSWORD=abcd-efgh-ijkl-mnop
 SMTP_FROM=yourscrabble@gmail.com
 ```
-Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztéshez). A környezeti változók csak az **alapérték**: az admin panel Rendszer → „Levelező szerver (SMTP)” kártyáján mentett beállítás erősebb, újraindítás nélkül hat (lásd „Levelező szerver (SMTP)”). A környezeti beállítás mindig STARTTLS-t használ.
+Ugyanide, a `.env` fájlba (nincs a git tárban) kerülhet a gépre jellemző beállítás, pl. `PORT=8080` — a GitHubos frissítés (`admin_update.py`) a követett fájlokat cseréli, ezért a portot ne a `server.py`-ban írd át. Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztéshez). A környezeti változók csak az **alapérték**: az admin panel Rendszer → „Levelező szerver (SMTP)” kártyáján mentett beállítás erősebb, újraindítás nélkül hat (lásd „Levelező szerver (SMTP)”). A környezeti beállítás mindig STARTTLS-t használ.
 
 ## Tesztek
 
@@ -269,9 +269,10 @@ Ha SMTP nincs konfigurálva, a kód a szerver konzolra íródik ki (fejlesztésh
 | `tests/test_admin_client.py` | 49 | Admin kliens: JS szintaxis (minden fájl), fordítások teljessége (hu/en, szerverüzenetek AST-ből az összes `admin*.py`-ból), a hívott API útvonalak és metódusok léte, minden végponthoz van felület, elem-azonosítók, menüpontok, nincs `innerHTML` / beágyazott kód, a kliens magja és a fordítás node-ban |
 | `tests/test_admin_mail.py` | 54 | Levelező szerver: tárolás és érvényes beállítás (mentett > környezeti), érvényesítés, jelszó sosem látszik (válasz, napló), jelszó megtartása csak ugyanahhoz a kiszolgálóhoz, visszaállítás, kapcsolat-próba (sudo, csak a saját címre), élő hatás |
 | `tests/test_admin_update.py` | 43 | Frissítés GitHubról valódi helyi git-tárakkal: állapot, ellenőrzés (fetch), fast-forward, ágváltás, tiszta munkafa, eltérő előzmény, szintaxishiba → visszagörgetés, ágnév-ellenőrzés, függőség-telepítés, újraindítás, végpontok (sudo, indoklás) |
+| `tests/test_env_file.py` | 4 | Helyi `.env` fájl: beolvasás, a valódi környezeti változó erősebb, hiányzó fájl, gitignorált |
 | `tests/test_admin_browser.py` | 1 | Az admin felület valódi böngészőben (Playwright): minden menüpont betöltődik, nincs JS hiba, művelet-párbeszéd, sudo, kereső, élő Socket.IO események, telefon, nyelvváltás (kimarad, ha nincs node / Playwright / Chromium) |
 
-**Összesen: 2277 teszt**
+**Összesen: 2281 teszt**
 
 Fixture: `tests/conftest.py` — temp_db (auto-applied, ideiglenes SQLite DB minden teszthez), `admin_env` (az `ADMIN_EMAILS` beállítva), `api` (bejelentkezett admin API-kliens), `isolated_dictionary` (a tartós kizárt lista ideiglenes másolata)
 Segédek: `tests/helpers.py` — `registered_set_name_payload()` (érvényes socket-tokennel), `verify_email()`, admin: `AdminApi`, `make_user`, `guest_client`, `registered_client`, `live_room`, `finished_game`
