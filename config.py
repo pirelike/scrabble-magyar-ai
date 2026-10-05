@@ -1,6 +1,39 @@
 import ipaddress
 import os
 
+ENV_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+
+
+def load_env_file(path=ENV_FILE):
+    """A helyi `.env` fájl (soronként `KULCS=érték`, opcionális `export `) beolvasása a környezetbe.
+
+    A fájl nincs a git tárban (`.gitignore`), ezért a GitHubról frissítés sosem írja felül: ide kerül a gépre
+    jellemző beállítás (pl. `PORT`). A ténylegesen beállított környezeti változó erősebb a fájlnál.
+    Visszatér: a ténylegesen beállított kulcsok."""
+    applied = []
+    try:
+        with open(path, encoding='utf-8') as fh:
+            lines = fh.read().splitlines()
+    except OSError:
+        return applied
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        if line.startswith('export '):
+            line = line[len('export '):].lstrip()
+        key, _eq, value = line.partition('=')
+        key, value = key.strip(), value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in '"\'':
+            value = value[1:-1]
+        if key.replace('_', '').isalnum() and not key[0].isdigit() and key not in os.environ:
+            os.environ[key] = value
+            applied.append(key)
+    return applied
+
+
+load_env_file()
+
 # --- SMTP konfiguráció ---
 SMTP_HOST = os.environ.get('SMTP_HOST', 'smtp.gmail.com')
 SMTP_PORT = int(os.environ.get('SMTP_PORT', 587))
