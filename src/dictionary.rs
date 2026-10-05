@@ -43,8 +43,23 @@ pub fn has_vowel_or_interjection(word: &str) -> bool {
     has_vowel(word) || VOWELLESS_INTERJECTIONS.contains(&word)
 }
 
+static REJECTED_OVERRIDE: Mutex<Option<PathBuf>> = Mutex::new(None);
+
+/// A tartós kizárt lista helye: a `set_rejected_path` felülbírálata (a tesztek ideiglenes másolatot használnak, hogy ne
+/// írják a repó fájlját), vagy a `SCRABBLE_REJECTED_FILE` környezeti változó, különben a `dict/hu_rejected.txt`.
 pub fn rejected_path() -> PathBuf {
+    if let Some(path) = REJECTED_OVERRIDE.lock().clone() {
+        return path;
+    }
+    if let Some(path) = std::env::var_os("SCRABBLE_REJECTED_FILE").filter(|p| !p.is_empty()) {
+        return PathBuf::from(path);
+    }
     config::dict_dir().join("hu_rejected.txt")
+}
+
+/// A kizárt lista helyének felülbírálása (None → az alapértelmezett).
+pub fn set_rejected_path(path: Option<PathBuf>) {
+    *REJECTED_OVERRIDE.lock() = path;
 }
 
 /// Az elutasított szavak listája (soronként egy szó, `#` megjegyzés): kisbetűs szavak. Hiányzó fájlnál üres.
