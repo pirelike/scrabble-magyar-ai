@@ -5,6 +5,7 @@
 
 #![allow(dead_code)]
 
+pub mod admin;
 pub mod push;
 
 use futures_util::{SinkExt, StreamExt};
@@ -206,6 +207,8 @@ pub fn relax_socket_limits(app: &App, events: &[&str]) {
 /// Az alapértelmezett (éles) korlátok visszaállítása.
 pub fn restore_default_limits(app: &App) {
     app.limiter.set_overrides(HashMap::new(), HashMap::new());
+    // a korábbi (lazított) kérések ne számítsanak bele a friss korlátba
+    app.limiter.clear_ip("127.0.0.1");
 }
 
 // ===================================================================================================
