@@ -142,9 +142,14 @@ impl TestServer {
     pub async fn player(&self, n: u32) -> Sio {
         let id = self.ensure_user(n);
         let sio = Sio::connect(self).await;
+        let before = self.app.state.lock().player_names.len();
         sio.emit("set_name", json!({"name": format!("Jatekos{n}"), "is_guest": false, "auth_token": self.socket_token(id)}));
+        self.wait_registered(before).await;
         sio.settle().await;
-        sio.take();
+        let events = sio.take();
+        let errors: Vec<_> = events.iter().filter(|(name, _)| name == "error").collect();
+        assert!(errors.is_empty(), "a set_name hibát adott: {errors:?}");
+        assert!(self.app.state.lock().is_user_online(id), "a felhasználó nem online a set_name után: {events:?}");
         let mut sio = sio;
         sio.name_n = n;
         sio
@@ -152,10 +157,21 @@ impl TestServer {
 
     pub async fn guest(&self, name: &str) -> Sio {
         let sio = Sio::connect(self).await;
+        let before = self.app.state.lock().player_names.len();
         sio.emit("set_name", json!({"name": name, "is_guest": true}));
+        self.wait_registered(before).await;
         sio.settle().await;
         sio.take();
         sio
+    }
+
+    /// Megvárja, hogy a szerver feldolgozza a `set_name`-et (a sikeres válasz nem küld eseményt): a regisztrált
+    /// nevek száma megnő. Betöltött gépen a rögzített várakozás nem elég.
+    async fn wait_registered(&self, before: usize) {
+        let end = tokio::time::Instant::now() + Duration::from_secs(10);
+        while self.app.state.lock().player_names.len() <= before && tokio::time::Instant::now() < end {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
     }
 }
 

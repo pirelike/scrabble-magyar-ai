@@ -40,15 +40,21 @@ fn socket_ip(socket: &SocketRef) -> String {
     net::client_ip(&parts.headers, peer)
 }
 
-/// Kitiltott IP-ről a kapcsolat el sem jön létre.
-async fn ip_guard(socket: SocketRef, State(app): State<Arc<App>>) -> Result<(), String> {
+/// Kitiltott IP-ről a kapcsolat el sem jön létre; egyébként az eseménykezelők még a kapcsolat megerősítése
+/// előtt bekötődnek (a kliens a megerősítés után azonnal küldhet eseményt, és a csatlakozási kezelő külön
+/// feladatként indul: ott bekötve az első üzenet elveszhetne).
+async fn connect_guard(socket: SocketRef, State(app): State<Arc<App>>) -> Result<(), String> {
     if app.ip_bans.is_banned(&app.db, &socket_ip(&socket)) {
         return Err("forbidden".to_string());
     }
+    attach_handlers(&socket);
     Ok(())
 }
 
-async fn on_connect(socket: SocketRef) {
+/// A névtér csatlakozási kezelője: nincs teendő, minden már a `connect_guard`-ban bekötődött.
+async fn on_connect(_socket: SocketRef) {}
+
+fn attach_handlers(socket: &SocketRef) {
     sync_event!(socket, "set_name", events::set_name);
     sync_event!(socket, "logout", events::logout);
     sync_event!(socket, "rejoin_room", events::rejoin_room);
@@ -112,7 +118,7 @@ pub fn build_socketio(app: &Arc<App>) -> (SocketIoLayer, SocketIo) {
         .max_payload(1_000_000)
         .max_buffer_size(4096)
         .build_layer();
-    io.ns("/", on_connect.with(ip_guard));
+    io.ns("/", on_connect.with(connect_guard));
     app.set_io(io.clone());
     (layer, io)
 }
