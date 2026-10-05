@@ -225,6 +225,20 @@ SMTP_FROM=yourscrabble@gmail.com
 - **Mentés**: az adatbázis egyetlen fájl (`scrabble.db`, WAL módban); az admin panelről kérhető konzisztens mentés / letöltés, és beállítható napi automatikus mentés (`backup_daily`, `backup_keep`).
 - **Régi adatbázis**: a Python verzió `scrabble.db` fájlja változtatás nélkül használható (a migrációk futnak indításkor).
 
+### Teljesítmény a Python verzióhoz képest
+
+Ugyanazon a gépen (4 mag), ugyanarról a mintaadatbázisról (400 felhasználó, 4000 játék) indított két szerver összevetése; a teljes táblázat, a módszer és az újrafuttatás: [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
+
+| Mérőszám | Python | Rust |
+|---|---|---|
+| Indulás az első kérésig | 7,3 mp | 1,9 mp |
+| Memória üresjáratban | 164 MiB | 66 MiB |
+| Teljes játékok (szoba + passzok + mentés) | 17,5 játék/mp | 101,5 játék/mp |
+| Chat körülfordulás p99 | 42,9 ms | 3,4 ms |
+| Szó-ellenőrzés (8 szó) | 130 kérés/mp | 1432 kérés/mp |
+| Bejelentkezés (PBKDF2) | 12 kérés/mp | 105 kérés/mp |
+| Robot-aréna (bot–bot játékok, egy szál) | 32,1 mp | 7,7 mp |
+
 ---
 
 ## Karbantartó eszközök / Tools
