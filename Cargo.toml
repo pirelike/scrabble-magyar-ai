@@ -53,3 +53,8 @@ strip = true
 
 [dev-dependencies]
 tokio-tungstenite = "0.30.0"
+
+# Teljesítményteszt a Python és a Rust verzió között: `cargo bench --bench compare` (lásd perf/run.sh)
+[[bench]]
+name = "compare"
+harness = false
