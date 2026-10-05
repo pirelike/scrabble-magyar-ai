@@ -205,3 +205,14 @@ mod tests {
         assert_eq!(filter_chat(&w, true, "jó"), (Some("jó".to_string()), false));
     }
 }
+
+/// Push értesítés az adminoknak egy új bejelentésről (háttérben; push híján nem történik semmi).
+pub fn notify_admins_of_report(app: &std::sync::Arc<crate::app::App>, room_name: &str) {
+    let mut emails: Vec<&String> = app.config.admin_emails.iter().collect();
+    emails.sort();
+    for email in emails {
+        if let Ok(Some(user)) = app.db.get_user_by_email(email) {
+            app.push.notify_background(user.id, "report", room_name);
+        }
+    }
+}

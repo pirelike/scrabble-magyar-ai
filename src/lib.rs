@@ -22,6 +22,7 @@ pub mod player;
 pub mod push;
 pub mod ratelimit;
 pub mod room;
+pub mod server;
 pub mod settings;
 pub mod socket_auth;
 pub mod state;
