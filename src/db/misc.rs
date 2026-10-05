@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use std::collections::HashSet;
 
 /// A napi feladvány tárolt alakja.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct DailyPuzzle {
     pub date: String,
     pub board: Value,
