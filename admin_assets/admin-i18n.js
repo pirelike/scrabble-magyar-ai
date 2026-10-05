@@ -2232,7 +2232,8 @@ window.ADMIN_I18N = {
     "A játék már ebben az állapotban van.": "The game is already in this status.",
     "A játék éppen fut, előbb oszlasd fel a szobát.": "The game is running right now; disband the room first.",
     "Befejezett játék törléséhez külön megerősítés kell.": "Deleting a finished game needs a separate confirmation.",
-    "A szerver állapota nem érhető el.": "The server state is not available.",
+    "Adatbázis-hiba.": "Database error.",
+    "Nem található.": "Not found.",
     "A szoba nem található.": "Room not found.",
     "Ismeretlen művelet.": "Unknown action.",
     "Ebben a szobában nincs tulajdonos.": "This room has no owner.",
@@ -2301,7 +2302,7 @@ window.ADMIN_I18N = {
     "A programmappában helyi módosítások vannak: a frissítés nem írja felül őket.": "There are local changes in the program folder: the update will not overwrite them.",
     "Már a legfrissebb állapoton vagy.": "You are already up to date.",
     "A frissítés nem végezhető el: a helyi ág eltér a GitHubon lévőtől.": "The update cannot be applied: the local branch has diverged from the one on GitHub.",
-    "Az új kód szintaktikai hibát tartalmaz: a frissítés visszavonva.": "The new code has a syntax error: the update was rolled back.",
+    "Az új kód nem fordítható le, a frissítés visszaállt az előző állapotra.": "The new code does not compile; the update was rolled back to the previous state.",
     "Az újraindítás már folyamatban van.": "A restart is already in progress."
    }
   }

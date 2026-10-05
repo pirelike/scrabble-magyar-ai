@@ -1376,6 +1376,7 @@ window.I18N_DATA = {
     "Túl sok kérés. Próbáld újra később.": "Too many requests. Try again later.",
     "Túl sok regisztráció. Próbáld újra később.": "Too many registrations. Try again later.",
     "Verifikációs kód elküldve.": "Verification code sent.",
+    "Belső hiba.": "Internal error.",
     "Érvénytelen email cím.": "Invalid email address.",
     "Érvénytelen megjelenítési név (1-20 karakter, betűk és számok).": "Invalid display name (1–20 characters, letters and digits).",
     "A kód lejárt. Kérj újat.": "The code has expired. Request a new one.",
