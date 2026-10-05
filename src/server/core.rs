@@ -370,23 +370,28 @@ pub fn start_challenge_timer(app: &Arc<App>, st: &mut ServerState, room_id: &str
     let (app, room_id) = (app.clone(), room_id.to_string());
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(CHALLENGE_TIMEOUT)).await;
-        let mut st = app.state.lock();
-        let Some(room) = st.rooms.get_mut(&room_id) else { return };
-        if room.challenge_timer_id() != timer_id || room.game.pending_challenge.is_none() {
-            return;
-        }
-        let Ok((result, message)) = room.game.accept_pending() else { return };
-        let finished = room.game.finished;
-        broadcast_challenge_result(&app, &room_id, result, &message);
-        if finished {
-            emit_all_states(&app, &mut st, &room_id);
-            save_game_to_db(&app, &mut st, &room_id);
-        } else {
-            start_turn_timer(&app, &mut st, &room_id, None);
-            emit_all_states(&app, &mut st, &room_id);
-            schedule_bot_turn(&app, &mut st, &room_id);
-        }
+        challenge_timeout(&app, &room_id, timer_id);
     });
+}
+
+/// A szavazási idő lejárt: a nem szavazók elfogadásnak számítanak. (A tesztek közvetlenül hívják, várakozás nélkül.)
+pub fn challenge_timeout(app: &Arc<App>, room_id: &str, timer_id: u64) {
+    let mut st = app.state.lock();
+    let Some(room) = st.rooms.get_mut(room_id) else { return };
+    if room.challenge_timer_id() != timer_id || room.game.pending_challenge.is_none() {
+        return;
+    }
+    let Ok((result, message)) = room.game.accept_pending() else { return };
+    let finished = room.game.finished;
+    broadcast_challenge_result(app, room_id, result, &message);
+    if finished {
+        emit_all_states(app, &mut st, room_id);
+        save_game_to_db(app, &mut st, room_id);
+    } else {
+        start_turn_timer(app, &mut st, room_id, None);
+        emit_all_states(app, &mut st, room_id);
+        schedule_bot_turn(app, &mut st, room_id);
+    }
 }
 
 /// Kör visszaszámlálás indítása. Ha lejár, auto-passz. `seconds`: a teljes körnél rövidebb hátralévő idő (pl. a
@@ -403,33 +408,37 @@ pub fn start_turn_timer(app: &Arc<App>, st: &mut ServerState, room_id: &str, sec
     let (app, room_id) = (app.clone(), room_id.to_string());
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs_f64(limit.max(0.0))).await;
-        let mut st = app.state.lock();
-        let Some(room) = st.rooms.get_mut(&room_id) else { return };
-        if room.turn_timer_id() != timer_id {
-            return; // már érvénytelen (új kör, vagy játék vége)
-        }
-        let game = &mut room.game;
-        if game.finished || !game.started {
-            return;
-        }
-        let Some(current) = game.current_player().cloned() else { return };
-        // Auto-passz a jelenlegi játékos nevében
-        if game.pass_turn(&current.id, false).is_ok() {
-            let finished = game.finished;
-            app.emit_room(&room_id, "action_result", &json!({"success": true, "message": format!("Időtúllépés: {} passzolt.", current.name)}));
-            if finished {
-                if let Some(room) = st.rooms.get_mut(&room_id) {
-                    room.invalidate_turn_timer();
-                }
-                emit_all_states(&app, &mut st, &room_id);
-                save_game_to_db(&app, &mut st, &room_id);
-            } else {
-                start_turn_timer(&app, &mut st, &room_id, None); // következő kör timere
-                emit_all_states(&app, &mut st, &room_id);
-                schedule_bot_turn(&app, &mut st, &room_id);
-            }
-        }
+        turn_timeout(&app, &room_id, timer_id);
     });
+}
+
+/// A kör ideje lejárt: automatikus passz a soron lévő nevében. (A tesztek közvetlenül hívják, várakozás nélkül.)
+pub fn turn_timeout(app: &Arc<App>, room_id: &str, timer_id: u64) {
+    let mut st = app.state.lock();
+    let Some(room) = st.rooms.get_mut(room_id) else { return };
+    if room.turn_timer_id() != timer_id {
+        return; // már érvénytelen (új kör, vagy játék vége)
+    }
+    let game = &mut room.game;
+    if game.finished || !game.started {
+        return;
+    }
+    let Some(current) = game.current_player().cloned() else { return };
+    if game.pass_turn(&current.id, false).is_ok() {
+        let finished = game.finished;
+        app.emit_room(room_id, "action_result", &json!({"success": true, "message": format!("Időtúllépés: {} passzolt.", current.name)}));
+        if finished {
+            if let Some(room) = st.rooms.get_mut(room_id) {
+                room.invalidate_turn_timer();
+            }
+            emit_all_states(app, &mut st, room_id);
+            save_game_to_db(app, &mut st, room_id);
+        } else {
+            start_turn_timer(app, &mut st, room_id, None); // következő kör timere
+            emit_all_states(app, &mut st, room_id);
+            schedule_bot_turn(app, &mut st, room_id);
+        }
+    }
 }
 
 /// Challenge/szavazás eredmény broadcast (ha vote).
