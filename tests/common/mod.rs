@@ -70,6 +70,11 @@ impl TestServer {
     }
 
     pub async fn start_with(tweak: impl FnOnce(&mut Config)) -> TestServer {
+        TestServer::start_in(None, tweak).await
+    }
+
+    /// Szerver egy megadott programmappával (`base_dir`: pl. a frissítési tesztek git-tára).
+    pub async fn start_in(base_dir: Option<PathBuf>, tweak: impl FnOnce(&mut Config)) -> TestServer {
         // a szótár betöltése egyszer (mint az éles indításkor): az első lerakás ne várjon másodperceket
         static WARM: std::sync::Once = std::sync::Once::new();
         tokio::task::spawn_blocking(|| WARM.call_once(|| { scrabble::dictionary::warm_up(); })).await.unwrap();
@@ -78,7 +83,10 @@ impl TestServer {
         tweak(&mut config);
         let db = Arc::new(Db::open(&config.db_path).expect("adatbázis"));
         db.init().expect("séma");
-        let app = App::new(Arc::new(config), db);
+        let app = match base_dir {
+            Some(dir) => App::with_base_dir(Arc::new(config), db, dir),
+            None => App::new(Arc::new(config), db),
+        };
         // a próbák sok kérést küldenek egy címről: az IP-alapú korlátok lazítva (a külön tesztek visszaállítják)
         relax_ip_limits(&app);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

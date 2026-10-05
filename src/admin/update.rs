@@ -38,6 +38,15 @@ static CREDENTIALS_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(://)[^/@\s]+@").
 
 static UPDATE_LOCK: Mutex<()> = Mutex::new(());
 static RESTART_SCHEDULED: Mutex<Option<f64>> = Mutex::new(None);
+/// Tesztekhez: hányszor kellett volna a folyamatot lecserélni (`SCRABBLE_TEST_NO_EXEC` esetén nem történik meg).
+#[doc(hidden)]
+pub static SKIPPED_RESTARTS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Tesztekhez: a frissítési zár megfogása (egy másik frissítés futását utánozza).
+#[doc(hidden)]
+pub fn hold_update_lock() -> parking_lot::MutexGuard<'static, ()> {
+    UPDATE_LOCK.lock()
+}
 
 /// Egy git parancs nem sikerült (a szöveg már maszkolt).
 #[derive(Debug)]
@@ -408,6 +417,7 @@ fn restart_process(app: &App) {
     {
         use std::os::unix::process::CommandExt;
         if std::env::var_os("SCRABBLE_TEST_NO_EXEC").is_some() {
+            SKIPPED_RESTARTS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             return;
         }
         app.tunnel.stop();
