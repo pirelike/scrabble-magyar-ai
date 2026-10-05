@@ -250,19 +250,22 @@ impl Db {
 
     /// Lépések move_number sorrendben.
     pub fn get_game_moves(&self, game_id: i64) -> rusqlite::Result<Vec<StoredMove>> {
-        self.with(|tx| {
-            let rows = fetch_all(tx, "SELECT * FROM game_moves WHERE game_id = ? ORDER BY move_number", [game_id])?;
-            Ok(rows
-                .iter()
-                .map(|r| StoredMove {
-                    move_number: r.int("move_number"),
-                    player_name: r.text("player_name"),
-                    action_type: r.text("action_type"),
-                    details_json: r.opt_text("details_json"),
-                    board_snapshot_json: r.opt_text("board_snapshot_json"),
-                })
-                .collect())
-        })
+        self.with(|tx| self.get_game_moves_in(tx, game_id))
+    }
+
+    /// Ugyanez egy már nyitott tranzakcióban (az admin műveletek blokkjában nem szabad újra zárolni az adatbázist).
+    pub fn get_game_moves_in(&self, tx: &Transaction, game_id: i64) -> rusqlite::Result<Vec<StoredMove>> {
+        let rows = fetch_all(tx, "SELECT * FROM game_moves WHERE game_id = ? ORDER BY move_number", [game_id])?;
+        Ok(rows
+            .iter()
+            .map(|r| StoredMove {
+                move_number: r.int("move_number"),
+                player_name: r.text("player_name"),
+                action_type: r.text("action_type"),
+                details_json: r.opt_text("details_json"),
+                board_snapshot_json: r.opt_text("board_snapshot_json"),
+            })
+            .collect())
     }
 
     /// Befejezett játékok + ellenfelek a felhasználóhoz (egyetlen query, N+1 fix).

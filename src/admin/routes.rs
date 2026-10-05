@@ -392,9 +392,15 @@ impl AdminRouter {
     pub fn delete_danger(&mut self, path: &str, handler: Handler) {
         self.route(Method::DELETE, path, Level::Danger, handler);
     }
+    pub fn patch_danger(&mut self, path: &str, handler: Handler) {
+        self.route(Method::PATCH, path, Level::Danger, handler);
+    }
     /// Romboló művelet, amelyhez friss jelszó-megerősítés (sudo mód) is kell.
     pub fn post_sudo(&mut self, path: &str, handler: Handler) {
         self.route(Method::POST, path, Level::Sudo, handler);
+    }
+    pub fn get_sudo(&mut self, path: &str, handler: Handler) {
+        self.route(Method::GET, path, Level::Sudo, handler);
     }
     pub fn patch_sudo(&mut self, path: &str, handler: Handler) {
         self.route(Method::PATCH, path, Level::Sudo, handler);

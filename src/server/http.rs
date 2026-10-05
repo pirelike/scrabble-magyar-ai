@@ -1086,7 +1086,7 @@ async fn game_analysis(State(app): State<Arc<App>>, client: Client, Path(game_id
 }
 
 /// Háttérfeladat: elemzi a játékot, és elmenti az eredményt.
-fn run_analysis(app: &Arc<App>, game_id: i64, moves: Vec<db::StoredMove>) {
+pub fn run_analysis(app: &Arc<App>, game_id: i64, moves: Vec<db::StoredMove>) {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let vocab = ai::get_vocabulary();
         let mut progress = |done: usize, total: usize| {

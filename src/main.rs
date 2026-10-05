@@ -18,6 +18,8 @@ async fn main() {
     };
     let app = App::new(config.clone(), db.clone());
     admin::system::install_log_capture(&app);
+    admin::update::remember_running_commit(&app); // a frissítés után ebből látszik, hogy újraindítás kell
+    admin::dict::remember_baseline(); // a kizárt lista diffjének alapja
 
     // Indulási teendők (mint a Python `__main__`)
     db.cleanup_expired();

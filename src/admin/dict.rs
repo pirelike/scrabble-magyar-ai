@@ -150,7 +150,7 @@ pub fn inspect_word(app: &App, raw: Option<&Value>) -> AdminResult<Value> {
 
 // ===== A tartós lista (dict/hu_rejected.txt) =====
 
-fn read_list_text() -> String {
+pub fn read_list_text() -> String {
     std::fs::read_to_string(dictionary::rejected_path()).unwrap_or_default()
 }
 

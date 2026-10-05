@@ -195,6 +195,21 @@ pub fn spawn_background_tasks(app: &Arc<App>) {
             a.job_ran("admin_broadcaster", true, None);
         }
     });
+    // Óránként: napi mentés (ha be van kapcsolva) és a régi chat napló törlése
+    let a = app.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(3600)).await;
+            let app = a.clone();
+            match tokio::task::spawn_blocking(move || crate::admin::system::run_scheduled_maintenance(&app)).await {
+                Ok(done) => a.job_ran("maintenance_tasks", true, (!done.is_empty()).then(|| done.join(","))),
+                Err(e) => {
+                    a.job_ran("maintenance_tasks", false, Some(e.to_string()));
+                    println!("[admin] Hiba az ütemezett karbantartásnál: {e}");
+                }
+            }
+        }
+    });
 }
 
 /// A szerver indítása a megadott porton (a folyamat leállásáig fut).
