@@ -250,12 +250,19 @@ impl ServerState {
 
     /// Nyilvános szobák listája a lobby számára (restored/private/befejezett kiszűrve).
     pub fn get_rooms_list(&self) -> Vec<serde_json::Value> {
-        self.rooms.values().filter(|r| r.is_lobby_visible()).map(|r| r.to_lobby_dict()).collect()
+        self.rooms_in_creation_order().into_iter().filter(|r| r.is_lobby_visible()).map(|r| r.to_lobby_dict()).collect()
     }
 
     /// Nyilvános, folyamatban lévő játékok listája (megfigyeléshez).
     pub fn get_live_games(&self) -> Vec<serde_json::Value> {
-        self.rooms.values().filter(|r| r.is_live_visible()).map(|r| r.to_live_dict()).collect()
+        self.rooms_in_creation_order().into_iter().filter(|r| r.is_live_visible()).map(|r| r.to_live_dict()).collect()
+    }
+
+    /// A szobák létrehozásuk sorrendjében (a Python szótár beszúrási sorrendje): a listák így stabilak.
+    pub fn rooms_in_creation_order(&self) -> Vec<&Room> {
+        let mut rooms: Vec<&Room> = self.rooms.values().collect();
+        rooms.sort_by(|a, b| a.created_at.partial_cmp(&b.created_at).unwrap_or(std::cmp::Ordering::Equal).then_with(|| a.id.cmp(&b.id)));
+        rooms
     }
 
     // --- Megfigyelők ---

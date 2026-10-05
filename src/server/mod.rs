@@ -161,7 +161,41 @@ pub fn build_router(app: &Arc<App>) -> Router {
         .fallback(|| async { http::not_found() })
         .with_state(app.clone())
         .layer(sio_layer);
-    Router::new().fallback_service(inner).layer(from_fn_with_state(app.clone(), guard))
+    Router::new().fallback_service(inner).layer(from_fn_with_state(app.clone(), guard)).layer(axum::middleware::from_fn(finish_response))
+}
+
+/// Egységes válaszok: a szöveges típusok `charset=utf-8`-at kapnak (a statikus fájloknál is), az üres törzsű 404 / 405
+/// pedig a szokásos oldalt (a nem létező és a nem admin útvonalak így ugyanúgy néznek ki).
+async fn finish_response(request: axum::extract::Request, next: axum::middleware::Next) -> axum::response::Response {
+    let mut response = next.run(request).await;
+    let content_type = response.headers().get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).map(|v| v.to_string());
+    match content_type {
+        None => {
+            let replacement = match response.status() {
+                StatusCode::NOT_FOUND => http::not_found(),
+                StatusCode::METHOD_NOT_ALLOWED => http::method_not_allowed(),
+                _ => return response,
+            };
+            // az eredeti fejlécek (pl. az admin őr biztonsági fejlécei, `Allow`) megmaradnak
+            let (mut parts, body) = replacement.into_parts();
+            for (name, value) in response.headers() {
+                if name != header::CONTENT_LENGTH && name != header::CONTENT_TYPE {
+                    parts.headers.insert(name.clone(), value.clone());
+                }
+            }
+            return axum::response::Response::from_parts(parts, body);
+        }
+        Some(value) => {
+            let lower = value.to_ascii_lowercase();
+            let textual = lower.starts_with("text/") || lower.contains("javascript");
+            if textual && !lower.contains("charset") {
+                if let Ok(updated) = HeaderValue::from_str(&format!("{value}; charset=utf-8")) {
+                    response.headers_mut().insert(header::CONTENT_TYPE, updated);
+                }
+            }
+        }
+    }
+    response
 }
 
 /// Háttérfolyamatok: levelezős határidők, admin számlálók, ütemezett karbantartás.

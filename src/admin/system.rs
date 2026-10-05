@@ -489,6 +489,8 @@ pub fn maintenance_vacuum(app: &App) -> AdminResult<(u64, u64)> {
         let conn = app.db.raw();
         conn.execute_batch("VACUUM")?;
         conn.execute_batch("ANALYZE")?;
+        // a VACUUM a WAL-on át megy: a napló visszavágása nélkül „nagyobb” lenne az adatbázis a művelet után
+        let _ = conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()));
     }
     Ok((before, db_file_size(app)))
 }

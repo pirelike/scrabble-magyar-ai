@@ -283,6 +283,29 @@ async fn service_worker(State(app): State<Arc<App>>) -> Response {
     response
 }
 
+/// Egész szám útvonal-paraméter (a Flask `<int:...>` konvertere): nem szám → a szokásos 404.
+pub struct IdPath(pub i64);
+
+impl<S: Send + Sync> axum::extract::FromRequestParts<S> for IdPath {
+    type Rejection = Response;
+
+    async fn from_request_parts(parts: &mut axum::http::request::Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let Path(raw): Path<String> = Path::from_request_parts(parts, state).await.map_err(|_| not_found())?;
+        if raw.is_empty() || !raw.bytes().all(|b| b.is_ascii_digit()) {
+            return Err(not_found());
+        }
+        raw.parse::<i64>().map(IdPath).map_err(|_| not_found())
+    }
+}
+
+/// A szokásos 405 (rossz metódus).
+pub fn method_not_allowed() -> Response {
+    let body = "<!doctype html>\n<html lang=en>\n<title>405 Method Not Allowed</title>\n<h1>Method Not Allowed</h1>\n<p>The method is not allowed for the requested URL.</p>\n";
+    let mut response = (StatusCode::METHOD_NOT_ALLOWED, body).into_response();
+    response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
+    response
+}
+
 /// A szokásos 404 (az admin őr is ezt adja nem adminnak: a két válasz azonos).
 pub fn not_found() -> Response {
     let body = "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n";
@@ -994,7 +1017,7 @@ fn moves_payload(app: &App, game_id: i64, hide_racks: bool) -> Vec<Value> {
 }
 
 /// Megosztható linket készít egy befejezett játék visszajátszásához (csak a résztvevőknek).
-async fn share_game(State(app): State<Arc<App>>, client: Client, Path(game_id): Path<i64>) -> Response {
+async fn share_game(State(app): State<Arc<App>>, client: Client, IdPath(game_id): IdPath) -> Response {
     let Some(user) = client.user(&app) else { return unauthorized() };
     if app.db.get_game_by_id(game_id).ok().flatten().is_none() {
         return fail(404, "Játék nem található.");
@@ -1023,7 +1046,7 @@ async fn shared_replay(State(app): State<Arc<App>>, client: Client, Path(token):
     }))
 }
 
-async fn game_moves(State(app): State<Arc<App>>, client: Client, Path(game_id): Path<i64>) -> Response {
+async fn game_moves(State(app): State<Arc<App>>, client: Client, IdPath(game_id): IdPath) -> Response {
     let Some(user) = client.user(&app) else { return unauthorized() };
     let Some(row) = app.db.get_game_by_id(game_id).ok().flatten() else { return fail(404, "Játék nem található.") };
     if !app.db.is_user_in_game(game_id, user.id) {
@@ -1038,7 +1061,7 @@ async fn game_moves(State(app): State<Arc<App>>, client: Client, Path(game_id): 
 
 /// A befejezett játék elemzése: lépésenként a legjobb lehetséges lépés és a kint maradt pont. A számítás háttérben
 /// fut; amíg tart, `status: 'running'` (a kliens időnként újrakérdezi).
-async fn game_analysis(State(app): State<Arc<App>>, client: Client, Path(game_id): Path<i64>) -> Response {
+async fn game_analysis(State(app): State<Arc<App>>, client: Client, IdPath(game_id): IdPath) -> Response {
     let Some(user) = client.user(&app) else { return unauthorized() };
     if !app.limiter.check_ip(&client.ip, "analysis") {
         return too_many();
@@ -1122,7 +1145,7 @@ async fn async_games_list(State(app): State<Arc<App>>, client: Client) -> Respon
     ok(json!({"success": true, "games": games, "my_turn_count": my_turn_count}))
 }
 
-async fn abandon_game(State(app): State<Arc<App>>, client: Client, Path(game_id): Path<i64>) -> Response {
+async fn abandon_game(State(app): State<Arc<App>>, client: Client, IdPath(game_id): IdPath) -> Response {
     if client.token.is_none() {
         return fail(401, "Nincs session.");
     }

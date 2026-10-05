@@ -633,3 +633,4 @@ zárdaiul
 őszerintük
 őutána
 őérettük
+# --- admin panel, 2026-10-05 ---
