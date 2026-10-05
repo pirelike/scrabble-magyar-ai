@@ -104,6 +104,12 @@ fn new_room_id() -> String {
 
 // --- Kapcsolat ---
 
+/// A lecsatlakozott játékosnak járó türelmi idő (mp): a várakozó szoba tulajdonosának hosszabb, mindenki másnak (és
+/// az aktív játékban mindenkinek) a rövidebb; az admin panelen állítható.
+pub fn grace_seconds(app: &App, game_started: bool, was_owner: bool) -> i64 {
+    if game_started || !was_owner { app.settings.get_i64("grace_disconnect") } else { app.settings.get_i64("grace_waiting_owner") }
+}
+
 /// Lecsatlakozás: megfigyelő / játékos eltávolítása vagy türelmi idő indítása.
 pub fn handle_disconnect(app: &Arc<App>, st: &mut ServerState, sid: &str) {
     st.admin_sids.remove(sid);
@@ -143,11 +149,7 @@ pub fn handle_disconnect(app: &Arc<App>, st: &mut ServerState, sid: &str) {
             } else if let (Some(token), false) = (token.clone(), finished) {
                 // Aktív játék és várakozó szoba: türelmi idő, a játékos a tokenjével visszatérhet
                 kept_for_grace = true;
-                let grace = if started || !was_owner {
-                    app.settings.get_i64("grace_disconnect")
-                } else {
-                    app.settings.get_i64("grace_waiting_owner")
-                };
+                let grace = grace_seconds(app, started, was_owner);
                 st.rooms.get_mut(&room_id).expect("létező szoba").game.mark_disconnected(sid);
                 app.leave_room(sid, &room_id);
                 let seq = st.mark_disconnected(&token, sid, &room_id, &name, auth.clone());

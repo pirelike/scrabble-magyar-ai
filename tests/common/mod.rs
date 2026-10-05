@@ -365,11 +365,15 @@ pub struct Sio {
     closed: Arc<std::sync::atomic::AtomicBool>,
     /// az `uN` játékos sorszáma (0: vendég / névtelen)
     pub name_n: u32,
+    /// a szerver (ha ismert): a `settle` megvárja, hogy a feldolgozás alatt álló események véget érjenek
+    app: Option<Arc<App>>,
 }
 
 impl Sio {
     pub async fn connect(server: &TestServer) -> Sio {
-        Sio::connect_url(&format!("ws://127.0.0.1:{}/socket.io/?EIO=4&transport=websocket", server.port)).await
+        let mut sio = Sio::connect_url(&format!("ws://127.0.0.1:{}/socket.io/?EIO=4&transport=websocket", server.port)).await;
+        sio.app = Some(server.app.clone());
+        sio
     }
 
     pub async fn connect_url(url: &str) -> Sio {
@@ -431,7 +435,7 @@ impl Sio {
             cl.store(true, Ordering::SeqCst);
         });
         let _ = tokio::time::timeout(Duration::from_secs(5), connected.notified()).await;
-        Sio { tx, events, state, room_code, room_id, reconnect_token, closed, name_n: 0 }
+        Sio { tx, events, state, room_code, room_id, reconnect_token, closed, name_n: 0, app: None }
     }
 
     /// Esemény küldése; `Value::Null` → adat nélkül (mint a kliens a paraméter nélküli eseményeknél).
@@ -444,13 +448,25 @@ impl Sio {
         self.emit(event, Value::Null);
     }
 
-    /// Rövid várakozás, hogy a szerver válaszai megérkezzenek.
+    /// Rövid várakozás, hogy a szerver válaszai megérkezzenek: legalább 200 ms, és amíg a szerveren feldolgozás alatt
+    /// álló esemény van (terhelt gépen a feldolgozás tovább tarthat), utána még a kimenő üzenetek célba érnek.
     pub async fn settle(&self) {
-        tokio::time::sleep(Duration::from_millis(250)).await;
+        self.settle_for(200).await;
     }
 
     pub async fn settle_long(&self) {
-        tokio::time::sleep(Duration::from_millis(700)).await;
+        self.settle_for(650).await;
+    }
+
+    async fn settle_for(&self, minimum_ms: u64) {
+        tokio::time::sleep(Duration::from_millis(minimum_ms)).await;
+        if let Some(app) = &self.app {
+            let end = tokio::time::Instant::now() + Duration::from_secs(20);
+            while app.events_in_flight.load(Ordering::SeqCst) > 0 && tokio::time::Instant::now() < end {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
     }
 
     /// A beérkezett események (és a sor kiürítése).

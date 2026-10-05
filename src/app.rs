@@ -19,6 +19,7 @@ use socketioxide::SocketIo;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 
 /// A Socket.IO események (SID-enkénti) forgalomkorlátai: (kérés, ablak mp).
@@ -95,7 +96,25 @@ pub struct App {
     pub running_commit: Mutex<Option<String>>,
     /// a levelezős játék kezdő játékosa a létrehozás sorrendjében (`None`: véletlen); a tesztek állítják be
     pub async_starter: Mutex<Option<usize>>,
+    /// a most feldolgozás alatt álló Socket.IO események száma (a tesztek ebből tudják, mikor ért véget a munka)
+    pub events_in_flight: AtomicUsize,
     io: OnceLock<SocketIo>,
+}
+
+/// A feldolgozás alatt álló esemény jelzése (a hatókör végén csökken).
+pub struct InFlight<'a>(&'a AtomicUsize);
+
+impl<'a> InFlight<'a> {
+    pub fn new(counter: &'a AtomicUsize) -> InFlight<'a> {
+        counter.fetch_add(1, Ordering::SeqCst);
+        InFlight(counter)
+    }
+}
+
+impl Drop for InFlight<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 impl App {
@@ -128,6 +147,7 @@ impl App {
             jobs: Mutex::new(HashMap::new()),
             running_commit: Mutex::new(None),
             async_starter: Mutex::new(None),
+            events_in_flight: AtomicUsize::new(0),
             io: OnceLock::new(),
         })
     }

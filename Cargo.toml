@@ -27,7 +27,7 @@ rusqlite = { version = "0.40.2", features = ["bundled", "functions", "backup"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_urlencoded = "0.7"
 similar = "2"
-serde_json = { version = "1.0.151", features = ["preserve_order"] }
+serde_json = { version = "1.0.151", features = ["preserve_order", "float_roundtrip"] }
 sha2 = "0.11.0"
 socketioxide = { version = "0.18.7", features = ["state"] }
 subtle = "2.6.1"

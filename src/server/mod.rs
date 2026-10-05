@@ -10,27 +10,89 @@ pub mod play;
 use crate::app::App;
 use axum::extract::ConnectInfo;
 use serde_json::Value;
-use socketioxide::extract::{SocketRef, State, TryData};
+use crate::state::ServerState;
+use socketioxide::adapter::LocalAdapter;
+use socketioxide::extract::{Event, SocketRef, State, TryData};
+use socketioxide::socket::Socket;
 use socketioxide::layer::SocketIoLayer;
 use socketioxide::SocketIo;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-/// Egy szinkron eseménykezelő bekötése: a belépési pont zárolja a szerver állapotát, a kezelő a zárolt állapoton
-/// dolgozik (a Python változat gevent alatt hasonlóan egyetlen szálon futott).
-macro_rules! sync_event {
-    ($socket:expr, $name:literal, $handler:path) => {
-        $socket.on(
-            $name,
-            async |s: SocketRef, State(app): State<Arc<App>>, TryData(data): TryData<Value>| {
-                let sid = s.id.to_string();
-                let data = data.unwrap_or(Value::Null);
-                let mut st = app.state.lock();
-                $handler(&app, &mut st, &sid, data);
-            },
-        );
-    };
+/// A szinkron eseménykezelők: a belépési pont zárolja a szerver állapotát, a kezelő a zárolt állapoton dolgozik (a
+/// Python változat gevent alatt hasonlóan egyetlen szálon futott).
+type SyncHandler = fn(&Arc<App>, &mut ServerState, &str, Value);
+
+const SYNC_EVENTS: &[(&str, SyncHandler)] = &[
+    ("set_name", events::set_name),
+    ("logout", events::logout),
+    ("rejoin_room", events::rejoin_room),
+    ("get_rooms", events::get_rooms),
+    ("create_room", events::create_room),
+    ("join_room", events::join_room),
+    ("leave_room", events::leave_room),
+    ("start_game", events::start_game),
+    ("save_game", events::save_game),
+    ("restore_game", events::restore_game),
+    ("place_tiles", play::place_tiles),
+    ("exchange_tiles", play::exchange_tiles),
+    ("pass_turn", play::pass_turn),
+    ("accept_words", play::accept_words),
+    ("reject_words", play::reject_words),
+    ("withdraw_words", play::withdraw_words),
+    ("send_chat", play::send_chat),
+    ("report_content", play::report_content),
+    ("preview_move", play::preview_move),
+    ("set_visibility", play::set_visibility),
+    ("retry_daily", extras::retry_daily),
+    ("reveal_daily", extras::reveal_daily),
+    ("create_async_game", extras::create_async_game),
+    ("open_async_game", extras::open_async_game),
+    ("resign_game", extras::resign_game),
+    ("spectate_room", extras::spectate_room),
+    ("leave_spectate", extras::leave_spectate),
+    ("send_friend_request", extras::send_friend_request),
+    ("accept_friend_request", extras::accept_friend_request),
+    ("decline_friend_request", extras::decline_friend_request),
+    ("remove_friend", extras::remove_friend),
+    ("invite_to_room", extras::invite_to_room),
+    ("respond_invite", extras::respond_invite),
+    ("admin_subscribe", extras::admin_subscribe),
+    ("admin_watch_room", extras::admin_watch_room),
+];
+
+fn run_sync_event(app: &Arc<App>, sid: &str, event: &str, data: Value) {
+    let Some((_, handler)) = SYNC_EVENTS.iter().find(|(name, _)| *name == event) else { return };
+    let _busy = crate::app::InFlight::new(&app.events_in_flight);
+    // Egy kezelő hibája ne ejtse el a kapcsolat olvasását (a zárolás a visszagörgetéskor felszabadul)
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mut st = app.state.lock();
+        handler(app, &mut st, sid, data);
+    }));
+    if outcome.is_err() {
+        println!("[socket] Az eseménykezelő hibával leállt: {event}");
+    }
+}
+
+/// A szinkron események feldolgozása a kézbesítés pillanatában: a socketioxide a kezelőt külön feladatként indítja
+/// (nincs sorrendi garancia), a kinyerők viszont a beérkezés sorrendjében futnak — így egy kapcsolat eseményei
+/// (pl. két gyors chat üzenet, lerakás és passz) mindig a küldés sorrendjében hatnak.
+struct InOrder;
+
+impl socketioxide::handler::FromMessageParts<LocalAdapter> for InOrder {
+    type Error = std::convert::Infallible;
+
+    fn from_message_parts(socket: &Arc<Socket<LocalAdapter>>, payload: &mut socketioxide::handler::Value, ack: &Option<i64>) -> Result<Self, Self::Error> {
+        if let (Ok(Event(name)), Ok(State(app))) = (Event::from_message_parts(socket, payload, ack), State::<Arc<App>>::from_message_parts(socket, payload, ack)) {
+            let data = match TryData::<Value>::from_message_parts(socket, payload, ack) {
+                Ok(TryData(data)) => data.unwrap_or(Value::Null),
+                Err(_) => Value::Null,
+            };
+            run_sync_event(&app, &socket.id.to_string(), &name, data);
+        }
+        Ok(InOrder)
+    }
 }
 
 /// A Socket.IO kapcsolat kliens IP-je (a handshake kérésből).
@@ -55,53 +117,21 @@ async fn connect_guard(socket: SocketRef, State(app): State<Arc<App>>) -> Result
 async fn on_connect(_socket: SocketRef) {}
 
 fn attach_handlers(socket: &SocketRef) {
-    sync_event!(socket, "set_name", events::set_name);
-    sync_event!(socket, "logout", events::logout);
-    sync_event!(socket, "rejoin_room", events::rejoin_room);
-    sync_event!(socket, "get_rooms", events::get_rooms);
-    sync_event!(socket, "create_room", events::create_room);
-    sync_event!(socket, "join_room", events::join_room);
-    sync_event!(socket, "leave_room", events::leave_room);
-    sync_event!(socket, "start_game", events::start_game);
-    sync_event!(socket, "save_game", events::save_game);
-    sync_event!(socket, "restore_game", events::restore_game);
-
-    sync_event!(socket, "place_tiles", play::place_tiles);
-    sync_event!(socket, "exchange_tiles", play::exchange_tiles);
-    sync_event!(socket, "pass_turn", play::pass_turn);
-    sync_event!(socket, "accept_words", play::accept_words);
-    sync_event!(socket, "reject_words", play::reject_words);
-    sync_event!(socket, "withdraw_words", play::withdraw_words);
-    sync_event!(socket, "send_chat", play::send_chat);
-    sync_event!(socket, "report_content", play::report_content);
-    sync_event!(socket, "preview_move", play::preview_move);
-    sync_event!(socket, "set_visibility", play::set_visibility);
-
-    sync_event!(socket, "retry_daily", extras::retry_daily);
-    sync_event!(socket, "reveal_daily", extras::reveal_daily);
-    sync_event!(socket, "create_async_game", extras::create_async_game);
-    sync_event!(socket, "open_async_game", extras::open_async_game);
-    sync_event!(socket, "resign_game", extras::resign_game);
-    sync_event!(socket, "spectate_room", extras::spectate_room);
-    sync_event!(socket, "leave_spectate", extras::leave_spectate);
-    sync_event!(socket, "send_friend_request", extras::send_friend_request);
-    sync_event!(socket, "accept_friend_request", extras::accept_friend_request);
-    sync_event!(socket, "decline_friend_request", extras::decline_friend_request);
-    sync_event!(socket, "remove_friend", extras::remove_friend);
-    sync_event!(socket, "invite_to_room", extras::invite_to_room);
-    sync_event!(socket, "respond_invite", extras::respond_invite);
-    sync_event!(socket, "admin_subscribe", extras::admin_subscribe);
-    sync_event!(socket, "admin_watch_room", extras::admin_watch_room);
+    // minden szinkron esemény (lásd `SYNC_EVENTS`) a tartalék kezelőn át, sorrendben dolgozódik fel
+    socket.on_fallback(async |_: InOrder| {});
 
     // A hosszabb (háttérszálon számoló) események aszinkron kezelők
     socket.on("request_hint", async |s: SocketRef, State(app): State<Arc<App>>| {
-        play::request_hint(app, s.id.to_string()).await;
+        let _busy = crate::app::InFlight::new(&app.events_in_flight);
+        play::request_hint(app.clone(), s.id.to_string()).await;
     });
     socket.on("start_daily", async |s: SocketRef, State(app): State<Arc<App>>| {
-        extras::start_daily(app, s.id.to_string()).await;
+        let _busy = crate::app::InFlight::new(&app.events_in_flight);
+        extras::start_daily(app.clone(), s.id.to_string()).await;
     });
 
     socket.on_disconnect(async |s: SocketRef, State(app): State<Arc<App>>| {
+        let _busy = crate::app::InFlight::new(&app.events_in_flight);
         let sid = s.id.to_string();
         let mut st = app.state.lock();
         events::handle_disconnect(&app, &mut st, &sid);
