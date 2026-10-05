@@ -576,7 +576,7 @@ impl Game {
     // --- Challenge system (voting) ---
 
     /// Szavazásra jogosult játékosok (a lerakón kívül minden emberi játékos).
-    fn voter_ids(&self) -> HashSet<String> {
+    pub fn voter_ids(&self) -> HashSet<String> {
         let Some(pc) = &self.pending_challenge else { return HashSet::new() };
         let placer_id = &self.players[pc.player_idx].id;
         self.players.iter().filter(|p| &p.id != placer_id && !p.is_bot).map(|p| p.id.clone()).collect()

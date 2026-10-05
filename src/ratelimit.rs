@@ -119,6 +119,11 @@ impl RateLimiter {
         Self::limited(&history, &limits_socket, "sid", now)
     }
 
+    /// Van-e a memóriában előzmény az IP-hez.
+    pub fn has_ip(&self, ip: &str) -> bool {
+        self.inner.lock().ip_history.contains_key(ip)
+    }
+
     /// Egy IP korlátozásának feloldása (az előzmények törlése). Visszatér: igaz, ha volt mit törölni.
     pub fn clear_ip(&self, ip: &str) -> bool {
         self.inner.lock().ip_history.remove(ip).is_some()

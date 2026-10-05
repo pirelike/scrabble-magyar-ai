@@ -6,11 +6,21 @@
 //!  * a napló csak hozzáfűzhető: a táblán adatbázis-trigger tiltja a módosítást és a törlést;
 //!  * a személyes adat megtekintése is naplózódik (`view.*`), indoklás nélkül (`record`).
 
+pub mod api;
+pub mod audit;
 pub mod comm;
+pub mod dict;
+pub mod games;
 pub mod live;
+pub mod mail;
 pub mod moderation;
+pub mod routes;
 pub mod security;
+pub mod stats;
+pub mod session;
 pub mod system;
+pub mod update;
+pub mod users;
 
 use crate::config::IpNet;
 use crate::db::Db;
@@ -435,5 +445,61 @@ mod tests {
         assert!(ip_allowed("::ffff:10.1.2.3", &nets));
         assert!(!ip_allowed("nem ip", &nets));
         assert!(ip_allowed("bármi", &[]));
+    }
+}
+
+// ===== Tranzakció hibaátvitellel =====
+
+/// Egy tranzakció, amelyben az admin hibák (`AdminError`) is visszagörgetést okoznak (a Python `auth.transaction()`).
+pub fn txn<T>(db: &Db, body: impl FnOnce(&Transaction) -> AdminResult<T>) -> AdminResult<T> {
+    let mut conn = db.raw();
+    let tx = conn.transaction()?;
+    let value = body(&tx)?;
+    tx.commit()?;
+    Ok(value)
+}
+
+/// Egy szöveges mező a JSON törzsből, vagy None.
+pub fn str_of<'a>(value: Option<&'a Value>) -> Option<&'a str> {
+    value.and_then(|v| v.as_str())
+}
+
+// ===== Beszúrási sorrendet őrző szótár =====
+
+/// Beszúrási sorrendet őrző szótár (mint a Python `dict`): az egyenlő kulcsú rendezéseknél a kimenet determinisztikus.
+pub struct Ordered<K: std::hash::Hash + Eq + Clone, V> {
+    keys: Vec<K>,
+    map: std::collections::HashMap<K, V>,
+}
+
+impl<K: std::hash::Hash + Eq + Clone, V> Default for Ordered<K, V> {
+    fn default() -> Self {
+        Ordered { keys: Vec::new(), map: std::collections::HashMap::new() }
+    }
+}
+
+impl<K: std::hash::Hash + Eq + Clone, V> Ordered<K, V> {
+    pub fn entry_or(&mut self, key: K, default: impl FnOnce() -> V) -> &mut V {
+        if !self.map.contains_key(&key) {
+            self.keys.push(key.clone());
+            self.map.insert(key.clone(), default());
+        }
+        self.map.get_mut(&key).expect("beszúrva")
+    }
+
+    pub fn get(&self, key: &K) -> Option<&V> {
+        self.map.get(key)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
+        self.keys.iter().map(|k| (k, &self.map[k]))
+    }
+
+    pub fn len(&self) -> usize {
+        self.keys.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.keys.is_empty()
     }
 }

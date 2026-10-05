@@ -35,6 +35,7 @@ fn open_connection(path: &str) -> rusqlite::Result<Connection> {
     // a WAL üzemmód sorban visszaad egy értéket
     let _mode: String = conn.query_row("PRAGMA journal_mode=WAL", [], |r| r.get(0))?;
     conn.execute_batch("PRAGMA foreign_keys=ON;")?;
+    crate::admin::register_sql_helpers(&conn)?;
     Ok(conn)
 }
 

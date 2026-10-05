@@ -38,6 +38,11 @@ fn has_vowel(word: &str) -> bool {
     word.chars().any(|c| "aáeéiíoóöőuúüű".contains(c))
 }
 
+/// Van-e magánhangzó a szóban, vagy magánhangzó nélküli indulatszó (a szó-vizsgálóhoz).
+pub fn has_vowel_or_interjection(word: &str) -> bool {
+    has_vowel(word) || VOWELLESS_INTERJECTIONS.contains(&word)
+}
+
 pub fn rejected_path() -> PathBuf {
     config::dict_dir().join("hu_rejected.txt")
 }

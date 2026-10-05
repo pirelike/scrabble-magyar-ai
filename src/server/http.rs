@@ -63,6 +63,12 @@ impl<S: Send + Sync> FromRequestParts<S> for Client {
 }
 
 impl Client {
+    /// A kliens-adatok egy teljes kérésből (az őr a kérés kiterjesztéséből veszi a kapcsolat címét).
+    pub fn from_request(request: &axum::extract::Request) -> Client {
+        let peer: Option<IpAddr> = request.extensions().get::<ConnectInfo<SocketAddr>>().map(|c| c.0.ip());
+        Client::from_parts(request.headers(), peer)
+    }
+
     pub fn from_parts(headers: &HeaderMap, peer: Option<IpAddr>) -> Client {
         let ip = client_ip(headers, peer);
         let from_proxy = peer.is_none_or(|p| match p {

@@ -63,6 +63,11 @@ fn length_pair(c: char) -> Option<char> {
 static VOWEL_TILES: Lazy<Vec<Tile>> = Lazy::new(|| tiles::letters().filter(|t| t.is_vowel()).collect());
 static CONSONANT_TILES: Lazy<Vec<Tile>> = Lazy::new(|| tiles::letters().filter(|t| !t.is_vowel()).collect());
 
+/// A 2–3 zsetonos szavak listáinak gyorsítótára ürítése (admin).
+pub fn clear_short_cache() {
+    SHORT_CACHE.lock().clear();
+}
+
 static SHORT_CACHE: Lazy<Mutex<HashMap<usize, (u64, Vec<Value>)>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 static STEM_CACHE: OnceLock<Vec<String>> = OnceLock::new();
 

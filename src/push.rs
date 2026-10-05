@@ -266,6 +266,25 @@ impl Push {
         self.notify_turn(user_id, room, "", kind)
     }
 
+    /// Teszt üzenet a felhasználó összes eszközére (nyelvük szerint). Visszatér: {'sent', 'removed', 'failed'}.
+    pub fn send_test(&self, user_id: i64) -> Value {
+        let (mut sent, mut removed, mut failed) = (0, 0, 0);
+        for sub in self.db.get_push_subscriptions(user_id) {
+            let get = |k: &str| sub.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let lang = if is_supported_lang(&get("lang")) { get("lang") } else { DEFAULT_LANG.to_string() };
+            let payload = json!({"title": message_template(&lang, "title"), "body": message_template(&lang, "test"), "tag": "test", "url": "/"});
+            match self.send_one(&get("endpoint"), &get("p256dh"), &get("auth"), &payload) {
+                Outcome::Ok => sent += 1,
+                Outcome::Gone => {
+                    self.db.delete_push_subscription(&get("endpoint"), None);
+                    removed += 1;
+                }
+                Outcome::Error => failed += 1,
+            }
+        }
+        json!({"sent": sent, "removed": removed, "failed": failed})
+    }
+
     /// Egyedi (admin által írt) értesítés a felhasználó minden eszközére. Visszatér: {'sent', 'removed', 'failed'}
     /// (a megszűnt feliratkozások törlődnek).
     pub fn send_custom(&self, user_id: i64, title: &str, body: &str, url: &str) -> Value {

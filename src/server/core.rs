@@ -137,7 +137,7 @@ pub fn bot_name(game: &Game, difficulty: Option<Difficulty>) -> String {
 }
 
 /// Lépnie kell-e most a soron lévő robotnak?
-fn bot_should_move(room: &Room) -> bool {
+pub fn bot_should_move(room: &Room) -> bool {
     let game = &room.game;
     if !game.started || game.finished || game.pending_challenge.is_some() {
         return false;
@@ -189,7 +189,7 @@ pub fn emit_all_states(app: &Arc<App>, st: &mut ServerState, room_id: &str) {
 pub fn notify_admins(app: &Arc<App>, st: &mut ServerState, room_id: &str) {
     let Some(room) = st.rooms.get(room_id) else { return };
     if app.room_member_count(ADMIN_ROOM) > 0 {
-        app.emit_room(ADMIN_ROOM, "admin_room_update", &live::room_summary(room));
+        app.emit_room(ADMIN_ROOM, "admin_room_update", &live::room_summary(app, st, room, None));
     }
     if !room.admin_watchers.is_empty() {
         let detail = live::room_detail(app, st, room_id);
@@ -863,4 +863,16 @@ pub fn expire_async_turns(app: &Arc<App>, now: Option<f64>) -> usize {
         }
     }
     expired
+}
+
+/// A közlemények élő frissítése minden kliensnek: a bejelentkezetteknek és a vendégeknek szóló lista is megy, a
+/// kliens a sajátját választja.
+pub fn broadcast_announcements(app: &Arc<App>) {
+    app.emit_all(
+        "announcement",
+        &json!({
+            "registered": crate::admin::comm::active_announcements(app, true),
+            "guests": crate::admin::comm::active_announcements(app, false),
+        }),
+    );
 }

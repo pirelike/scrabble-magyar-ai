@@ -43,6 +43,23 @@ impl IpNet {
     }
 }
 
+impl std::fmt::Display for IpNet {
+    /// A hálózat szokásos alakja (a gazdabitek nullázva, mint a Python `str(ip_network(...))`).
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let masked = match self.addr {
+            IpAddr::V4(a) => {
+                let mask = if self.prefix == 0 { 0 } else { u32::MAX << (32 - self.prefix as u32) };
+                IpAddr::V4((u32::from(a) & mask).into())
+            }
+            IpAddr::V6(a) => {
+                let mask = if self.prefix == 0 { 0 } else { u128::MAX << (128 - self.prefix as u32) };
+                IpAddr::V6((u128::from(a) & mask).into())
+            }
+        };
+        write!(f, "{}/{}", masked, self.prefix)
+    }
+}
+
 /// Vesszővel elválasztott IP-címek / CIDR-ek listája. Hibás elemnél hiba: az engedélylista elírása ne
 /// kapcsolja ki csendben a korlátozást.
 pub fn parse_ip_networks(raw: &str) -> Result<Vec<IpNet>, String> {

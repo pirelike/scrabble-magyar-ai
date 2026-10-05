@@ -144,7 +144,7 @@ async fn guard(axum::extract::State(app): axum::extract::State<Arc<App>>, reques
     if app.ip_bans.is_banned(&app.db, &ip) {
         return forbidden();
     }
-    next.run(request).await
+    crate::admin::routes::guard(&app, request, next).await
 }
 
 /// A teljes HTTP + Socket.IO szolgáltatás.
@@ -153,8 +153,10 @@ pub fn build_router(app: &Arc<App>) -> Router {
         .layer(SetResponseHeaderLayer::if_not_present(header::CACHE_CONTROL, HeaderValue::from_static("no-cache")))
         .service(ServeDir::new(app.base_dir.join("static")));
     let (sio_layer, _io) = build_socketio(app);
+    let (admin_routes, _table) = crate::admin::routes::admin_router(app);
     let inner = Router::new()
         .merge(http::public_routes())
+        .merge(admin_routes)
         .nest_service("/static", static_files)
         .fallback(|| async { http::not_found() })
         .with_state(app.clone())

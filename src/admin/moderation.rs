@@ -3,11 +3,14 @@
 //! A játékszerver is használja: a tiltott szavak szűrése (`contains_banned`, `filter_chat`), a chat tartós
 //! naplózása (`log_chat`) és a játékosok bejelentései (`create_report`) ide futnak be.
 
-use crate::admin::fold;
-use crate::db::Db;
+use crate::admin::*;
+use crate::app::App;
+use crate::db::{Db, Row, RowExt, fetch_all, fetch_one};
 use crate::room::Room;
 use parking_lot::Mutex;
+use rusqlite::types::Value as SqlValue;
 use serde_json::{Value, json};
+use std::collections::HashMap;
 
 pub const MAX_REPORT_REASON: usize = 300;
 pub const MAX_REPORT_MESSAGE: usize = 200;
@@ -215,4 +218,207 @@ pub fn notify_admins_of_report(app: &std::sync::Arc<crate::app::App>, room_name:
             app.push.notify_background(user.id, "report", room_name);
         }
     }
+}
+
+pub const MIN_BANNED_WORD: usize = 2;
+pub const MAX_BANNED_WORD: usize = 40;
+pub const CHAT_LOG_LIMIT_MAX: i64 = 500;
+
+// ===== Tiltott szavak (admin) =====
+
+pub fn list_banned_words(app: &App) -> AdminResult<Vec<Value>> {
+    let rows = txn(&app.db, |tx| {
+        Ok(fetch_all(
+            tx,
+            "SELECT w.word, w.created_at, u.display_name AS admin_name FROM banned_words w LEFT JOIN users u ON u.id = w.created_by ORDER BY w.word",
+            [],
+        )?)
+    })?;
+    Ok(rows.into_iter().map(Value::Object).collect())
+}
+
+pub fn add_banned_word(app: &App, ctx: &AdminContext, word: Option<&Value>, reason: Option<&Value>) -> AdminResult<String> {
+    let text = fold(&clean_text(word, "word", MAX_BANNED_WORD, true)?);
+    if text.chars().count() < MIN_BANNED_WORD {
+        return Err(AdminError::field("A tiltott szó legalább 2 karakter legyen.", 400, "word"));
+    }
+    action(&app.db, ctx, "mod.word_add", Some("word"), Some(text.clone()), reason, json!({}), true, |act| {
+        if fetch_one(act.tx, "SELECT 1 AS x FROM banned_words WHERE word = ?", [&text])?.is_some() {
+            return Err(AdminError::field("Ez a szó már szerepel a listán.", 409, "word"));
+        }
+        act.tx.execute("INSERT INTO banned_words (word, created_by) VALUES (?, ?)", rusqlite::params![text, ctx.admin_user_id])?;
+        Ok(())
+    })?;
+    app.banned_words.invalidate();
+    Ok(text)
+}
+
+pub fn remove_banned_word(app: &App, ctx: &AdminContext, word: Option<&Value>, reason: Option<&Value>) -> AdminResult<()> {
+    let text = fold(&clean_text(word, "word", MAX_BANNED_WORD, true)?);
+    action(&app.db, ctx, "mod.word_remove", Some("word"), Some(text.clone()), reason, json!({}), true, |act| {
+        if act.tx.execute("DELETE FROM banned_words WHERE word = ?", [&text])? == 0 {
+            return Err(AdminError::new("A szó nem szerepel a listán.", 404));
+        }
+        Ok(())
+    })?;
+    app.banned_words.invalidate();
+    Ok(())
+}
+
+// ===== Chat napló =====
+
+/// A tartósan naplózott chat üzenetek (szűrés: q, room, user, since, until). Naplózva: `view.chat`.
+pub fn query_chat_log(app: &App, ctx: &AdminContext, args: &HashMap<String, String>) -> AdminResult<Value> {
+    let mut where_: Vec<String> = Vec::new();
+    let mut params: Vec<SqlValue> = Vec::new();
+    let arg = |k: &str| args.get(k).map(|s| s.as_str()).filter(|s| !s.is_empty());
+    let q = args.get("q").map(|q| q.trim()).unwrap_or("");
+    if !q.is_empty() {
+        where_.push("c.message LIKE ? ESCAPE '\\'".into());
+        params.push(SqlValue::Text(like(q)));
+    }
+    if let Some(room) = arg("room") {
+        where_.push("(c.room_id = ? OR c.room_name LIKE ? ESCAPE '\\')".into());
+        params.push(SqlValue::Text(room.to_string()));
+        params.push(SqlValue::Text(like(room)));
+    }
+    let user = args.get("user").map(|u| u.trim()).unwrap_or("");
+    if !user.is_empty() {
+        if user.chars().all(|c| c.is_ascii_digit()) {
+            where_.push("c.user_id = ?".into());
+            params.push(SqlValue::Integer(user.parse().unwrap_or(0)));
+        } else {
+            where_.push("c.name LIKE ? ESCAPE '\\'".into());
+            params.push(SqlValue::Text(like(user)));
+        }
+    }
+    if let Some(since) = arg("since") {
+        where_.push("c.created_at >= ?".into());
+        params.push(SqlValue::Text(parse_bound(since, false)?.0));
+    }
+    if let Some(until) = arg("until") {
+        let (stamp, exclusive) = parse_bound(until, true)?;
+        where_.push(if exclusive { "c.created_at < ?" } else { "c.created_at <= ?" }.into());
+        params.push(SqlValue::Text(stamp));
+    }
+    let (limit, offset) = page_args(args, 100, CHAT_LOG_LIMIT_MAX);
+    let clause = if where_.is_empty() { String::new() } else { format!("WHERE {}", where_.join(" AND ")) };
+    let filters: serde_json::Map<String, Value> =
+        ["q", "room", "user", "since", "until"].iter().filter_map(|k| arg(k).map(|v| (k.to_string(), json!(v)))).collect();
+    let (total, rows) = txn(&app.db, |tx| {
+        let total = fetch_one(tx, &format!("SELECT COUNT(*) AS n FROM chat_log c {clause}"), rusqlite::params_from_iter(params.clone()))?.map(|r| r.int("n")).unwrap_or(0);
+        let mut page = params.clone();
+        page.push(SqlValue::Integer(limit));
+        page.push(SqlValue::Integer(offset));
+        let rows = fetch_all(tx, &format!("SELECT c.* FROM chat_log c {clause} ORDER BY c.id DESC LIMIT ? OFFSET ?"), rusqlite::params_from_iter(page))?;
+        record(tx, ctx, "view.chat", Some("chat"), None, &json!({"filters": filters}))?;
+        Ok((total, rows))
+    })?;
+    let banned = app.banned_word_list();
+    let items: Vec<Value> = rows
+        .into_iter()
+        .map(|mut item| {
+            let flagged = contains_banned(&banned, &item.text("message"));
+            item.insert("flagged".into(), json!(flagged));
+            Value::Object(item)
+        })
+        .collect();
+    Ok(json!({"items": items, "total": total, "limit": limit, "offset": offset}))
+}
+
+// ===== Bejelentések (admin) =====
+
+fn report_item(row: &Row, detail: bool) -> Value {
+    let mut item = json!({
+        "id": row.int("id"), "status": row.text("status"), "kind": row.text("kind"), "created_at": row.text("created_at"),
+        "reporter_user_id": row.get("reporter_user_id"), "reporter_name": row.get("reporter_name"),
+        "reported_user_id": row.get("reported_user_id"), "reported_name": row.get("reported_name"),
+        "message": row.get("message"), "reason": row.get("reason"), "room_id": row.get("room_id"), "room_name": row.get("room_name"),
+        "handled_by": row.get("handled_by"), "handled_at": row.get("handled_at"), "handler_note": row.get("handler_note"),
+    });
+    if detail {
+        item["snapshot"] = row.opt_text("snapshot_json").and_then(|s| serde_json::from_str::<Value>(&s).ok()).unwrap_or(Value::Null);
+    }
+    item
+}
+
+pub fn list_reports(app: &App, args: &HashMap<String, String>) -> AdminResult<Value> {
+    let mut where_: Vec<String> = Vec::new();
+    let mut params: Vec<SqlValue> = Vec::new();
+    if let Some(status) = args.get("status").map(|s| s.as_str()).filter(|s| !s.is_empty()) {
+        if !REPORT_STATUSES.contains(&status) {
+            return Err(AdminError::new("Érvénytelen szűrő.", 400));
+        }
+        where_.push("status = ?".into());
+        params.push(SqlValue::Text(status.to_string()));
+    }
+    let (limit, offset) = page_args(args, 50, 200);
+    let clause = if where_.is_empty() { String::new() } else { format!("WHERE {}", where_.join(" AND ")) };
+    let (total, new_count, rows) = txn(&app.db, |tx| {
+        let total = fetch_one(tx, &format!("SELECT COUNT(*) AS n FROM reports {clause}"), rusqlite::params_from_iter(params.clone()))?.map(|r| r.int("n")).unwrap_or(0);
+        let new_count = fetch_one(tx, "SELECT COUNT(*) AS n FROM reports WHERE status = 'new'", [])?.map(|r| r.int("n")).unwrap_or(0);
+        let mut page = params.clone();
+        page.push(SqlValue::Integer(limit));
+        page.push(SqlValue::Integer(offset));
+        let rows = fetch_all(tx, &format!("SELECT * FROM reports {clause} ORDER BY id DESC LIMIT ? OFFSET ?"), rusqlite::params_from_iter(page))?;
+        Ok((total, new_count, rows))
+    })?;
+    Ok(json!({"items": rows.iter().map(|r| report_item(r, false)).collect::<Vec<_>>(), "total": total, "new": new_count, "limit": limit, "offset": offset}))
+}
+
+/// Egy bejelentés a pillanatképpel (a megtekintés naplózva: `view.report`).
+pub fn get_report(app: &App, ctx: &AdminContext, report_id: i64) -> AdminResult<Value> {
+    let row = txn(&app.db, |tx| {
+        let row = fetch_one(tx, "SELECT * FROM reports WHERE id = ?", [report_id])?.ok_or_else(|| AdminError::new("A bejelentés nem található.", 404))?;
+        record(tx, ctx, "view.report", Some("report"), Some(&report_id.to_string()), &Value::Null)?;
+        Ok(row)
+    })?;
+    Ok(report_item(&row, true))
+}
+
+/// A bejelentés kezelése: új / kezelt / elutasított állapot, indoklással.
+pub fn update_report(app: &App, ctx: &AdminContext, report_id: i64, status: Option<&Value>, note: Option<&Value>) -> AdminResult<()> {
+    let Some(status) = str_of(status).filter(|s| REPORT_STATUSES.contains(s)) else {
+        return Err(AdminError::field("Érvénytelen állapot.", 400, "status"));
+    };
+    action(&app.db, ctx, "mod.report_update", Some("report"), Some(report_id.to_string()), note, json!({}), true, |act| {
+        let row = fetch_one(act.tx, "SELECT status FROM reports WHERE id = ?", [report_id])?.ok_or_else(|| AdminError::new("A bejelentés nem található.", 404))?;
+        let handled = status != "new";
+        act.tx.execute(
+            "UPDATE reports SET status = ?, handled_by = ?, handled_at = ?, handler_note = ? WHERE id = ?",
+            rusqlite::params![status, if handled { Some(ctx.admin_user_id) } else { None }, if handled { Some(util::now_ts()) } else { None }, normalize_reason(note)?, report_id],
+        )?;
+        act.details.insert("before".into(), json!({"status": row.text("status")}));
+        act.details.insert("after".into(), json!({"status": status}));
+        Ok(())
+    })
+}
+
+// ===== Nevek átnézése =====
+
+/// Legutóbb regisztrált és átnevezett nevek (tiltott szóra jelölve): az átnevezés a felhasználó oldaláról egy
+/// kattintással elvégezhető.
+pub fn recent_names(app: &App, args: &HashMap<String, String>) -> AdminResult<Value> {
+    let limit = int_arg(args.get("limit").map(|s| s.as_str()), 50, 1, 200);
+    let banned = app.banned_word_list();
+    let mut items: Vec<Value> = Vec::new();
+    txn(&app.db, |tx| {
+        for r in fetch_all(tx, "SELECT id, display_name, created_at FROM users WHERE deleted_at IS NULL ORDER BY id DESC LIMIT ?", [limit])? {
+            items.push(json!({"user_id": r.int("id"), "display_name": r.text("display_name"), "at": r.text("created_at"), "kind": "registered", "flagged": contains_banned(&banned, &r.text("display_name"))}));
+        }
+        for r in fetch_all(tx, "SELECT a.target_id, a.created_at, a.details_json FROM admin_audit a WHERE a.action = 'user.rename' ORDER BY a.id DESC LIMIT ?", [limit])? {
+            let after = r
+                .opt_text("details_json")
+                .and_then(|d| serde_json::from_str::<Value>(&d).ok())
+                .and_then(|d| d["after"]["display_name"].as_str().map(|s| s.to_string()));
+            let target = r.opt_text("target_id").unwrap_or_default();
+            if let (Some(after), true) = (after, !target.is_empty() && target.chars().all(|c| c.is_ascii_digit())) {
+                items.push(json!({"user_id": target.parse::<i64>().unwrap_or(0), "display_name": after, "at": r.text("created_at"), "kind": "renamed", "flagged": contains_banned(&banned, &after)}));
+            }
+        }
+        Ok(())
+    })?;
+    items.sort_by(|a, b| b["at"].as_str().unwrap_or("").cmp(a["at"].as_str().unwrap_or("")));
+    items.truncate(limit as usize);
+    Ok(json!({"items": items}))
 }
