@@ -4,16 +4,20 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+aes-gcm = "0.11.1"
 axum = "0.8.9"
 base64 = "0.23.1"
 bytes = "1.12.1"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 futures-util = "0.3.34"
 hex = "0.4.3"
+hkdf = "0.13.0"
 hmac = "0.13.0"
 http-body-util = "0.1.5"
 lettre = { version = "0.11.23", default-features = false, features = ["smtp-transport", "builder", "hostname", "rustls-tls"] }
+mime_guess = "2.0.5"
 once_cell = "1.21.4"
+p256 = { version = "0.14.0", features = ["ecdsa", "ecdh", "pem"] }
 parking_lot = "0.12.5"
 pbkdf2 = "0.13.0"
 rand = "0.10.3"
@@ -25,7 +29,9 @@ sha2 = "0.11.0"
 socketioxide = "0.18.7"
 subtle = "2.6.1"
 tokio = { version = "1.53.2", features = ["full"] }
+tower = { version = "0.5.3", features = ["util"] }
 tower-http = { version = "0.7.1", features = ["fs", "set-header"] }
+unicode-normalization = "0.1.25"
 ureq = "3.4.2"
 
 # A függőségek a fejlesztői és a teszt-fordításban is optimalizáltak (jelszó-hash, szótár-keresés)
@@ -37,3 +43,6 @@ lto = "thin"
 codegen-units = 4
 panic = "unwind"
 strip = true
+
+[dev-dependencies]
+tokio-tungstenite = "0.30.0"

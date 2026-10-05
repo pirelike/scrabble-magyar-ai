@@ -12,3 +12,8 @@ __pycache__/
 .venv/
 .env
 backups/
+
+
+# Added by cargo
+
+/target
