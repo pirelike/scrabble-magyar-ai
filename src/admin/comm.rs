@@ -43,7 +43,8 @@ pub fn active_announcements(app: &App, registered: bool) -> Vec<Value> {
         .collect();
     if let Some(maintenance) = app.settings.maintenance() {
         let message_hu = maintenance.get("message_hu").and_then(|m| m.as_str()).unwrap_or("").to_string();
-        let message_en = maintenance.get("message_en").and_then(|m| m.as_str()).filter(|m| !m.is_empty()).map(|m| m.to_string()).unwrap_or_else(|| message_hu.clone());
+        let message_en =
+            maintenance.get("message_en").and_then(|m| m.as_str()).filter(|m| !m.is_empty()).map(|m| m.to_string()).unwrap_or_else(|| message_hu.clone());
         items.insert(
             0,
             json!({
@@ -131,10 +132,10 @@ fn clean_announcement(data: &Value) -> AdminResult<CleanAnnouncement> {
     };
     let starts = stamp(data.get("starts_at"), "starts_at")?;
     let ends = stamp(data.get("ends_at"), "ends_at")?;
-    if let (Some(s), Some(e)) = (&starts, &ends) {
-        if e <= s {
-            return Err(AdminError::field("A vég nem lehet a kezdet előtt.", 400, "ends_at"));
-        }
+    if let (Some(s), Some(e)) = (&starts, &ends)
+        && e <= s
+    {
+        return Err(AdminError::field("A vég nem lehet a kezdet előtt.", 400, "ends_at"));
     }
     Ok(CleanAnnouncement { text_hu, text_en, kind: kind.to_string(), audience: audience.to_string(), starts_at: starts, ends_at: ends })
 }
@@ -184,7 +185,8 @@ pub fn update_announcement(app: &App, ctx: &AdminContext, announcement_id: i64, 
     let clean = clean_announcement(data)?;
     let active = bool_field(Some(data.get("active").unwrap_or(&json!(true))), "active")?;
     action(&app.db, ctx, "comm.announcement_update", Some("announcement"), Some(announcement_id.to_string()), data.get("reason"), json!({}), false, |act| {
-        let row = fetch_one(act.tx, "SELECT * FROM announcements WHERE id = ?", [announcement_id])?.ok_or_else(|| AdminError::new("A közlemény nem található.", 404))?;
+        let row = fetch_one(act.tx, "SELECT * FROM announcements WHERE id = ?", [announcement_id])?
+            .ok_or_else(|| AdminError::new("A közlemény nem található.", 404))?;
         act.tx.execute(
             "UPDATE announcements SET text_hu = ?, text_en = ?, kind = ?, audience = ?, starts_at = ?, ends_at = ?, active = ?, updated_at = datetime('now') WHERE id = ?",
             rusqlite::params![clean.text_hu, clean.text_en, clean.kind, clean.audience, clean.starts_at, clean.ends_at, active as i64, announcement_id],
@@ -203,7 +205,8 @@ pub fn update_announcement(app: &App, ctx: &AdminContext, announcement_id: i64, 
 
 pub fn revoke_announcement(app: &App, ctx: &AdminContext, announcement_id: i64) -> AdminResult<()> {
     action(&app.db, ctx, "comm.announcement_revoke", Some("announcement"), Some(announcement_id.to_string()), None, json!({}), false, |act| {
-        let row = fetch_one(act.tx, "SELECT active FROM announcements WHERE id = ?", [announcement_id])?.ok_or_else(|| AdminError::new("A közlemény nem található.", 404))?;
+        let row = fetch_one(act.tx, "SELECT active FROM announcements WHERE id = ?", [announcement_id])?
+            .ok_or_else(|| AdminError::new("A közlemény nem található.", 404))?;
         if !row.flag("active") {
             return Err(AdminError::new("A közlemény már vissza van vonva.", 409));
         }
@@ -239,12 +242,22 @@ pub fn set_maintenance(app: &App, ctx: &AdminContext, data: &Value) -> AdminResu
         "enabled": enabled, "message_hu": message_hu, "message_en": message_en, "until": until,
         "started_at": if enabled { json!(util::now_ts()) } else { Value::Null },
     });
-    action(&app.db, ctx, "comm.maintenance", Some("setting"), Some(crate::settings::MAINTENANCE_KEY.to_string()), data.get("reason"), json!({}), false, |act| {
-        app.settings.store(act.tx, crate::settings::MAINTENANCE_KEY, &value, Some(ctx.admin_user_id)).map_err(|e| AdminError::new(&e.0, 400))?;
-        act.details.insert("before".into(), json!({"enabled": before["enabled"], "message_hu": before["message_hu"], "until": before["until"]}));
-        act.details.insert("after".into(), json!({"enabled": enabled, "message_hu": message_hu, "until": until}));
-        Ok(())
-    })?;
+    action(
+        &app.db,
+        ctx,
+        "comm.maintenance",
+        Some("setting"),
+        Some(crate::settings::MAINTENANCE_KEY.to_string()),
+        data.get("reason"),
+        json!({}),
+        false,
+        |act| {
+            app.settings.store(act.tx, crate::settings::MAINTENANCE_KEY, &value, Some(ctx.admin_user_id)).map_err(|e| AdminError::new(&e.0, 400))?;
+            act.details.insert("before".into(), json!({"enabled": before["enabled"], "message_hu": before["message_hu"], "until": before["until"]}));
+            act.details.insert("after".into(), json!({"enabled": enabled, "message_hu": message_hu, "until": until}));
+            Ok(())
+        },
+    )?;
     app.settings.invalidate();
     Ok(maintenance_state(app))
 }
@@ -315,7 +328,13 @@ pub fn push_recipients(app: &App, target: Option<&str>, user_id: Option<i64>, gr
 /// Előnézet: mit kapnának és hányan (a küldés nélkül).
 pub fn push_preview(app: &App, data: &Value, online: &HashSet<i64>) -> AdminResult<Value> {
     let (title, body) = clean_push(data)?;
-    let recipients = push_recipients(app, data.get("target").and_then(|t| t.as_str()), data.get("user_id").and_then(|u| u.as_i64()), data.get("group").and_then(|g| g.as_str()), online)?;
+    let recipients = push_recipients(
+        app,
+        data.get("target").and_then(|t| t.as_str()),
+        data.get("user_id").and_then(|u| u.as_i64()),
+        data.get("group").and_then(|g| g.as_str()),
+        online,
+    )?;
     let devices: i64 = recipients.iter().map(|(uid, _)| app.db.count_push_subscriptions(*uid)).sum();
     Ok(json!({
         "title": title, "body": body, "recipients": recipients.len(), "devices": devices, "available": app.push.is_available(),
@@ -343,8 +362,15 @@ pub fn push_send(app: &App, ctx: &AdminContext, data: &Value, online: &HashSet<i
         other => other.to_string(),
     });
     app.db.with(|tx| {
-        record(tx, ctx, "comm.push", Some(if target == Some("user") { "user" } else { "group" }), target_id.as_deref(), &json!({"title": title, "body": body, "recipients": recipients.len()}))
-            .map(|_| ())
+        record(
+            tx,
+            ctx,
+            "comm.push",
+            Some(if target == Some("user") { "user" } else { "group" }),
+            target_id.as_deref(),
+            &json!({"title": title, "body": body, "recipients": recipients.len()}),
+        )
+        .map(|_| ())
     })?;
     let (mut sent, mut removed, mut failed) = (0, 0, 0);
     for (uid, _) in &recipients {
@@ -429,7 +455,9 @@ pub fn email_bulk(app: &Arc<App>, ctx: &AdminContext, data: &Value) -> AdminResu
             return Err(AdminError::new("Tömeges e-mailt legfeljebb percenként egyet lehet küldeni.", 429));
         }
     }
-    app.db.with(|tx| record(tx, ctx, "comm.email_bulk", Some("group"), Some(group), &json!({"subject": subject, "body": body, "recipients": users.len()})).map(|_| ()))?;
+    app.db.with(|tx| {
+        record(tx, ctx, "comm.email_bulk", Some("group"), Some(group), &json!({"subject": subject, "body": body, "recipients": users.len()})).map(|_| ())
+    })?;
     *BULK_LAST.lock() = now;
     let (mut sent, mut failed) = (0, 0);
     for (_, name, email) in &users {

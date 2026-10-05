@@ -103,11 +103,21 @@ async fn the_protection_is_in_place_after_a_reinitialisation() {
 #[tokio::test(flavor = "multi_thread")]
 async fn one_row_with_everything() {
     let f = fixture().await;
-    admin::action(&f.server.app.db, &f.ctx, "user.ban", Some("user"), Some("42".into()), Some(&json!("  Sértő üzenetek  ")), json!({"until": "2030-01-01"}), true, |act| {
-        act.details.insert("before".into(), json!({"banned": false}));
-        act.details.insert("after".into(), json!({"banned": true}));
-        Ok(())
-    })
+    admin::action(
+        &f.server.app.db,
+        &f.ctx,
+        "user.ban",
+        Some("user"),
+        Some("42".into()),
+        Some(&json!("  Sértő üzenetek  ")),
+        json!({"until": "2030-01-01"}),
+        true,
+        |act| {
+            act.details.insert("before".into(), json!({"banned": false}));
+            act.details.insert("after".into(), json!({"banned": true}));
+            Ok(())
+        },
+    )
     .unwrap();
     let list = rows(&f.server);
     assert_eq!(list.len(), 1);
@@ -144,10 +154,20 @@ async fn the_operation_and_the_log_share_one_transaction() {
 async fn a_failing_log_write_rolls_the_operation_back() {
     let f = fixture().await;
     exec(&f.server, "ALTER TABLE admin_audit RENAME TO admin_audit_elmozgatva").unwrap();
-    let result = admin::action(&f.server.app.db, &f.ctx, "user.rename", Some("user"), Some(f.admin_id.to_string()), Some(&json!("Névjavítás")), json!({}), true, |act| {
-        act.tx.execute("UPDATE users SET display_name = ? WHERE id = ?", rusqlite::params!["Új név", f.admin_id])?;
-        Ok(())
-    });
+    let result = admin::action(
+        &f.server.app.db,
+        &f.ctx,
+        "user.rename",
+        Some("user"),
+        Some(f.admin_id.to_string()),
+        Some(&json!("Névjavítás")),
+        json!({}),
+        true,
+        |act| {
+            act.tx.execute("UPDATE users SET display_name = ? WHERE id = ?", rusqlite::params!["Új név", f.admin_id])?;
+            Ok(())
+        },
+    );
     assert!(result.is_err());
     assert_eq!(display_name(&f.server, f.admin_id), "Főnök");
 }
@@ -155,10 +175,20 @@ async fn a_failing_log_write_rolls_the_operation_back() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_failing_operation_leaves_no_log_row() {
     let f = fixture().await;
-    let result: Result<(), AdminError> = admin::action(&f.server.app.db, &f.ctx, "user.rename", Some("user"), Some(f.admin_id.to_string()), Some(&json!("Névjavítás")), json!({}), true, |act| {
-        act.tx.execute("UPDATE users SET display_name = ? WHERE id = ?", rusqlite::params!["Új név", f.admin_id])?;
-        Err(AdminError::new("menet közben hiba", 500))
-    });
+    let result: Result<(), AdminError> = admin::action(
+        &f.server.app.db,
+        &f.ctx,
+        "user.rename",
+        Some("user"),
+        Some(f.admin_id.to_string()),
+        Some(&json!("Névjavítás")),
+        json!({}),
+        true,
+        |act| {
+            act.tx.execute("UPDATE users SET display_name = ? WHERE id = ?", rusqlite::params!["Új név", f.admin_id])?;
+            Err(AdminError::new("menet közben hiba", 500))
+        },
+    );
     assert!(result.is_err());
     assert_eq!(display_name(&f.server, f.admin_id), "Főnök");
     assert!(rows(&f.server).is_empty());
@@ -254,8 +284,7 @@ async fn filter_by_admin_id_name_and_email() {
     let s = sample().await;
     let server = &s.f.server;
     let by_id = {
-        let mut filters = AuditFilters::default();
-        filters.admin = Some(s.other_id.to_string());
+        let filters = AuditFilters { admin: Some(s.other_id.to_string()), ..Default::default() };
         query_audit(&server.app.db, &filters, None, None, 200).unwrap()
     };
     let mut actions: Vec<&str> = by_id["items"].as_array().unwrap().iter().map(|r| r["action"].as_str().unwrap()).collect();
@@ -291,10 +320,13 @@ async fn filter_by_target() {
     let s = sample().await;
     let server = &s.f.server;
     assert_eq!(total(server, |f| f.target_type = Some("user".into())), 3);
-    assert_eq!(total(server, |f| {
-        f.target_type = Some("user".into());
-        f.target_id = Some("5".into());
-    }), 2);
+    assert_eq!(
+        total(server, |f| {
+            f.target_type = Some("user".into());
+            f.target_id = Some("5".into());
+        }),
+        2
+    );
     assert_eq!(total(server, |f| f.target_id = Some("ABC123".into())), 1);
 }
 
@@ -316,20 +348,26 @@ async fn date_filters() {
     assert_eq!(total(server, |f| f.until = Some(today.clone())), 5); // a végnap egésze benne van
     assert_eq!(total(server, |f| f.since = Some("2999-01-01".into())), 0);
     assert_eq!(total(server, |f| f.until = Some("2000-01-01".into())), 0);
-    assert_eq!(total(server, |f| {
-        f.since = Some(format!("{today} 00:00"));
-        f.until = Some(format!("{today} 23:59:59"));
-    }), 5);
+    assert_eq!(
+        total(server, |f| {
+            f.since = Some(format!("{today} 00:00"));
+            f.until = Some(format!("{today} 23:59:59"));
+        }),
+        5
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn combined_filters() {
     let s = sample().await;
-    assert_eq!(total(&s.f.server, |f| {
-        f.admin = Some("admin".into());
-        f.action = Some("user.".into());
-        f.q = Some("spam".into());
-    }), 1);
+    assert_eq!(
+        total(&s.f.server, |f| {
+            f.admin = Some("admin".into());
+            f.action = Some("user.".into());
+            f.q = Some("spam".into());
+        }),
+        1
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -555,7 +593,8 @@ async fn the_json_export_is_a_download_and_is_logged() {
     let response = http.get("/api/admin/audit?download=1").await;
     assert!(response.header("Content-Disposition").unwrap().contains("attachment"));
     assert_eq!(response.json()["total"], 1);
-    let formats: Vec<Value> = audit_rows(&server).into_iter().filter(|r| r["action"].as_str().unwrap().starts_with("view.")).map(|r| r["details"]["format"].clone()).collect();
+    let formats: Vec<Value> =
+        audit_rows(&server).into_iter().filter(|r| r["action"].as_str().unwrap().starts_with("view.")).map(|r| r["details"]["format"].clone()).collect();
     assert_eq!(formats, vec![json!("json")]);
 }
 

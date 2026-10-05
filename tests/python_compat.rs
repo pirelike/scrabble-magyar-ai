@@ -39,16 +39,9 @@ fn python_saved_games_roundtrip_through_game_model() {
     let meta = meta();
     let mut checked = 0;
     for (key, original) in meta["states"].as_object().unwrap() {
-        let row = db
-            .load_active_games()
-            .unwrap()
-            .into_iter()
-            .chain(db.get_game_by_id(1).unwrap())
-            .find(|r| r["room_name"] == format!("Szoba {key}"));
+        let row = db.load_active_games().unwrap().into_iter().chain(db.get_game_by_id(1).unwrap()).find(|r| r["room_name"] == format!("Szoba {key}"));
         // a befejezett játék már nem aktív: azonosító szerint keressük
-        let row = row.or_else(|| {
-            (1..=10).filter_map(|id| db.get_game_by_id(id).unwrap()).find(|r| r["room_name"] == format!("Szoba {key}"))
-        });
+        let row = row.or_else(|| (1..=10).filter_map(|id| db.get_game_by_id(id).unwrap()).find(|r| r["room_name"] == format!("Szoba {key}")));
         let row = row.unwrap_or_else(|| panic!("hiányzó játék: {key}"));
         let state: Value = serde_json::from_str(row["state_json"].as_str().unwrap()).unwrap();
         let game = Game::from_save_dict(&state).unwrap_or_else(|e| panic!("{key}: {e}"));
@@ -62,11 +55,7 @@ fn python_saved_games_roundtrip_through_game_model() {
 #[test]
 fn python_move_logs_load() {
     let db = fixture_db();
-    let id = (1..=10)
-        .filter_map(|id| db.get_game_by_id(id).unwrap())
-        .find(|r| r["room_name"] == "Szoba robot")
-        .map(|r| r["id"].as_i64().unwrap())
-        .unwrap();
+    let id = (1..=10).filter_map(|id| db.get_game_by_id(id).unwrap()).find(|r| r["room_name"] == "Szoba robot").map(|r| r["id"].as_i64().unwrap()).unwrap();
     let stored = db.get_game_moves(id).unwrap();
     assert!(stored.len() >= 5);
     let log: Vec<MoveLog> = stored
@@ -84,11 +73,7 @@ fn python_move_logs_load() {
 #[test]
 fn finished_python_game_has_results_and_stats() {
     let db = fixture_db();
-    let id = (1..=10)
-        .filter_map(|id| db.get_game_by_id(id).unwrap())
-        .find(|r| r["room_name"] == "Szoba finished")
-        .map(|r| r["id"].as_i64().unwrap())
-        .unwrap();
+    let id = (1..=10).filter_map(|id| db.get_game_by_id(id).unwrap()).find(|r| r["room_name"] == "Szoba finished").map(|r| r["id"].as_i64().unwrap()).unwrap();
     assert_eq!(db.get_game_by_id(id).unwrap().unwrap()["status"], "finished");
     let results = db.get_game_results(id).unwrap();
     assert_eq!(results.len(), 2);

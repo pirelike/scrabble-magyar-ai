@@ -106,7 +106,8 @@ pub fn list_games(app: &App, args: &HashMap<String, String>, paging: Option<(i64
     let clause = if where_.is_empty() { String::new() } else { format!("WHERE {}", where_.join(" AND ")) };
     let order = order_by(args.get("sort").map(|s| s.as_str()), Some(args.get("order").map(|s| s.as_str()).unwrap_or("desc")), &GAME_SORTS, "id");
     let (total, rows, players) = txn(&app.db, |tx| {
-        let total = fetch_one(tx, &format!("SELECT COUNT(*) AS n FROM saved_games sg {clause}"), params_from_iter(params.clone()))?.map(|r| r.int("n")).unwrap_or(0);
+        let total =
+            fetch_one(tx, &format!("SELECT COUNT(*) AS n FROM saved_games sg {clause}"), params_from_iter(params.clone()))?.map(|r| r.int("n")).unwrap_or(0);
         let mut page = params.clone();
         page.push(SqlValue::Integer(limit));
         page.push(SqlValue::Integer(offset));
@@ -229,18 +230,19 @@ pub fn game_moves(app: &App, game_id: i64) -> AdminResult<Value> {
             [game_id],
         )?)
     })?;
-    Ok(json!(rows
-        .iter()
-        .map(|r| {
-            let details = details_of(r.opt_text("details_json"));
-            let board = r.opt_text("board_snapshot_json").and_then(|b| serde_json::from_str::<Value>(&b).ok()).unwrap_or(Value::Null);
-            json!({
-                "n": r.int("move_number"), "player": r.text("player_name"), "type": r.text("action_type"),
-                "score": details.get("score").cloned().unwrap_or(Value::Null), "words": details.get("words").cloned().unwrap_or(json!([])),
-                "tiles": details.get("tiles").cloned().unwrap_or(json!([])), "board": board,
+    Ok(json!(
+        rows.iter()
+            .map(|r| {
+                let details = details_of(r.opt_text("details_json"));
+                let board = r.opt_text("board_snapshot_json").and_then(|b| serde_json::from_str::<Value>(&b).ok()).unwrap_or(Value::Null);
+                json!({
+                    "n": r.int("move_number"), "player": r.text("player_name"), "type": r.text("action_type"),
+                    "score": details.get("score").cloned().unwrap_or(Value::Null), "words": details.get("words").cloned().unwrap_or(json!([])),
+                    "tiles": details.get("tiles").cloned().unwrap_or(json!([])), "board": board,
+                })
             })
-        })
-        .collect::<Vec<_>>()))
+            .collect::<Vec<_>>()
+    ))
 }
 
 fn game_row(tx: &Transaction, game_id: i64) -> AdminResult<Row> {
@@ -248,7 +250,10 @@ fn game_row(tx: &Transaction, game_id: i64) -> AdminResult<Row> {
 }
 
 fn participants(tx: &Transaction, game_id: i64) -> AdminResult<Vec<i64>> {
-    Ok(fetch_all(tx, "SELECT DISTINCT user_id FROM game_players WHERE game_id = ? AND user_id IS NOT NULL", [game_id])?.iter().map(|r| r.int("user_id")).collect())
+    Ok(fetch_all(tx, "SELECT DISTINCT user_id FROM game_players WHERE game_id = ? AND user_id IS NOT NULL", [game_id])?
+        .iter()
+        .map(|r| r.int("user_id"))
+        .collect())
 }
 
 /// Státuszváltozás után: a résztvevők számlálói és az (összes érintett) értékszám újraszámolása.
@@ -310,7 +315,14 @@ pub fn unshare_game(app: &App, ctx: &AdminContext, game_id: i64, reason: Option<
 }
 
 /// Mentett játék állapotának módosítása: `abandoned` ↔ `active`.
-pub fn set_game_status(app: &App, ctx: &AdminContext, game_id: i64, status: Option<&Value>, reason: Option<&Value>, live_game_ids: &HashSet<i64>) -> AdminResult<()> {
+pub fn set_game_status(
+    app: &App,
+    ctx: &AdminContext,
+    game_id: i64,
+    status: Option<&Value>,
+    reason: Option<&Value>,
+    live_game_ids: &HashSet<i64>,
+) -> AdminResult<()> {
     let Some(status) = str_of(status).filter(|s| *s == "abandoned" || *s == "active") else {
         return Err(AdminError::field("Érvénytelen állapot.", 400, "status"));
     };
@@ -362,7 +374,14 @@ pub fn export_game(app: &App, ctx: &AdminContext, game_id: i64) -> AdminResult<V
 
 /// Végleges törlés. Befejezett (ranglistás) játékot csak külön megerősítéssel (`confirm_finished`) lehet törölni; a
 /// törlés után a résztvevők számlálói és az értékszámok újraszámolódnak.
-pub fn delete_game(app: &App, ctx: &AdminContext, game_id: i64, reason: Option<&Value>, confirm_finished: Option<&Value>, live_game_ids: &HashSet<i64>) -> AdminResult<Option<Value>> {
+pub fn delete_game(
+    app: &App,
+    ctx: &AdminContext,
+    game_id: i64,
+    reason: Option<&Value>,
+    confirm_finished: Option<&Value>,
+    live_game_ids: &HashSet<i64>,
+) -> AdminResult<Option<Value>> {
     let confirm = bool_field(Some(confirm_finished.unwrap_or(&json!(false))), "confirm_finished")?;
     action(&app.db, ctx, "game.delete", Some("game"), Some(game_id.to_string()), reason, json!({}), true, |act| {
         let row = game_row(act.tx, game_id)?;
@@ -374,7 +393,8 @@ pub fn delete_game(app: &App, ctx: &AdminContext, game_id: i64, reason: Option<&
             return Err(AdminError::new("Befejezett játék törléséhez külön megerősítés kell.", 409).with("needs_confirm", json!(true)));
         }
         let users = participants(act.tx, game_id)?;
-        let names: Vec<String> = fetch_all(act.tx, "SELECT player_name FROM game_players WHERE game_id = ?", [game_id])?.iter().map(|r| r.text("player_name")).collect();
+        let names: Vec<String> =
+            fetch_all(act.tx, "SELECT player_name FROM game_players WHERE game_id = ?", [game_id])?.iter().map(|r| r.text("player_name")).collect();
         act.tx.execute("DELETE FROM achievements WHERE game_id = ?", [game_id])?;
         act.tx.execute("DELETE FROM saved_games WHERE id = ?", [game_id])?;
         let summary = if status == "finished" || status == "voided" { Some(refresh_after_status_change(act.tx, &users)?) } else { None };
@@ -389,8 +409,13 @@ pub fn old_abandoned_preview(app: &App, days: Option<&Value>) -> AdminResult<Val
     let days = int_field(days, "days", 1, 3650)?;
     let cutoff = util::format_ts(util::utcnow() - chrono::Duration::days(days));
     let (rows, total) = txn(&app.db, |tx| {
-        let rows = fetch_all(tx, "SELECT id, room_name, updated_at FROM saved_games WHERE status = 'abandoned' AND updated_at < ? ORDER BY updated_at LIMIT 500", [&cutoff])?;
-        let total = fetch_one(tx, "SELECT COUNT(*) AS n FROM saved_games WHERE status = 'abandoned' AND updated_at < ?", [&cutoff])?.map(|r| r.int("n")).unwrap_or(0);
+        let rows = fetch_all(
+            tx,
+            "SELECT id, room_name, updated_at FROM saved_games WHERE status = 'abandoned' AND updated_at < ? ORDER BY updated_at LIMIT 500",
+            [&cutoff],
+        )?;
+        let total =
+            fetch_one(tx, "SELECT COUNT(*) AS n FROM saved_games WHERE status = 'abandoned' AND updated_at < ?", [&cutoff])?.map(|r| r.int("n")).unwrap_or(0);
         Ok((rows, total))
     })?;
     Ok(json!({"total": total, "items": rows_json(rows), "days": days}))
@@ -461,7 +486,11 @@ pub fn compute_ratings(tx: &Transaction) -> AdminResult<(RatingState, PerGame)> 
             TimelineEvent::Game(row) => {
                 let flags = state_flags(&row.text("state_json"));
                 let mut ranked: Vec<(i64, i64, i64, i64)> = Vec::new(); // (uid, értékszám, játékok, pont)
-                for p in fetch_all(tx, "SELECT player_name, user_id, final_score FROM game_players WHERE game_id = ? AND user_id IS NOT NULL ORDER BY id", [row.int("id")])? {
+                for p in fetch_all(
+                    tx,
+                    "SELECT player_name, user_id, final_score FROM game_players WHERE game_id = ? AND user_id IS NOT NULL ORDER BY id",
+                    [row.int("id")],
+                )? {
                     let uid = p.int("user_id");
                     if state.contains_key(&uid) && !ranked.iter().any(|r| r.0 == uid) {
                         let score = if flags.get(&p.text("player_name")).copied().unwrap_or(false) { -1_000_000_000 } else { p.int("final_score") };
@@ -489,8 +518,10 @@ pub fn compute_ratings(tx: &Transaction) -> AdminResult<(RatingState, PerGame)> 
 pub fn recompute_ratings(tx: &Transaction, apply: bool) -> AdminResult<Value> {
     let (state, per_game) = compute_ratings(tx)?;
     let names: HashMap<i64, String> = fetch_all(tx, "SELECT id, display_name FROM users", [])?.iter().map(|r| (r.int("id"), r.text("display_name"))).collect();
-    let current: HashMap<i64, (i64, i64)> =
-        fetch_all(tx, "SELECT id, rating, rated_games FROM users", [])?.iter().map(|r| (r.int("id"), (r.opt_int("rating").unwrap_or(elo::INITIAL_RATING), r.int("rated_games")))).collect();
+    let current: HashMap<i64, (i64, i64)> = fetch_all(tx, "SELECT id, rating, rated_games FROM users", [])?
+        .iter()
+        .map(|r| (r.int("id"), (r.opt_int("rating").unwrap_or(elo::INITIAL_RATING), r.int("rated_games"))))
+        .collect();
     let mut items: Vec<Value> = Vec::new();
     let mut unchanged = 0;
     let mut uids: Vec<i64> = state.keys().copied().collect();
@@ -585,7 +616,8 @@ fn user_ips(tx: &Transaction) -> AdminResult<HashMap<i64, HashSet<String>>> {
 /// passzolós játékok, kiugróan jó (a legjobb lépést rendszeresen rakó) játékosok.
 pub fn suspicious_patterns(app: &App) -> AdminResult<Value> {
     txn(&app.db, |tx| {
-        let names: HashMap<i64, String> = fetch_all(tx, "SELECT id, display_name FROM users", [])?.iter().map(|r| (r.int("id"), r.text("display_name"))).collect();
+        let names: HashMap<i64, String> =
+            fetch_all(tx, "SELECT id, display_name FROM users", [])?.iter().map(|r| (r.int("id"), r.text("display_name"))).collect();
         let games = human_games(tx)?;
         let ips = user_ips(tx)?;
         let mut pair_games: Ordered<(i64, i64), Vec<i64>> = Ordered::default();
@@ -674,12 +706,11 @@ fn efficiency_outliers(tx: &Transaction, games: &Ordered<i64, Vec<HumanGame>>, n
         let players = result.get("players").and_then(|p| p.as_array()).cloned().unwrap_or_default();
         let by_name: HashMap<&str, &Value> = players.iter().filter_map(|p| Some((p.get("player")?.as_str()?, p))).collect();
         for (user_id, name, _, _) in games.get(&r.int("game_id")).map(|g| g.as_slice()).unwrap_or(&[]) {
-            if let Some(entry) = by_name.get(name.as_str()) {
-                if entry.get("turns").and_then(|t| t.as_i64()).unwrap_or(0) >= 8 {
-                    if let Some(eff) = entry.get("efficiency").and_then(|e| e.as_f64()) {
-                        per_user.entry_or(*user_id, Vec::new).push(eff);
-                    }
-                }
+            if let Some(entry) = by_name.get(name.as_str())
+                && entry.get("turns").and_then(|t| t.as_i64()).unwrap_or(0) >= 8
+                && let Some(eff) = entry.get("efficiency").and_then(|e| e.as_f64())
+            {
+                per_user.entry_or(*user_id, Vec::new).push(eff);
             }
         }
     }
@@ -829,7 +860,14 @@ pub fn async_expire(app: &Arc<App>, st: &mut ServerState, ctx: &AdminContext, ga
 }
 
 /// Feladás valaki nevében (a játék véget ér, a feladó nem lehet győztes).
-pub fn async_resign(app: &Arc<App>, st: &mut ServerState, ctx: &AdminContext, game_id: i64, player_name: Option<&str>, reason: Option<&Value>) -> AdminResult<()> {
+pub fn async_resign(
+    app: &Arc<App>,
+    st: &mut ServerState,
+    ctx: &AdminContext,
+    game_id: i64,
+    player_name: Option<&str>,
+    reason: Option<&Value>,
+) -> AdminResult<()> {
     let room_id = async_game(app, st, game_id)?;
     let player = st.rooms[&room_id].game.players.iter().find(|p| Some(p.name.as_str()) == player_name && !p.is_bot).map(|p| (p.id.clone(), p.name.clone()));
     let Some((player_id, name)) = player else {

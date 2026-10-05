@@ -54,7 +54,18 @@ strip = true
 [dev-dependencies]
 tokio-tungstenite = "0.30.0"
 
-# Teljesítményteszt a Python és a Rust verzió között: `cargo bench --bench compare` (lásd perf/run.sh)
+# Teljesítményteszt a Python és a Rust verzió között: `cargo bench --bench compare` (lásd scripts/perf.sh)
 [[bench]]
 name = "compare"
 harness = false
+
+# A szerkezeti jellegű stílusfigyelmeztetések tudatosan kikapcsoltak: a hosszú paraméterlista és az összetett
+# típus a JSON-hoz közeli kód természetes velejárója, a teszteknél a soros zár (SERIAL) szándékosan marad kézben.
+[lints.clippy]
+type_complexity = "allow"
+too_many_arguments = "allow"
+result_large_err = "allow"
+should_implement_trait = "allow"
+needless_range_loop = "allow"
+await_holding_lock = "allow"
+assertions_on_constants = "allow"

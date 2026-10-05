@@ -12,7 +12,8 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use std::net::IpAddr;
 
-static HOST_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$").expect("érvényes regex"));
+static HOST_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$").expect("érvényes regex"));
 static EMAIL_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$").expect("érvényes regex"));
 pub const MAX_HOST: usize = 253;
 pub const MAX_USERNAME: usize = 254;
@@ -53,10 +54,10 @@ pub fn build(app: &App, data: &Value) -> AdminResult<Value> {
     };
     let username = single_line(clean_text(data.get("username"), "username", MAX_USERNAME, false)?, "username")?;
     let password_value = data.get("password").filter(|p| !p.is_null());
-    if let Some(p) = password_value {
-        if !p.as_str().is_some_and(|s| s.chars().count() <= MAX_PASSWORD) {
-            return Err(AdminError::field("Érvénytelen jelszó.", 400, "password"));
-        }
+    if let Some(p) = password_value
+        && !p.as_str().is_some_and(|s| s.chars().count() <= MAX_PASSWORD)
+    {
+        return Err(AdminError::field("Érvénytelen jelszó.", 400, "password"));
     }
     let password: String = if username.is_empty() {
         String::new()

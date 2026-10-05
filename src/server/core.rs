@@ -32,8 +32,8 @@ pub const MAX_BOTS: usize = 3;
 pub const ADMIN_ROOM: &str = "admin";
 
 const VALID_LETTERS: [&str; 38] = [
-    "A", "Á", "B", "C", "CS", "D", "E", "É", "F", "G", "GY", "H", "I", "Í", "J", "K", "L", "LY", "M", "N", "NY", "O", "Ó", "Ö", "Ő", "P", "R",
-    "S", "SZ", "T", "TY", "U", "Ú", "Ü", "Ű", "V", "Z", "ZS",
+    "A", "Á", "B", "C", "CS", "D", "E", "É", "F", "G", "GY", "H", "I", "Í", "J", "K", "L", "LY", "M", "N", "NY", "O", "Ó", "Ö", "Ő", "P", "R", "S", "SZ", "T",
+    "TY", "U", "Ú", "Ü", "Ű", "V", "Z", "ZS",
 ];
 
 // --- Input validáció ---
@@ -216,10 +216,7 @@ fn persist_async(app: &Arc<App>, st: &mut ServerState, room_id: &str) {
 /// A játékos regisztrált user_id-ja: élő auth info, különben a mentésből ismert (visszaállított játéknál a még meg
 /// nem érkezett játékosok is megtartják a fiókjukat).
 pub fn user_id_for_player(room: &Room, player: &Player, player_auth: &HashMap<String, crate::state::AuthInfo>) -> Option<i64> {
-    player_auth
-        .get(&player.id)
-        .and_then(|a| a.user_id)
-        .or_else(|| room.known_user_ids.get(&player.name).copied().flatten())
+    player_auth.get(&player.id).and_then(|a| a.user_id).or_else(|| room.known_user_ids.get(&player.name).copied().flatten())
 }
 
 /// Web Push „Te jössz!”, ha a soron lévő regisztrált játékos nincs jelen (lecsatlakozott vagy a böngészőlapja
@@ -253,10 +250,10 @@ pub fn maybe_push_turn(app: &Arc<App>, st: &mut ServerState, room_id: &str) {
             app.emit_to(&sid, "async_your_turn", &json!({"game_id": db_game_id, "room_name": room_name}));
         }
     }
-    if app.push.notify_turn(user_id, &room_name, room_id, "turn") {
-        if let Some(room) = st.rooms.get_mut(room_id) {
-            room.pushed_turn = turn_number;
-        }
+    if app.push.notify_turn(user_id, &room_name, room_id, "turn")
+        && let Some(room) = st.rooms.get_mut(room_id)
+    {
+        room.pushed_turn = turn_number;
     }
 }
 
@@ -450,10 +447,10 @@ pub fn broadcast_challenge_result(app: &Arc<App>, room_id: &str, result: VoteRes
 
 /// Challenge/szavazás eredmény feldolgozása: timer és broadcast.
 pub fn handle_challenge_result(app: &Arc<App>, st: &mut ServerState, room_id: &str, result: VoteResult, message: &str) {
-    if result != VoteResult::Recorded {
-        if let Some(room) = st.rooms.get_mut(room_id) {
-            room.invalidate_challenge_timer();
-        }
+    if result != VoteResult::Recorded
+        && let Some(room) = st.rooms.get_mut(room_id)
+    {
+        room.invalidate_challenge_timer();
     }
     broadcast_challenge_result(app, room_id, result, message);
     let finished = st.rooms.get(room_id).is_some_and(|r| r.game.finished);
@@ -625,11 +622,7 @@ pub fn save_game_to_db(app: &Arc<App>, st: &mut ServerState, room_id: &str) -> (
             // A végeredményt már rögzítettük (statisztika ne duplázódjon).
             return (true, "Játék mentve.".to_string());
         }
-        let owner_name = room
-            .owner
-            .as_ref()
-            .and_then(|sid| st.player_names.get(sid).cloned())
-            .unwrap_or_else(|| room.owner_name.clone());
+        let owner_name = room.owner.as_ref().and_then(|sid| st.player_names.get(sid).cloned()).unwrap_or_else(|| room.owner_name.clone());
         let winners: HashSet<&str> = game.winners.iter().map(|w| w.name.as_str()).collect();
         let players: Vec<GamePlayerData> = game
             .players
@@ -795,8 +788,7 @@ pub fn load_async_room(app: &Arc<App>, st: &mut ServerState, row: &crate::db::Ro
     };
     game.async_mode = true;
     let room_id = row.text("room_id");
-    let known: HashMap<String, Option<i64>> =
-        app.db.get_game_players(game_id).unwrap_or_default().into_iter().map(|(name, uid, _)| (name, uid)).collect();
+    let known: HashMap<String, Option<i64>> = app.db.get_game_players(game_id).unwrap_or_default().into_iter().map(|(name, uid, _)| (name, uid)).collect();
     for player in &mut game.players {
         if !player.is_bot {
             player.disconnected = true;

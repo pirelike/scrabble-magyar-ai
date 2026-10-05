@@ -94,7 +94,7 @@ mod tests {
 
     #[test]
     fn unique_names_get_a_counter() {
-        let taken = vec!["Anna".to_string(), "Anna (2)".to_string()];
+        let taken = ["Anna".to_string(), "Anna (2)".to_string()];
         assert_eq!(unique_name("Béla", taken.iter()), "Béla");
         assert_eq!(unique_name("anna", taken.iter()), "anna (3)");
         assert_eq!(unique_name("Anna", Vec::<String>::new().iter()), "Anna");

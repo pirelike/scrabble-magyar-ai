@@ -83,9 +83,7 @@ fn apply_ratings(tx: &Transaction, game_id: i64, players: &[GamePlayerData]) -> 
         if ranked.iter().any(|(u, ..)| *u == uid) {
             continue;
         }
-        let row: Option<(i64, i64)> = tx
-            .query_row("SELECT rating, rated_games FROM users WHERE id = ?", [uid], |r| Ok((r.get(0)?, r.get(1)?)))
-            .optional()?;
+        let row: Option<(i64, i64)> = tx.query_row("SELECT rating, rated_games FROM users WHERE id = ?", [uid], |r| Ok((r.get(0)?, r.get(1)?))).optional()?;
         if let Some((rating, rated_games)) = row {
             // Aki feladta, az pontszámától függetlenül mindenki mögé kerül
             let score = if pd.resigned { -1_000_000_000 } else { pd.score };
@@ -99,10 +97,7 @@ fn apply_ratings(tx: &Transaction, game_id: i64, players: &[GamePlayerData]) -> 
     for (uid, before, _games, _score) in &ranked {
         let after = before + changes[uid];
         tx.execute("UPDATE users SET rating = ?, rated_games = rated_games + 1 WHERE id = ?", params![after, uid])?;
-        tx.execute(
-            "UPDATE game_players SET rating_before = ?, rating_after = ? WHERE game_id = ? AND user_id = ?",
-            params![before, after, game_id, uid],
-        )?;
+        tx.execute("UPDATE game_players SET rating_before = ?, rating_after = ? WHERE game_id = ? AND user_id = ?", params![before, after, game_id, uid])?;
     }
     Ok(())
 }
@@ -162,9 +157,8 @@ impl Db {
     pub fn finish_game(&self, room_id: &str, state_json: &str, players: &[GamePlayerData], room_name: &str, has_bots: bool) -> rusqlite::Result<i64> {
         self.with(|tx| {
             let now = util::now_ts();
-            let existing: Option<i64> = tx
-                .query_row("SELECT id FROM saved_games WHERE room_id = ? AND status = 'active'", [room_id], |r| r.get(0))
-                .optional()?;
+            let existing: Option<i64> =
+                tx.query_row("SELECT id FROM saved_games WHERE room_id = ? AND status = 'active'", [room_id], |r| r.get(0)).optional()?;
             let game_id = match existing {
                 None => {
                     tx.execute(
@@ -183,11 +177,7 @@ impl Db {
             };
             for pd in players {
                 let found: Option<i64> = tx
-                    .query_row(
-                        "SELECT id FROM game_players WHERE game_id = ? AND player_name = ?",
-                        params![game_id, pd.player_name],
-                        |r| r.get(0),
-                    )
+                    .query_row("SELECT id FROM game_players WHERE game_id = ? AND player_name = ?", params![game_id, pd.player_name], |r| r.get(0))
                     .optional()?;
                 match found {
                     Some(id) => {
@@ -289,9 +279,10 @@ impl Db {
             );
             let mut args: Vec<i64> = ids.clone();
             args.push(user_id);
-            let opponents = opponents_by_game(fetch_all(tx, &sql, params_from_iter(args))?, |o| {
-                json!({"player_name": o.text("player_name"), "final_score": o.int("final_score"), "is_winner": o.int("is_winner")})
-            });
+            let opponents = opponents_by_game(
+                fetch_all(tx, &sql, params_from_iter(args))?,
+                |o| json!({"player_name": o.text("player_name"), "final_score": o.int("final_score"), "is_winner": o.int("is_winner")}),
+            );
             Ok(rows
                 .iter()
                 .map(|r| {
@@ -364,15 +355,11 @@ impl Db {
                 return Ok(Vec::new());
             }
             let ids: Vec<i64> = rows.iter().map(|r| r.int("game_id")).collect();
-            let sql = format!(
-                "SELECT game_id, player_name, final_score FROM game_players WHERE game_id IN ({}) AND user_id IS NOT ?",
-                placeholders(ids.len())
-            );
+            let sql = format!("SELECT game_id, player_name, final_score FROM game_players WHERE game_id IN ({}) AND user_id IS NOT ?", placeholders(ids.len()));
             let mut args: Vec<i64> = ids;
             args.push(user_id);
-            let opponents = opponents_by_game(fetch_all(tx, &sql, params_from_iter(args))?, |o| {
-                json!({"name": o.text("player_name"), "score": o.int("final_score")})
-            });
+            let opponents =
+                opponents_by_game(fetch_all(tx, &sql, params_from_iter(args))?, |o| json!({"name": o.text("player_name"), "score": o.int("final_score")}));
             Ok(rows
                 .into_iter()
                 .map(|mut r| {
@@ -398,9 +385,8 @@ impl Db {
     /// Visszatér: token, vagy None, ha a játék nem létezik / még nem fejeződött be.
     pub fn get_or_create_share_token(&self, game_id: i64) -> rusqlite::Result<Option<String>> {
         self.with(|tx| {
-            let row: Option<(String, Option<String>)> = tx
-                .query_row("SELECT status, share_token FROM saved_games WHERE id = ?", [game_id], |r| Ok((r.get(0)?, r.get(1)?)))
-                .optional()?;
+            let row: Option<(String, Option<String>)> =
+                tx.query_row("SELECT status, share_token FROM saved_games WHERE id = ?", [game_id], |r| Ok((r.get(0)?, r.get(1)?))).optional()?;
             let Some((status, token)) = row else { return Ok(None) };
             if status != "finished" {
                 return Ok(None);
@@ -425,11 +411,8 @@ impl Db {
     /// A játék végeredménye: pontszám szerint csökkenően.
     pub fn get_game_results(&self, game_id: i64) -> rusqlite::Result<Vec<Value>> {
         self.with(|tx| {
-            let rows = fetch_all(
-                tx,
-                "SELECT player_name, final_score, is_winner FROM game_players WHERE game_id = ? ORDER BY final_score DESC, id",
-                [game_id],
-            )?;
+            let rows =
+                fetch_all(tx, "SELECT player_name, final_score, is_winner FROM game_players WHERE game_id = ? ORDER BY final_score DESC, id", [game_id])?;
             Ok(rows
                 .iter()
                 .map(|r| json!({"player_name": r.text("player_name"), "final_score": r.int("final_score"), "is_winner": r.flag("is_winner")}))
@@ -467,21 +450,14 @@ impl Db {
     /// Játék elhagyása: status='abandoned'.
     pub fn abandon_game(&self, room_id: &str) {
         let _ = self.with(|tx| {
-            tx.execute(
-                "UPDATE saved_games SET status = 'abandoned', updated_at = datetime('now') WHERE room_id = ? AND status = 'active'",
-                [room_id],
-            )
+            tx.execute("UPDATE saved_games SET status = 'abandoned', updated_at = datetime('now') WHERE room_id = ? AND status = 'active'", [room_id])
         });
     }
 
     /// Játék elhagyása ID alapján: status='abandoned'.
     pub fn abandon_game_by_id(&self, game_id: i64) {
-        let _ = self.with(|tx| {
-            tx.execute(
-                "UPDATE saved_games SET status = 'abandoned', updated_at = datetime('now') WHERE id = ? AND status = 'active'",
-                [game_id],
-            )
-        });
+        let _ = self
+            .with(|tx| tx.execute("UPDATE saved_games SET status = 'abandoned', updated_at = datetime('now') WHERE id = ? AND status = 'active'", [game_id]));
     }
 
     // --- Ranglista ---

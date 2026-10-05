@@ -69,11 +69,7 @@ fn dictionary_rejected_remove(req: &AdminReq) -> HResult {
 
 /// A tartós lista fájlja (hu_rejected.txt), vagy a változások diffje (`diff=1`) a repóba való átvezetéshez.
 fn dictionary_rejected_download(req: &AdminReq) -> HResult {
-    let (text, name) = if req.arg("diff") == Some("1") {
-        (dict::list_diff(), "hu_rejected.diff")
-    } else {
-        (dict::read_list_text(), "hu_rejected.txt")
-    };
+    let (text, name) = if req.arg("diff") == Some("1") { (dict::list_diff(), "hu_rejected.diff") } else { (dict::read_list_text(), "hu_rejected.txt") };
     let mut response = (StatusCode::OK, text).into_response();
     let headers = response.headers_mut();
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/plain; charset=utf-8"));

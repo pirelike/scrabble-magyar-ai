@@ -148,7 +148,8 @@ fn settings_patch(req: &AdminReq) -> HResult {
         for key in &keys {
             let value = &changes[*key];
             settings.store(act.tx, key, value, Some(admin_id)).map_err(|e| AdminError::field(&e.0, 400, key))?;
-            let stored = if value.is_null() { settings.default_of(key) } else { settings.validate(key, value).map_err(|e| AdminError::field(&e.0, 400, key))? };
+            let stored =
+                if value.is_null() { settings.default_of(key) } else { settings.validate(key, value).map_err(|e| AdminError::field(&e.0, 400, key))? };
             after.insert((*key).clone(), stored);
         }
         act.details.insert("before".into(), Value::Object(before.clone()));
@@ -164,7 +165,8 @@ fn settings_patch(req: &AdminReq) -> HResult {
 fn stats_get(req: &AdminReq) -> HResult {
     let data = stats::stats(&req.app, req.arg("metric"), req.arg("range").or(Some("30")))?;
     if req.wants_csv() {
-        let columns: Vec<String> = data["table"]["columns"].as_array().map(|c| c.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()).unwrap_or_default();
+        let columns: Vec<String> =
+            data["table"]["columns"].as_array().map(|c| c.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()).unwrap_or_default();
         let rows: Vec<Value> = data["table"]["rows"]
             .as_array()
             .map(|rows| {

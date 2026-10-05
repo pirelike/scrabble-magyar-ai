@@ -67,7 +67,10 @@ async fn live_counters() {
     watcher.call("spectate_room", json!({"room_id": first_room})).await;
     let live = e.api.admin_get("/overview").await.json()["live"].clone();
     assert_eq!((live["online_users"].clone(), live["online_guests"].clone(), live["sockets"].clone()), (json!(1), json!(3), json!(4)));
-    assert_eq!((live["rooms_total"].clone(), live["rooms_active"].clone(), live["games_running"].clone(), live["games_with_bots"].clone()), (json!(2), json!(2), json!(2), json!(1)));
+    assert_eq!(
+        (live["rooms_total"].clone(), live["rooms_active"].clone(), live["games_running"].clone(), live["games_with_bots"].clone()),
+        (json!(2), json!(2), json!(2), json!(1))
+    );
     assert_eq!((live["rooms_public"].clone(), live["spectators"].clone(), live["grace_players"].clone()), (json!(2), json!(1), json!(0)));
 }
 
@@ -78,7 +81,14 @@ async fn grace_and_votes_are_counted() {
     live_room(&e.server, &anna, &[&bela], json!({"challenge_mode": true})).await;
     let tiles: Vec<Value> = with_room(&e.server, |room| {
         let player = room.game.players.iter().find(|p| p.name == "Anna").unwrap();
-        player.hand.iter().filter(|t| !t.is_blank()).take(2).enumerate().map(|(i, t)| json!({"row": 7, "col": 7 + i, "letter": t.as_str(), "is_blank": false})).collect()
+        player
+            .hand
+            .iter()
+            .filter(|t| !t.is_blank())
+            .take(2)
+            .enumerate()
+            .map(|(i, t)| json!({"row": 7, "col": 7 + i, "letter": t.as_str(), "is_blank": false}))
+            .collect()
     });
     anna.call("place_tiles", json!({"tiles": tiles})).await;
     bela.close();
@@ -197,7 +207,10 @@ async fn login_events_are_recorded() {
     anon.request("POST", "/api/auth/login", Some(json!({"email": "a@example.com", "password": "rossz"})), &[("User-Agent", "Teszt/1")]).await;
     anon.post("/api/auth/login", json!({"email": "a@example.com", "password": PASSWORD})).await;
     let items = arr(&e.api.admin_get("/security/logins?user=a@example.com").await.json()["items"]);
-    assert_eq!(items.iter().map(|i| (i["success"].clone(), i["reason"].clone())).collect::<Vec<_>>(), vec![(json!(true), json!("")), (json!(false), json!("bad_credentials"))]);
+    assert_eq!(
+        items.iter().map(|i| (i["success"].clone(), i["reason"].clone())).collect::<Vec<_>>(),
+        vec![(json!(true), json!("")), (json!(false), json!("bad_credentials"))]
+    );
     assert_eq!((items[0]["user_id"].clone(), items[1]["user_agent"].clone()), (json!(a), json!("Teszt/1")));
     let user = e.server.app.db.get_user_by_id(a).unwrap().unwrap();
     assert!(user.last_login_at.is_some());
@@ -229,7 +242,15 @@ async fn registration_is_a_login_too() {
 async fn sessions_keep_the_ip_and_the_browser() {
     let e = env().await;
     let a = e.server.create_user("a@example.com", "Anna");
-    e.server.http().request("POST", "/api/auth/login", Some(json!({"email": "a@example.com", "password": PASSWORD})), &[("User-Agent", "Teszt/2"), ("X-Forwarded-For", "198.51.100.4")]).await;
+    e.server
+        .http()
+        .request(
+            "POST",
+            "/api/auth/login",
+            Some(json!({"email": "a@example.com", "password": PASSWORD})),
+            &[("User-Agent", "Teszt/2"), ("X-Forwarded-For", "198.51.100.4")],
+        )
+        .await;
     let sessions = e.api.admin_get(&format!("/users/{a}")).await.json()["sessions"].clone();
     assert_eq!((sessions[0]["ip"].clone(), sessions[0]["user_agent"].clone()), (json!("198.51.100.4"), json!("Teszt/2")));
 }
@@ -260,7 +281,12 @@ async fn login_filters_and_csv() {
     e.server.app.db.record_login_event("b@example.com", true, Some("198.51.100.9"), Some("UA"), None, "");
     let emails = |q: &'static str| {
         let api = e.api.clone();
-        async move { arr(&api.admin_get(&format!("/security/logins?{q}")).await.json()["items"]).iter().map(|i| i["email"].as_str().unwrap().to_string()).collect::<Vec<_>>() }
+        async move {
+            arr(&api.admin_get(&format!("/security/logins?{q}")).await.json()["items"])
+                .iter()
+                .map(|i| i["email"].as_str().unwrap().to_string())
+                .collect::<Vec<_>>()
+        }
     };
     assert_eq!(emails("ip=203.0.113").await, vec!["a@example.com"]);
     // a próbához bejelentkezett admin saját belépése is sikeres
@@ -446,7 +472,12 @@ async fn the_session_listing_has_no_tokens() {
     let only = |q: &str| {
         let api = e.api.clone();
         let q = q.to_string();
-        async move { arr(&api.admin_get(&format!("/security/sessions?{q}")).await.json()["items"]).iter().map(|s| s["display_name"].as_str().unwrap().to_string()).collect::<Vec<_>>() }
+        async move {
+            arr(&api.admin_get(&format!("/security/sessions?{q}")).await.json()["items"])
+                .iter()
+                .map(|s| s["display_name"].as_str().unwrap().to_string())
+                .collect::<Vec<_>>()
+        }
     };
     assert_eq!(only("q=anna").await, vec!["Anna"]);
     assert_eq!(only("admin=1").await, vec!["Admin"]);
@@ -508,7 +539,8 @@ async fn the_system_overview() {
     let versions = &data["versions"];
     assert!(!versions["git"].is_null() && !versions["asset_version"].is_null() && !versions["tests"].is_null(), "{versions}");
     assert!(versions["packages"]["axum"].is_string());
-    let tables: std::collections::HashMap<String, i64> = arr(&data["database"]["tables"]).iter().map(|t| (t["name"].as_str().unwrap().to_string(), t["rows"].as_i64().unwrap())).collect();
+    let tables: std::collections::HashMap<String, i64> =
+        arr(&data["database"]["tables"]).iter().map(|t| (t["name"].as_str().unwrap().to_string(), t["rows"].as_i64().unwrap())).collect();
     assert_eq!(tables["users"], 1);
     assert!(tables.contains_key("admin_audit") && data["database"]["size"].as_i64().unwrap() > 0);
     let jobs: std::collections::HashSet<String> = arr(&data["jobs"]).iter().map(|j| j["name"].as_str().unwrap().to_string()).collect();
@@ -587,7 +619,8 @@ async fn a_backup_on_the_server_keeps_the_last_ones() {
         tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
         assert_eq!(e.api.admin_post("/system/backup", json!({})).await.status, 200);
     }
-    let names: Vec<String> = arr(&e.api.admin_get("/system").await.json()["database"]["backups"]).iter().map(|b| b["name"].as_str().unwrap().to_string()).collect();
+    let names: Vec<String> =
+        arr(&e.api.admin_get("/system").await.json()["database"]["backups"]).iter().map(|b| b["name"].as_str().unwrap().to_string()).collect();
     assert_eq!(names.len(), 2);
     let mut sorted = names.clone();
     sorted.sort_by(|a, b| b.cmp(a));
@@ -626,10 +659,15 @@ async fn cleanup_preview_and_run() {
     assert_eq!(e.api.admin_post("/system/cleanup", json!({"items": ["sessions"], "reason": REASON})).await.status, 401);
     e.api.sudo().await;
     assert_eq!(e.api.admin_post("/system/cleanup", json!({"items": ["nincs"], "reason": REASON})).await.status, 400);
-    let removed = e.api.admin_post("/system/cleanup", json!({"items": ["sessions", "codes", "abandoned_games"], "days": 30, "reason": REASON})).await.json()["removed"].clone();
+    let removed =
+        e.api.admin_post("/system/cleanup", json!({"items": ["sessions", "codes", "abandoned_games"], "days": 30, "reason": REASON})).await.json()["removed"]
+            .clone();
     assert_eq!(removed, json!({"sessions": 1, "codes": 1, "abandoned_games": 1}));
     let counts = e.api.admin_get("/system/cleanup?days=30").await.json()["counts"].clone();
-    assert_eq!((counts["sessions"].clone(), counts["codes"].clone(), counts["abandoned_games"].clone(), counts["chat_log"].clone()), (json!(0), json!(0), json!(0), json!(1)));
+    assert_eq!(
+        (counts["sessions"].clone(), counts["codes"].clone(), counts["abandoned_games"].clone(), counts["chat_log"].clone()),
+        (json!(0), json!(0), json!(0), json!(1))
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -752,7 +790,8 @@ async fn retention() {
              INSERT INTO login_events (user_id, email, success, created_at) VALUES ({a}, 'a', 1, datetime('now', '-3 days'))"
         ),
     );
-    let rows: std::collections::HashMap<i64, Value> = arr(&stats(&e, "retention", 30).await["retention"]).into_iter().map(|r| (r["day"].as_i64().unwrap(), r)).collect();
+    let rows: std::collections::HashMap<i64, Value> =
+        arr(&stats(&e, "retention", 30).await["retention"]).into_iter().map(|r| (r["day"].as_i64().unwrap(), r)).collect();
     assert_eq!((rows[&1]["eligible"].clone(), rows[&1]["returned"].clone()), (json!(2), json!(1)));
     assert_eq!(rows[&1]["share"].as_f64(), Some(50.0));
     assert_eq!(rows[&7]["returned"], 1);
@@ -793,7 +832,8 @@ async fn bot_levels() {
         bot_game(&format!("a{i}"), json!(5), *won);
     }
     bot_game("b", json!("auto"), false);
-    let levels: std::collections::HashMap<String, Value> = arr(&stats(&e, "bots", 30).await["levels"]).into_iter().map(|l| (l["level"].to_string().trim_matches('"').to_string(), l)).collect();
+    let levels: std::collections::HashMap<String, Value> =
+        arr(&stats(&e, "bots", 30).await["levels"]).into_iter().map(|l| (l["level"].to_string().trim_matches('"').to_string(), l)).collect();
     assert_eq!((levels["5"]["games"].clone(), levels["5"]["human_wins"].clone()), (json!(3), json!(2)));
     assert_eq!(levels["5"]["human_win_rate"].as_f64(), Some(66.7));
     assert_eq!(levels["5"]["strength"].as_f64(), Some(12.7));
@@ -810,7 +850,16 @@ async fn words_and_moves() {
         e.server
             .app
             .db
-            .add_game_move(game_id, &StoredMove { move_number: n as i64 + 1, player_name: "Anna".into(), action_type: "place".into(), details_json: Some(details.to_string()), board_snapshot_json: Some("{}".into()) })
+            .add_game_move(
+                game_id,
+                &StoredMove {
+                    move_number: n as i64 + 1,
+                    player_name: "Anna".into(),
+                    action_type: "place".into(),
+                    details_json: Some(details.to_string()),
+                    board_snapshot_json: Some("{}".into()),
+                },
+            )
             .unwrap();
     }
     let data = stats(&e, "words", 30).await;
@@ -828,7 +877,16 @@ async fn challenges_statistics() {
         e.server
             .app
             .db
-            .add_game_move(game_id, &StoredMove { move_number: n as i64 + 1, player_name: "Anna".into(), action_type: kind.to_string(), details_json: Some("{}".into()), board_snapshot_json: Some("{}".into()) })
+            .add_game_move(
+                game_id,
+                &StoredMove {
+                    move_number: n as i64 + 1,
+                    player_name: "Anna".into(),
+                    action_type: kind.to_string(),
+                    details_json: Some("{}".into()),
+                    board_snapshot_json: Some("{}".into()),
+                },
+            )
             .unwrap();
     }
     let data = stats(&e, "challenges", 30).await;
@@ -864,7 +922,12 @@ async fn the_review_series() {
 async fn the_heatmap() {
     let e = env().await;
     let game_id = e.server.app.db.save_game("h1", "Hő", "{}", false, &[], "", None, false, false).unwrap();
-    exec(&e, &format!("INSERT INTO game_moves (game_id, move_number, player_name, action_type, created_at) VALUES ({game_id}, 1, 'Anna', 'pass', '2026-10-05 08:30:00')")); // hétfő
+    exec(
+        &e,
+        &format!(
+            "INSERT INTO game_moves (game_id, move_number, player_name, action_type, created_at) VALUES ({game_id}, 1, 'Anna', 'pass', '2026-10-05 08:30:00')"
+        ),
+    ); // hétfő
     let grid = stats(&e, "heatmap", 365).await;
     assert_eq!(grid["grid"].as_array().unwrap().len(), 7);
     assert!(grid["grid"].as_array().unwrap().iter().all(|row| row.as_array().unwrap().len() == 24));

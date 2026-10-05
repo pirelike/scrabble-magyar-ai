@@ -382,7 +382,8 @@ async fn a_one_sided_pair() {
     let data = e.api.admin_get("/ratings/suspicious").await.json();
     let pair = &data["one_sided_pairs"][0];
     assert_eq!(pair["games"], 6);
-    let wins: std::collections::HashMap<String, i64> = pair["users"].as_array().unwrap().iter().map(|u| (u["name"].as_str().unwrap().to_string(), u["wins"].as_i64().unwrap())).collect();
+    let wins: std::collections::HashMap<String, i64> =
+        pair["users"].as_array().unwrap().iter().map(|u| (u["name"].as_str().unwrap().to_string(), u["wins"].as_i64().unwrap())).collect();
     assert_eq!(wins, std::collections::HashMap::from([("Anna".to_string(), 6), ("Béla".to_string(), 0)]));
     assert_eq!(game_ids(&e, "?suspicious=1").await.len(), 6);
 }
@@ -412,7 +413,8 @@ async fn fast_passing_games() {
     let e = env().await;
     let game_id = finished_game(&e.server, "r1", &[(Some(e.a), "Anna", 0), (Some(e.b), "Béla", 0)], false, &[], 8);
     let long_game = finished_game(&e.server, "r2", &[(Some(e.a), "Anna", 5), (Some(e.b), "Béla", 3)], false, &[], 40);
-    let flagged: Vec<Value> = e.api.admin_get("/ratings/suspicious").await.json()["fast_pass_games"].as_array().unwrap().iter().map(|g| g["game_id"].clone()).collect();
+    let flagged: Vec<Value> =
+        e.api.admin_get("/ratings/suspicious").await.json()["fast_pass_games"].as_array().unwrap().iter().map(|g| g["game_id"].clone()).collect();
     assert_eq!(flagged, vec![json!(game_id)]);
     assert!(!flagged.contains(&json!(long_game)));
 }
@@ -426,7 +428,8 @@ async fn consistently_best_moves() {
         e.server.app.db.save_game_analysis(game_id, 6, &analysis.to_string()).unwrap();
     }
     let entries = e.api.admin_get("/ratings/suspicious").await.json()["high_efficiency"].clone();
-    let summary: Vec<(Value, Value, Value)> = entries.as_array().unwrap().iter().map(|x| (x["name"].clone(), x["games"].clone(), x["average"].clone())).collect();
+    let summary: Vec<(Value, Value, Value)> =
+        entries.as_array().unwrap().iter().map(|x| (x["name"].clone(), x["games"].clone(), x["average"].clone())).collect();
     assert_eq!(summary, vec![(json!("Anna"), json!(3), json!(99.0))]);
 }
 
@@ -523,7 +526,8 @@ async fn expiring_now() {
     let a = async_env().await;
     let response = a.api.admin_post(&format!("/async/{}/expire", a.game_id), json!({"reason": REASON})).await;
     assert_eq!(response.json()["player"], "Anna");
-    let (current, timeouts) = async_room(&a, |r| (r.game.current_player().unwrap().name.clone(), r.game.players.iter().find(|p| p.name == "Anna").unwrap().timeouts));
+    let (current, timeouts) =
+        async_room(&a, |r| (r.game.current_player().unwrap().name.clone(), r.game.players.iter().find(|p| p.name == "Anna").unwrap().timeouts));
     assert_eq!((current.as_str(), timeouts), ("Béla", 1));
 }
 
@@ -588,7 +592,11 @@ async fn an_unknown_async_game() {
 
 fn store_puzzle(e: &Env) -> String {
     let date = daily::today_str();
-    e.server.app.db.save_daily_puzzle(&date, &Board::new().to_json(), &vec!["A".to_string(); 7], 60, &json!({"tiles": [], "words": ["ALMA"], "score": 60})).unwrap();
+    e.server
+        .app
+        .db
+        .save_daily_puzzle(&date, &Board::new().to_json(), &vec!["A".to_string(); 7], 60, &json!({"tiles": [], "words": ["ALMA"], "score": 60}))
+        .unwrap();
     date
 }
 

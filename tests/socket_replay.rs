@@ -420,7 +420,10 @@ async fn the_turn_timeout_auto_pass_can_end_and_save_the_game() {
     let moves = server.app.db.get_game_moves(db_game_id(&server).expect("mentve")).unwrap();
     assert!(moves.iter().any(|m| m.action_type == "pass"), "az automatikus passz a visszajátszásban van");
     let events = a.take();
-    let message = events.iter().find(|(n, d)| n == "action_result" && d["message"].as_str().is_some_and(|m| m.starts_with("Időtúllépés"))).map(|(_, d)| d["message"].clone());
+    let message = events
+        .iter()
+        .find(|(n, d)| n == "action_result" && d["message"].as_str().is_some_and(|m| m.starts_with("Időtúllépés")))
+        .map(|(_, d)| d["message"].clone());
     assert!(message.is_some(), "az időtúllépés üzenete kiment: {:?}", event_names(&events));
     let _ = b;
 }

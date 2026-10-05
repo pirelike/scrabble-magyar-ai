@@ -17,7 +17,11 @@ use std::process::Command;
 const BOSS: &str = "boss@example.com";
 
 fn playwright_module() -> Option<PathBuf> {
-    let candidates = [std::env::var("PLAYWRIGHT_MODULE").ok(), Some("/opt/node-tools/node_modules/playwright".into()), Some("/opt/node22/lib/node_modules/playwright".into())];
+    let candidates = [
+        std::env::var("PLAYWRIGHT_MODULE").ok(),
+        Some("/opt/node-tools/node_modules/playwright".into()),
+        Some("/opt/node22/lib/node_modules/playwright".into()),
+    ];
     candidates.into_iter().flatten().map(PathBuf::from).find(|p| p.is_dir())
 }
 
@@ -25,7 +29,8 @@ fn chromium() -> Option<PathBuf> {
     if let Some(explicit) = std::env::var_os("PLAYWRIGHT_CHROMIUM").map(PathBuf::from).filter(|p| p.is_file()) {
         return Some(explicit);
     }
-    let mut found: Vec<PathBuf> = std::fs::read_dir("/opt/pw-browsers").ok()?.filter_map(|e| e.ok()).map(|e| e.path().join("chrome-linux/chrome")).filter(|p| p.is_file()).collect();
+    let mut found: Vec<PathBuf> =
+        std::fs::read_dir("/opt/pw-browsers").ok()?.filter_map(|e| e.ok()).map(|e| e.path().join("chrome-linux/chrome")).filter(|p| p.is_file()).collect();
     found.sort();
     found.pop()
 }
@@ -42,8 +47,18 @@ fn board(tiles: &[(usize, usize, char)]) -> String {
 fn finished(server: &TestServer, room: &str, results: &[(i64, &str, i64)], moves: usize) {
     use scrabble::db::GamePlayerData;
     let best = results.iter().map(|r| r.2).max().unwrap();
-    let players: Vec<GamePlayerData> = results.iter().map(|(uid, name, score)| GamePlayerData { player_name: name.to_string(), user_id: Some(*uid), score: *score, is_winner: *score == best, resigned: false }).collect();
-    let state = json!({"players": results.iter().map(|(_, n, _)| json!({"name": n, "resigned": false, "is_bot": false})).collect::<Vec<_>>(), "finished": true});
+    let players: Vec<GamePlayerData> = results
+        .iter()
+        .map(|(uid, name, score)| GamePlayerData {
+            player_name: name.to_string(),
+            user_id: Some(*uid),
+            score: *score,
+            is_winner: *score == best,
+            resigned: false,
+        })
+        .collect();
+    let state =
+        json!({"players": results.iter().map(|(_, n, _)| json!({"name": n, "resigned": false, "is_bot": false})).collect::<Vec<_>>(), "finished": true});
     let id = server.app.db.finish_game(room, &state.to_string(), &players, &format!("Játék {room}"), false).unwrap();
     let word: Vec<char> = "ALMA".chars().collect();
     for n in 1..=moves {
@@ -75,7 +90,12 @@ async fn seeded() -> Seeded {
     let server = TestServer::start_with(|c| c.admin_emails = [BOSS.to_string()].into_iter().collect()).await;
     set_setting(&server, "bot_think_multiplier", json!(5.0));
     server.create_user(BOSS, "Főnök");
-    let (anna, bela, cili, dani) = (server.create_user("anna@example.com", "Anna"), server.create_user("bela@example.com", "Béla"), server.create_user("cili@example.com", "Cili"), server.create_user("dani@example.com", "Dani"));
+    let (anna, bela, cili, dani) = (
+        server.create_user("anna@example.com", "Anna"),
+        server.create_user("bela@example.com", "Béla"),
+        server.create_user("cili@example.com", "Cili"),
+        server.create_user("dani@example.com", "Dani"),
+    );
     server
         .app
         .db
@@ -87,7 +107,14 @@ async fn seeded() -> Seeded {
         .unwrap();
     for i in 0..12 {
         let ok = i % 2 == 0;
-        server.app.db.record_login_event("anna@example.com", ok, Some("203.0.113.9"), Some("Mozilla/5.0 Teszt"), if ok { Some(anna) } else { None }, if ok { "" } else { "rossz jelszó" });
+        server.app.db.record_login_event(
+            "anna@example.com",
+            ok,
+            Some("203.0.113.9"),
+            Some("Mozilla/5.0 Teszt"),
+            if ok { Some(anna) } else { None },
+            if ok { "" } else { "rossz jelszó" },
+        );
     }
     finished(&server, "g1", &[(anna, "Anna", 310), (bela, "Béla", 250)], 4);
     finished(&server, "g2", &[(anna, "Anna", 280), (cili, "Cili", 300)], 4);
@@ -121,7 +148,13 @@ async fn the_admin_client_in_a_real_browser() {
     let base = seeded.server.base();
     let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/browser/admin_smoke.js");
     let output = tokio::task::spawn_blocking(move || {
-        Command::new("node").arg(script).env("ADMIN_SMOKE_BASE", base).env("PLAYWRIGHT_MODULE", module).env("PLAYWRIGHT_CHROMIUM", browser).output().expect("node")
+        Command::new("node")
+            .arg(script)
+            .env("ADMIN_SMOKE_BASE", base)
+            .env("PLAYWRIGHT_MODULE", module)
+            .env("PLAYWRIGHT_CHROMIUM", browser)
+            .output()
+            .expect("node")
     })
     .await
     .unwrap();

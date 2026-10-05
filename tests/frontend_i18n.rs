@@ -8,15 +8,15 @@ use serde_json::{Value, json};
 use std::collections::BTreeSet;
 
 fn data() -> Value {
-    data_of(&read(&["static", "i18n-data.js"]), "I18N_DATA")
+    data_of(&read(&["web", "static", "i18n-data.js"]), "I18N_DATA")
 }
 
 fn app_js() -> String {
-    read(&["static", "app.js"]) + &read(&["static", "i18n.js"])
+    read(&["web", "static", "app.js"]) + &read(&["web", "static", "i18n.js"])
 }
 
 fn index_html() -> String {
-    read(&["templates", "index.html"])
+    read(&["web", "templates", "index.html"])
 }
 
 /// Dinamikusan összerakott kulcscsaládok (a kódban `t('előtag.' + ...)` formában szerepelnek)
@@ -78,7 +78,7 @@ fn english_differs_from_hungarian_for_real_text() {
 
 #[test]
 fn the_file_is_loadable_by_the_browser() {
-    let source = read(&["static", "i18n-data.js"]);
+    let source = read(&["web", "static", "i18n-data.js"]);
     assert!(source.starts_with("//"));
     assert!(source.contains("window.I18N_DATA = {"));
 }
@@ -135,7 +135,22 @@ fn dynamic_key_families_are_complete() {
             assert!(data[lang].get(format!("badge.{badge}")).is_some() && data[lang].get(format!("badge.{badge}_desc")).is_some(), "{lang} {badge}");
         }
     }
-    for kind in ["exchange", "pass", "rejected", "skip", "vote_accept", "vote_reject", "game_over", "game_over_draw", "save_revert", "place", "pending", "withdrawn", "timeout", "resigned"] {
+    for kind in [
+        "exchange",
+        "pass",
+        "rejected",
+        "skip",
+        "vote_accept",
+        "vote_reject",
+        "game_over",
+        "game_over_draw",
+        "save_revert",
+        "place",
+        "pending",
+        "withdrawn",
+        "timeout",
+        "resigned",
+    ] {
         assert!(has(&format!("last.{kind}")), "last.{kind}");
     }
 }
@@ -279,7 +294,7 @@ fn the_html_lang_attribute_is_set_before_paint() {
 /// A szerver forrásában szereplő, a kliensnek szánt üzenetek: mondatszerű szöveges literálok (a formázó
 /// helyőrzők `7`-tel helyettesítve). Az admin panel, a levelezés, a push és a beállítások üzenetei nem ide tartoznak.
 fn server_messages() -> std::collections::BTreeMap<String, String> {
-    let skipped = ["src/mail.rs", "src/push.rs", "src/settings.rs", "src/tunnel.rs", "src/main.rs"];
+    let skipped = ["src/services/mail.rs", "src/services/push.rs", "src/settings.rs", "src/services/tunnel.rs", "src/main.rs"];
     let (word, placeholder) = (re(r"[a-záéíóöőúüű]{3}"), re(r"\{[^}]*\}"));
     let skipped_context = re(r"(?:println|eprintln|panic|assert\w*|write|writeln|unreachable)!\(\s*$|\.expect\(\s*$");
     let mut found = std::collections::BTreeMap::new();
@@ -333,7 +348,9 @@ fn every_server_message_has_an_english_translation() {
     let patterns = server_patterns(&data);
     let missing: Vec<(String, String)> = server_messages()
         .into_iter()
-        .filter(|(msg, _)| !exact.contains_key(msg) && !NOT_SHOWN.contains(&msg.as_str()) && !patterns.iter().any(|p| p.find(msg).is_some_and(|m| m.start() == 0)))
+        .filter(|(msg, _)| {
+            !exact.contains_key(msg) && !NOT_SHOWN.contains(&msg.as_str()) && !patterns.iter().any(|p| p.find(msg).is_some_and(|m| m.start() == 0))
+        })
         .collect();
     assert!(missing.is_empty(), "{missing:#?}");
 }
@@ -378,8 +395,8 @@ global.document = {
     querySelectorAll() { return []; },
     querySelector() { return null; },
 };
-const code = fs.readFileSync(path.join(root, 'static', 'i18n-data.js'), 'utf8') + '\n' +
-             fs.readFileSync(path.join(root, 'static', 'i18n.js'), 'utf8') +
+const code = fs.readFileSync(path.join(root, 'web', 'static', 'i18n-data.js'), 'utf8') + '\n' +
+             fs.readFileSync(path.join(root, 'web', 'static', 'i18n.js'), 'utf8') +
              '\nmodule.exports = { I18N, t, tServer };';
 const m = { exports: {} };
 new Function('module', 'exports', 'window', 'document', 'localStorage', 'CustomEvent', code)(
@@ -404,20 +421,27 @@ fn translate(lang: &str, cases: Value) -> Vec<Value> {
 #[test]
 fn translates_with_parameters() {
     require_node!();
-    assert_eq!(translate("hu", json!([{"op": "t", "key": "room.players_owner", "params": {"n": 2, "max": 4, "owner": "Anna"}}])), vec![json!("2/4 játékos · Anna")]);
+    assert_eq!(
+        translate("hu", json!([{"op": "t", "key": "room.players_owner", "params": {"n": 2, "max": 4, "owner": "Anna"}}])),
+        vec![json!("2/4 játékos · Anna")]
+    );
 }
 
 #[test]
 fn english() {
     require_node!();
-    let out = translate("en", json!([{"op": "t", "key": "room.players_owner", "params": {"n": 2, "max": 4, "owner": "Anna"}}, {"op": "t", "key": "lobby.join"}]));
+    let out =
+        translate("en", json!([{"op": "t", "key": "room.players_owner", "params": {"n": 2, "max": 4, "owner": "Anna"}}, {"op": "t", "key": "lobby.join"}]));
     assert_eq!(out, vec![json!("2/4 players · Anna"), json!("Join")]);
 }
 
 #[test]
 fn the_singular_form_is_used_for_one() {
     require_node!();
-    let out = translate("en", json!([{"op": "t", "key": "common.points", "params": {"n": 1}}, {"op": "t", "key": "common.points", "params": {"n": 5}}, {"op": "t", "key": "game.bag", "params": {"n": 1}}]));
+    let out = translate(
+        "en",
+        json!([{"op": "t", "key": "common.points", "params": {"n": 1}}, {"op": "t", "key": "common.points", "params": {"n": 5}}, {"op": "t", "key": "game.bag", "params": {"n": 1}}]),
+    );
     assert_eq!(out, vec![json!("1 pt"), json!("5 pts"), json!("Bag: 1 tile")]);
 }
 
@@ -462,7 +486,10 @@ fn the_exact_lookup_ignores_object_prototype_names() {
 #[test]
 fn switching_language() {
     require_node!();
-    let out = translate("hu", json!([{"op": "t", "key": "lobby.join"}, {"op": "set", "lang": "en"}, {"op": "t", "key": "lobby.join"}, {"op": "title"}, {"op": "set", "lang": "xx"}]));
+    let out = translate(
+        "hu",
+        json!([{"op": "t", "key": "lobby.join"}, {"op": "set", "lang": "en"}, {"op": "t", "key": "lobby.join"}, {"op": "title"}, {"op": "set", "lang": "xx"}]),
+    );
     assert_eq!(out, vec![json!("Csatlakozás"), json!("en"), json!("Join"), json!("Hungarian Scrabble"), json!("en")]);
 }
 
@@ -473,8 +500,50 @@ fn every_key_formats_without_leftover_placeholders() {
     let data = data();
     let keys: Vec<String> = ui_keys(&data["en"]).into_iter().collect();
     let names = [
-        "n", "max", "owner", "name", "names", "players", "words", "score", "player", "room", "word", "total", "bag", "hands", "vowels", "consonants", "blanks", "played", "won", "rate", "rating", "change", "done",
-        "lost", "missed", "optimal", "turns", "rank", "best", "date", "correct", "d", "h", "m", "time", "letters", "len", "got", "tiles", "pct", "solved", "streak", "reason", "until",
+        "n",
+        "max",
+        "owner",
+        "name",
+        "names",
+        "players",
+        "words",
+        "score",
+        "player",
+        "room",
+        "word",
+        "total",
+        "bag",
+        "hands",
+        "vowels",
+        "consonants",
+        "blanks",
+        "played",
+        "won",
+        "rate",
+        "rating",
+        "change",
+        "done",
+        "lost",
+        "missed",
+        "optimal",
+        "turns",
+        "rank",
+        "best",
+        "date",
+        "correct",
+        "d",
+        "h",
+        "m",
+        "time",
+        "letters",
+        "len",
+        "got",
+        "tiles",
+        "pct",
+        "solved",
+        "streak",
+        "reason",
+        "until",
     ];
     let params: Value = names.iter().map(|n| (n.to_string(), json!("X"))).collect::<serde_json::Map<_, _>>().into();
     let cases: Vec<Value> = keys.iter().map(|k| json!({"op": "t", "key": k, "params": params})).collect();

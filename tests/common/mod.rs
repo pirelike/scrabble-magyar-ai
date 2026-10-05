@@ -77,7 +77,13 @@ impl TestServer {
     pub async fn start_in(base_dir: Option<PathBuf>, tweak: impl FnOnce(&mut Config)) -> TestServer {
         // a szótár betöltése egyszer (mint az éles indításkor): az első lerakás ne várjon másodperceket
         static WARM: std::sync::Once = std::sync::Once::new();
-        tokio::task::spawn_blocking(|| WARM.call_once(|| { scrabble::dictionary::warm_up(); })).await.unwrap();
+        tokio::task::spawn_blocking(|| {
+            WARM.call_once(|| {
+                scrabble::dictionary::warm_up();
+            })
+        })
+        .await
+        .unwrap();
         let dir = temp_dir("srv");
         let mut config = test_config(&dir);
         tweak(&mut config);
@@ -285,7 +291,8 @@ impl Http {
         let mut all: Vec<(String, String)> = headers.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
         all.extend(self.extra.lock().iter().cloned());
         let (resp, set_cookie) = tokio::task::spawn_blocking(move || {
-            let agent: ureq::Agent = ureq::Agent::config_builder().http_status_as_error(false).max_redirects(0).timeout_global(Some(Duration::from_secs(60))).build().into();
+            let agent: ureq::Agent =
+                ureq::Agent::config_builder().http_status_as_error(false).max_redirects(0).timeout_global(Some(Duration::from_secs(60))).build().into();
             let mut builder = ureq::http::Request::builder().method(method.as_str()).uri(&url);
             if let Some(c) = &cookie {
                 builder = builder.header("Cookie", c);
@@ -300,7 +307,8 @@ impl Http {
             .expect("kérés");
             let response = agent.run(request).expect("HTTP kérés");
             let status = response.status().as_u16();
-            let headers: Vec<(String, String)> = response.headers().iter().map(|(k, v)| (k.as_str().to_string(), v.to_str().unwrap_or("").to_string())).collect();
+            let headers: Vec<(String, String)> =
+                response.headers().iter().map(|(k, v)| (k.as_str().to_string(), v.to_str().unwrap_or("").to_string())).collect();
             let mut body = response.into_body();
             let bytes = body.read_to_vec().unwrap_or_default();
             let set_cookie: Vec<String> = headers.iter().filter(|(k, _)| k.eq_ignore_ascii_case("set-cookie")).map(|(_, v)| v.clone()).collect();
@@ -445,7 +453,8 @@ impl Sio {
             }
             let _ = sink.close().await;
         });
-        let (ev, st, rc, ri, rt, cl, cn, ptx) = (events.clone(), state.clone(), room_code.clone(), room_id.clone(), reconnect_token.clone(), closed.clone(), connected.clone(), tx.clone());
+        let (ev, st, rc, ri, rt, cl, cn, ptx) =
+            (events.clone(), state.clone(), room_code.clone(), room_id.clone(), reconnect_token.clone(), closed.clone(), connected.clone(), tx.clone());
         tokio::spawn(async move {
             while let Some(Ok(message)) = source.next().await {
                 let Message::Text(text) = message else { continue };
@@ -564,10 +573,10 @@ impl Sio {
     pub async fn wait_state(&self, secs: u64, cond: impl Fn(&Value) -> bool) -> bool {
         let end = tokio::time::Instant::now() + Duration::from_secs(secs);
         loop {
-            if let Some(state) = self.state.lock().as_ref() {
-                if cond(state) {
-                    return true;
-                }
+            if let Some(state) = self.state.lock().as_ref()
+                && cond(state)
+            {
+                return true;
             }
             if tokio::time::Instant::now() >= end {
                 return false;
@@ -632,7 +641,9 @@ impl Sio {
 
     pub fn my_turn(&self) -> bool {
         let state = self.state();
-        state["finished"] != json!(true) && state["current_player"].as_str().is_some() && state["current_player"].as_str().map(|s| s.to_string()) == self.my_id()
+        state["finished"] != json!(true)
+            && state["current_player"].as_str().is_some()
+            && state["current_player"].as_str().map(|s| s.to_string()) == self.my_id()
     }
 
     pub fn board(&self) -> Value {

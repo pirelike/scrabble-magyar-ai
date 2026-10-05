@@ -147,16 +147,21 @@ async fn every_room_in_one_place() {
     let (anna, _bela, room1) = chat_room(&server, ("Anna", "Béla"), "Első").await;
     let (cili, _dani, _room2) = chat_room(&server, ("Cili", "Dani"), "Második").await;
     anna.emit("send_chat", json!({"message": "első szoba"}));
-    cili.emit("send_chat", json!({"message": "második szoba"}));
     anna.settle().await;
+    cili.emit("send_chat", json!({"message": "második szoba"}));
     cili.settle().await;
     let said = api.admin_post(&format!("/rooms/{room1}/action"), json!({"action": "message", "message": "Rendszerüzenet", "reason": REASON})).await;
     assert_eq!(said.status, 200, "{}", said.text());
     let data = api.admin_get("/moderation/chat").await.json();
-    let rows: Vec<(String, String)> = data["items"].as_array().unwrap().iter().map(|m| (m["name"].as_str().unwrap().to_string(), m["message"].as_str().unwrap().to_string())).collect();
+    let rows: Vec<(String, String)> =
+        data["items"].as_array().unwrap().iter().map(|m| (m["name"].as_str().unwrap().to_string(), m["message"].as_str().unwrap().to_string())).collect();
     assert_eq!(
         rows,
-        vec![("Anna".to_string(), "első szoba".to_string()), ("Cili".to_string(), "második szoba".to_string()), ("Rendszer".to_string(), "Rendszerüzenet".to_string())]
+        vec![
+            ("Anna".to_string(), "első szoba".to_string()),
+            ("Cili".to_string(), "második szoba".to_string()),
+            ("Rendszer".to_string(), "Rendszerüzenet".to_string())
+        ]
     );
     assert_eq!(data["items"][2]["system"], true);
     assert_eq!(data["items"][0]["room_name"], "Első");
@@ -203,7 +208,12 @@ async fn logging_and_searching() {
     bela.emit("send_chat", json!({"message": "Szia Anna"}));
     bela.settle().await;
     let data = api.admin_get("/moderation/chat?source=log").await.json();
-    let rows: Vec<(String, Value, String)> = data["items"].as_array().unwrap().iter().map(|m| (m["name"].as_str().unwrap().to_string(), m["user_id"].clone(), m["message"].as_str().unwrap().to_string())).collect();
+    let rows: Vec<(String, Value, String)> = data["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| (m["name"].as_str().unwrap().to_string(), m["user_id"].clone(), m["message"].as_str().unwrap().to_string()))
+        .collect();
     assert_eq!(rows, vec![("Béla".to_string(), Value::Null, "Szia Anna".to_string()), ("Anna".to_string(), json!(a), "Szia Béla".to_string())]);
     assert_eq!(data["items"][0]["room_id"], json!(room_id));
     let who = |query: String| {

@@ -79,7 +79,13 @@ pub fn finished_game(server: &TestServer, room_id: &str, results: &[(Option<i64>
     let best = results.iter().map(|r| r.2).max().unwrap_or(0);
     let players: Vec<GamePlayerData> = results
         .iter()
-        .map(|(uid, name, score)| GamePlayerData { player_name: name.to_string(), user_id: *uid, score: *score, is_winner: *score == best, resigned: resigned.contains(name) })
+        .map(|(uid, name, score)| GamePlayerData {
+            player_name: name.to_string(),
+            user_id: *uid,
+            score: *score,
+            is_winner: *score == best,
+            resigned: resigned.contains(name),
+        })
         .collect();
     let state = json!({
         "players": results.iter().map(|(_, name, _)| json!({"name": name, "resigned": resigned.contains(name), "is_bot": false})).collect::<Vec<_>>(),

@@ -71,7 +71,8 @@ fn rooms_list(req: &AdminReq) -> HResult {
                         for field in fields {
                             row[field] = r[field].clone();
                         }
-                        row["players"] = flat(&json!(r["players"].as_array().map(|ps| ps.iter().map(|p| p["name"].clone()).collect::<Vec<_>>()).unwrap_or_default()));
+                        row["players"] =
+                            flat(&json!(r["players"].as_array().map(|ps| ps.iter().map(|p| p["name"].clone()).collect::<Vec<_>>()).unwrap_or_default()));
                         row
                     })
                     .collect()

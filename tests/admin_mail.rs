@@ -268,7 +268,8 @@ async fn the_config_table_shows_the_effective_values() {
     api.sudo().await;
     save(&api, json!({})).await;
     let system = api.admin_get("/system").await.json();
-    let items: std::collections::HashMap<String, Value> = system["config"].as_array().unwrap().iter().map(|i| (i["key"].as_str().unwrap().to_string(), i.clone())).collect();
+    let items: std::collections::HashMap<String, Value> =
+        system["config"].as_array().unwrap().iter().map(|i| (i["key"].as_str().unwrap().to_string(), i.clone())).collect();
     assert_eq!((items["SMTP_HOST"]["value"].clone(), items["SMTP_SOURCE"]["value"].clone()), (json!("smtp.example.org"), json!("database")));
     assert_eq!(items["SMTP_PASSWORD"]["secret"], true);
     assert!(!system["config"].to_string().contains("titkos-jelszo-123"));

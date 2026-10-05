@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::app::{AnalysisJob, App};
-use crate::db::{fetch_all, fetch_one, RowExt};
+use crate::db::{RowExt, fetch_all, fetch_one};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use regex::Regex;
@@ -107,11 +107,7 @@ impl LogBuffer {
             );
             let entry = groups.entry(key.clone()).or_insert_with(|| {
                 order.push(key.clone());
-                (
-                    json!({"exc_type": r.exc_type, "location": r.location, "sample": r.message.chars().take(300).collect::<String>(), "logger": r.logger}),
-                    0,
-                    0.0,
-                )
+                (json!({"exc_type": r.exc_type, "location": r.location, "sample": r.message.chars().take(300).collect::<String>(), "logger": r.logger}), 0, 0.0)
             });
             entry.1 += 1;
             entry.2 = entry.2.max(r.ts);
@@ -374,14 +370,19 @@ pub fn config_view(app: &App) -> Vec<Value> {
     allowlist.sort();
     let limits: Map<String, Value> = crate::config::AUTH_RATE_LIMITS.iter().map(|(k, (a, b))| (k.to_string(), json!([a, b]))).collect();
     vec![
-        plain("SMTP_HOST", json!(mail.host)), plain("SMTP_PORT", json!(mail.port)), plain("SMTP_SECURITY", json!(mail.security)),
-        plain("SMTP_USER", json!(mail.username)), plain("SMTP_FROM", json!(mail.from_address)),
+        plain("SMTP_HOST", json!(mail.host)),
+        plain("SMTP_PORT", json!(mail.port)),
+        plain("SMTP_SECURITY", json!(mail.security)),
+        plain("SMTP_USER", json!(mail.username)),
+        plain("SMTP_FROM", json!(mail.from_address)),
         secret("SMTP_PASSWORD", !mail.password.is_empty()),
-        plain("SMTP_CONFIGURED", json!(mail.configured)), plain("SMTP_SOURCE", json!(mail.source)),
+        plain("SMTP_CONFIGURED", json!(mail.configured)),
+        plain("SMTP_SOURCE", json!(mail.source)),
         secret("SECRET_KEY", env_set("SECRET_KEY")),
         secret("VAPID_PRIVATE_KEY", env_set("VAPID_PRIVATE_KEY")),
         plain("VAPID_SUBJECT", json!(app.push.subject())),
-        plain("DB_PATH", json!(app.config.db_path)), plain("BACKUP_DIR", json!(app.config.backup_dir)),
+        plain("DB_PATH", json!(app.config.db_path)),
+        plain("BACKUP_DIR", json!(app.config.backup_dir)),
         plain("PORT", json!(std::env::var("PORT").unwrap_or_else(|_| "5000".to_string()))),
         plain("SESSION_MAX_AGE_DAYS", json!(crate::config::SESSION_MAX_AGE_DAYS)),
         plain("VERIFICATION_CODE_EXPIRY_MINUTES", json!(crate::config::VERIFICATION_CODE_EXPIRY_MINUTES)),
@@ -432,11 +433,11 @@ pub fn list_backups(app: &App) -> Vec<Value> {
     if let Ok(dir) = std::fs::read_dir(backup_dir(app)) {
         for entry in dir.flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
-            if BACKUP_NAME_RE.is_match(&name) {
-                if let Ok(meta) = entry.metadata() {
-                    let mtime = meta.modified().ok().and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs_f64()).unwrap_or(0.0);
-                    items.push(json!({"name": name, "size": meta.len(), "mtime": mtime}));
-                }
+            if BACKUP_NAME_RE.is_match(&name)
+                && let Ok(meta) = entry.metadata()
+            {
+                let mtime = meta.modified().ok().and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs_f64()).unwrap_or(0.0);
+                items.push(json!({"name": name, "size": meta.len(), "mtime": mtime}));
             }
         }
     }
@@ -473,10 +474,10 @@ pub fn make_backup(app: &App, directory: Option<&Path>) -> AdminResult<PathBuf> 
 pub fn prune_backups(app: &App, keep: usize) -> usize {
     let mut removed = 0;
     for item in list_backups(app).iter().skip(keep.max(1)) {
-        if let Some(name) = item["name"].as_str() {
-            if std::fs::remove_file(backup_dir(app).join(name)).is_ok() {
-                removed += 1;
-            }
+        if let Some(name) = item["name"].as_str()
+            && std::fs::remove_file(backup_dir(app).join(name)).is_ok()
+        {
+            removed += 1;
         }
     }
     removed

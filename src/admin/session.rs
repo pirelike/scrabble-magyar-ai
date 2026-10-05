@@ -76,10 +76,10 @@ pub fn touch(app: &App, token: &str, status: Option<&SessionStatus>) {
             None => return,
         },
     };
-    if let Some(seen) = status.seen_at {
-        if (util::utcnow() - seen).num_seconds() < TOUCH_INTERVAL_SECONDS {
-            return;
-        }
+    if let Some(seen) = status.seen_at
+        && (util::utcnow() - seen).num_seconds() < TOUCH_INTERVAL_SECONDS
+    {
+        return;
     }
     app.db.touch_admin_session(token);
 }
@@ -105,10 +105,7 @@ pub fn grant_sudo(app: &App, ctx: &AdminContext, token: &str) -> AdminResult<()>
     let minutes = app.config.admin_sudo_minutes;
     let until = util::utcnow() + Duration::minutes(minutes);
     app.db.with(|tx| {
-        tx.execute(
-            "UPDATE sessions SET sudo_until = ?, admin_seen_at = ? WHERE token = ?",
-            rusqlite::params![util::format_ts(until), util::now_ts(), token],
-        )?;
+        tx.execute("UPDATE sessions SET sudo_until = ?, admin_seen_at = ? WHERE token = ?", rusqlite::params![util::format_ts(until), util::now_ts(), token])?;
         record(tx, ctx, "admin.sudo", None, None, &json!({"minutes": minutes}))?;
         Ok(())
     })?;
@@ -118,10 +115,7 @@ pub fn grant_sudo(app: &App, ctx: &AdminContext, token: &str) -> AdminResult<()>
 /// Sudo mód lezárása. Naplózva.
 pub fn end_sudo(app: &App, ctx: &AdminContext, token: &str) -> AdminResult<()> {
     app.db.with(|tx| {
-        tx.execute(
-            "UPDATE sessions SET sudo_until = NULL, admin_seen_at = ? WHERE token = ?",
-            rusqlite::params![util::now_ts(), token],
-        )?;
+        tx.execute("UPDATE sessions SET sudo_until = NULL, admin_seen_at = ? WHERE token = ?", rusqlite::params![util::now_ts(), token])?;
         record(tx, ctx, "admin.sudo_end", None, None, &Value::Null)?;
         Ok(())
     })?;

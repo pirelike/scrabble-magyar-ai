@@ -55,7 +55,12 @@ impl Repos {
     /// Új commit a „GitHubra” (a seed klónból). Visszatér: a commit azonosítója.
     fn push(&self, filename: &str, text: &str, message: &str, branch: &str) -> String {
         if git(&self.seed, &["rev-parse", "--abbrev-ref", "HEAD"]) != branch {
-            let exists = Command::new("git").args(["rev-parse", "--verify", "--quiet", &format!("refs/heads/{branch}")]).current_dir(&self.seed).status().unwrap().success();
+            let exists = Command::new("git")
+                .args(["rev-parse", "--verify", "--quiet", &format!("refs/heads/{branch}")])
+                .current_dir(&self.seed)
+                .status()
+                .unwrap()
+                .success();
             git(&self.seed, &if exists { vec!["checkout", branch] } else { vec!["checkout", "-b", branch] });
         }
         write(&self.seed.join(filename), text);
@@ -221,7 +226,10 @@ async fn lists_the_branches_and_what_would_change() {
     assert_eq!(names, vec!["feature", "main"]);
     assert_eq!(result["default_branch"], "main");
     let plan = &result["plan"];
-    assert_eq!((plan["branch"].clone(), plan["behind"].clone(), plan["ahead"].clone(), plan["up_to_date"].clone()), (json!("main"), json!(1), json!(0), json!(false)));
+    assert_eq!(
+        (plan["branch"].clone(), plan["behind"].clone(), plan["ahead"].clone(), plan["up_to_date"].clone()),
+        (json!("main"), json!(1), json!(0), json!(false))
+    );
     assert_eq!(plan["incoming"].as_array().unwrap().iter().map(|c| c["subject"].clone()).collect::<Vec<_>>(), vec![json!("Második verzió")]);
     assert_eq!(plan["files"], json!([{"status": "M", "path": "VERSION"}]));
     assert_eq!(plan["requirements_changed"], false);

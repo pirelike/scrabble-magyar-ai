@@ -13,11 +13,11 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 
 fn app_js() -> String {
-    read(&["static", "app.js"])
+    read(&["web", "static", "app.js"])
 }
 
 fn index_html() -> String {
-    read(&["templates", "index.html"])
+    read(&["web", "templates", "index.html"])
 }
 
 /// A `const NAME = { 'A': 1, ... };` objektum literál kiolvasása.
@@ -92,7 +92,13 @@ fn the_distribution_is_the_standard_one() {
 fn every_element_id_used_in_js_exists_in_html() {
     let (js, html) = (app_js(), index_html());
     let ids = html_ids(&html);
-    let missing: Vec<String> = re(r"getElementById\('([^']+)'\)").captures_iter(&js).map(|c| c[1].to_string()).filter(|i| !ids.contains(i)).collect::<BTreeSet<_>>().into_iter().collect();
+    let missing: Vec<String> = re(r"getElementById\('([^']+)'\)")
+        .captures_iter(&js)
+        .map(|c| c[1].to_string())
+        .filter(|i| !ids.contains(i))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
     assert!(missing.is_empty(), "{missing:?}");
 }
 
@@ -105,7 +111,8 @@ fn no_duplicate_ids_in_html() {
 
 #[test]
 fn scripts_are_loaded_in_dependency_order() {
-    let names: Vec<String> = re(r#"<script src="([^"]+)""#).captures_iter(&index_html()).map(|c| c[1].split('?').next().unwrap().rsplit('/').next().unwrap().to_string()).collect();
+    let names: Vec<String> =
+        re(r#"<script src="([^"]+)""#).captures_iter(&index_html()).map(|c| c[1].split('?').next().unwrap().rsplit('/').next().unwrap().to_string()).collect();
     let pos = |n: &str| names.iter().position(|x| x == n).unwrap_or_else(|| panic!("nincs {n}: {names:?}"));
     assert!(pos("i18n-data.js") < pos("i18n.js") && pos("i18n.js") < pos("app.js"));
     assert!(pos("socket.io.min.js") < pos("app.js"));
@@ -116,7 +123,8 @@ fn id_selectors_in_js_exist() {
     // felépítés közben létrehozott elemek azonosítói nem szerepelhetnek a HTML-ben
     let (js, html) = (app_js(), index_html());
     let ids = html_ids(&html);
-    let missing: Vec<String> = re(r"querySelector\('#([\w-]+)").captures_iter(&js).map(|c| c[1].to_string()).filter(|i| i != "game-screen" && !ids.contains(i)).collect();
+    let missing: Vec<String> =
+        re(r"querySelector\('#([\w-]+)").captures_iter(&js).map(|c| c[1].to_string()).filter(|i| i != "game-screen" && !ids.contains(i)).collect();
     assert!(missing.is_empty(), "{missing:?}");
 }
 
@@ -230,7 +238,8 @@ fn fetched_api_paths_exist_on_the_server() {
     let fetched: BTreeSet<String> = re(r"fetch\(`?'?(/api/[\w/-]+)").captures_iter(&js).map(|c| c[1].to_string()).collect();
     assert!(!fetched.is_empty());
     for path in fetched {
-        let known = rules.iter().any(|r| r.is_match(&path)) || paths.iter().any(|p| p.starts_with(&path) || p.trim_end_matches('/') == path.trim_end_matches('/'));
+        let known =
+            rules.iter().any(|r| r.is_match(&path)) || paths.iter().any(|p| p.starts_with(&path) || p.trim_end_matches('/') == path.trim_end_matches('/'));
         assert!(known, "{path}");
     }
 }
@@ -243,7 +252,7 @@ fn fetched_api_paths_exist_on_the_server() {
 fn client_files_parse() {
     require_node!();
     for name in ["app.js", "i18n.js", "i18n-data.js"] {
-        if let Err(e) = node_check_file(&root().join("static").join(name)) {
+        if let Err(e) = node_check_file(&root().join("web/static").join(name)) {
             panic!("{name}: {e}");
         }
     }
@@ -321,7 +330,7 @@ fn css_rule(css: &str, selector: &str) -> String {
 fn the_tile_size_does_not_depend_on_the_board_size() {
     // a zseton mérete a betűtartó szélességét adja, az pedig a tábla méretét: ha a zseton a tábla méretéből
     // számolódna, a CSS változók körkörösen függnének egymástól (érvénytelen érték)
-    let css = read(&["static", "style.css"]);
+    let css = read(&["web", "static", "style.css"]);
     let rule = css_rule(&css, r#":root[data-hand="right"] .game-layout"#);
     let tile = re(r"(?s)--tile:(.*?);\s*--hand-w").captures(&rule).unwrap()[1].to_string();
     assert!(!tile.contains("--board-size") && !tile.contains("--hand-w"));
@@ -331,7 +340,7 @@ fn the_tile_size_does_not_depend_on_the_board_size() {
 
 #[test]
 fn the_right_layout_is_limited_to_wide_landscape_windows() {
-    let css = read(&["static", "style.css"]);
+    let css = read(&["web", "static", "style.css"]);
     let marker = r#":root[data-hand="right"] .game-layout"#;
     let at = css.find(marker).unwrap();
     let start = css[..at].rfind("@media").unwrap();
@@ -467,7 +476,10 @@ fn a_pending_placement_does_not_leak_into_the_next_game() {
     let code = [
         block(&js, "const AppState = {", "\n};\n"),
         block(&js, "const BoardState = {", "\n};\n"),
-        format!("const GameBoard = {{ _prevCurrentPlayer: null, _gameId: null, _resetAnimState() {{}},\n{}\n}};", on_game_state.trim_end().trim_end_matches(',')),
+        format!(
+            "const GameBoard = {{ _prevCurrentPlayer: null, _gameId: null, _resetAnimState() {{}},\n{}\n}};",
+            on_game_state.trim_end().trim_end_matches(',')
+        ),
     ]
     .join("\n");
     let result = run_node(PLACEMENT_HARNESS, &[&code], &json!({}));
@@ -616,7 +628,10 @@ fn practice_result() -> (Value, Vec<String>) {
         words.extend(scrabble::practice::short_words(length).iter().map(|e| e["word"].as_str().unwrap().to_string()));
     }
     words.extend(["SZÓ", "ASZTAL", "GYÓGYSZER", "NYELV", "LYUK", "TYÚK", "ZSÍR", "CSÓK", "szó", "XYZ", "QWERTY", ""].iter().map(|s| s.to_string()));
-    let unsorted = ["ZSÍR", "SZÓ", "SÁR", "CSÓK", "CIKK", "ÓRA", "ŐZ", "ÖN", "OLAJ", "ÁBRA", "ABA", "DÉL", "GYŰRŰ", "GÉP", "NYÁR", "NAP", "TYÚK", "TÁL", "LYUK", "LÁNC", "ÜVEG", "ÚT", "ŰR", "UTCA"];
+    let unsorted = [
+        "ZSÍR", "SZÓ", "SÁR", "CSÓK", "CIKK", "ÓRA", "ŐZ", "ÖN", "OLAJ", "ÁBRA", "ABA", "DÉL", "GYŰRŰ", "GÉP", "NYÁR", "NAP", "TYÚK", "TÁL", "LYUK", "LÁNC",
+        "ÜVEG", "ÚT", "ŰR", "UTCA",
+    ];
     let js = app_js();
     let code = [
         block(&js, "const TILE_VALUES = {", "\n};\n"),
@@ -650,7 +665,8 @@ fn the_tokenizer_matches_the_server_for_the_dictionary() {
     let (result, words) = practice();
     let tokens = result["tokens"].as_array().unwrap();
     assert_eq!(tokens.len(), words.len());
-    let mismatches: Vec<(&String, &Value, Value)> = words.iter().zip(tokens).filter(|(w, t)| **t != server_tokens(w)).map(|(w, t)| (w, t, server_tokens(w))).take(5).collect();
+    let mismatches: Vec<(&String, &Value, Value)> =
+        words.iter().zip(tokens).filter(|(w, t)| **t != server_tokens(w)).map(|(w, t)| (w, t, server_tokens(w))).take(5).collect();
     assert!(mismatches.is_empty(), "{mismatches:?}");
     // a kétjegyű betűk és a kirakhatatlan betűk
     let by_word: BTreeMap<&String, &Value> = words.iter().zip(tokens).collect();
@@ -666,7 +682,10 @@ fn the_hungarian_alphabet_order() {
     require_node!();
     assert_eq!(
         practice().0["sorted"],
-        json!(["ABA", "ÁBRA", "CIKK", "CSÓK", "DÉL", "GÉP", "GYŰRŰ", "LÁNC", "LYUK", "NAP", "NYÁR", "OLAJ", "ÓRA", "ÖN", "ŐZ", "SÁR", "SZÓ", "TÁL", "TYÚK", "UTCA", "ÚT", "ÜVEG", "ŰR", "ZSÍR"])
+        json!([
+            "ABA", "ÁBRA", "CIKK", "CSÓK", "DÉL", "GÉP", "GYŰRŰ", "LÁNC", "LYUK", "NAP", "NYÁR", "OLAJ", "ÓRA", "ÖN", "ŐZ", "SÁR", "SZÓ", "TÁL", "TYÚK",
+            "UTCA", "ÚT", "ÜVEG", "ŰR", "ZSÍR"
+        ])
     );
 }
 

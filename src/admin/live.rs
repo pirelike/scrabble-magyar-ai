@@ -19,9 +19,8 @@ pub const STUCK_IDLE_SECONDS: f64 = 1800.0;
 pub const STUCK_BOT_SECONDS: f64 = 90.0;
 /// a lejárt időzítő / szavazás ennyi késés után jelez
 pub const STUCK_OVERDUE_SECONDS: f64 = 60.0;
-pub const ROOM_ACTIONS: [&str; 13] = [
-    "message", "kick", "transfer", "skip", "extend", "pause", "resume", "resolve_vote", "reschedule_bot", "save", "end", "void", "disband",
-];
+pub const ROOM_ACTIONS: [&str; 13] =
+    ["message", "kick", "transfer", "skip", "extend", "pause", "resume", "resolve_vote", "reschedule_bot", "save", "end", "void", "disband"];
 pub const EXTEND_CHOICES: [i64; 4] = [30, 60, 120, 300];
 pub const MAX_SYSTEM_MESSAGE: usize = 200;
 pub const ADMIN_ALERT_WINDOW: i64 = 15 * 60;
@@ -107,9 +106,7 @@ pub fn rename_conflicts(st: &ServerState, user_id: i64, new_name: &str) -> Vec<S
     let mut clash = Vec::new();
     for room in st.rooms.values() {
         let mine = players_of_user(room, st, user_id);
-        if !mine.is_empty()
-            && room.game.players.iter().enumerate().any(|(i, p)| util::casefold(&p.name) == util::casefold(new_name) && !mine.contains(&i))
-        {
+        if !mine.is_empty() && room.game.players.iter().enumerate().any(|(i, p)| util::casefold(&p.name) == util::casefold(new_name) && !mine.contains(&i)) {
             clash.push(room.name.clone());
         }
     }
@@ -315,9 +312,7 @@ pub fn find_room_id(st: &ServerState, key: &str) -> AdminResult<String> {
 
 fn chat_rows(room: &Room) -> Vec<Value> {
     let missing = room.chat_messages.len().saturating_sub(room.chat_meta.len());
-    let row = |msg: &Value, ts: Value, user_id: Value| {
-        json!({"name": msg["name"], "message": msg["message"], "system": util::truthy(&msg["system"]), "ts": ts, "user_id": user_id})
-    };
+    let row = |msg: &Value, ts: Value, user_id: Value| json!({"name": msg["name"], "message": msg["message"], "system": util::truthy(&msg["system"]), "ts": ts, "user_id": user_id});
     let mut rows: Vec<Value> = Vec::new();
     // A régebbi (meta nélküli) üzenetek időbélyeg nélkül
     for msg in room.chat_messages.iter().take(missing) {
@@ -351,7 +346,9 @@ pub fn live_chat(app: &Arc<App>, st: &ServerState, ctx: &AdminContext, args: &Ha
     }
     rows.sort_by(|a, b| a["ts"].as_f64().unwrap_or(0.0).partial_cmp(&b["ts"].as_f64().unwrap_or(0.0)).unwrap_or(std::cmp::Ordering::Equal));
     let limit = int_arg(args.get("limit").map(|s| s.as_str()), 200, 1, 500) as usize;
-    app.db.with(|tx| record(tx, ctx, "view.chat", Some("chat"), None, &json!({"source": "live", "q": if q.is_empty() { Value::Null } else { json!(q) }})).map(|_| ()))?;
+    app.db.with(|tx| {
+        record(tx, ctx, "view.chat", Some("chat"), None, &json!({"source": "live", "q": if q.is_empty() { Value::Null } else { json!(q) }})).map(|_| ())
+    })?;
     let total = rows.len();
     let skip = total.saturating_sub(limit);
     Ok(json!({"items": rows.into_iter().skip(skip).collect::<Vec<_>>(), "total": total}))
@@ -384,7 +381,8 @@ pub fn room_detail(app: &Arc<App>, st: &ServerState, room_id: &str) -> Value {
     let mut detail = room_summary(app, st, room, None);
     let pending = game.pending_challenge.as_ref().map(|pc| {
         let names: HashMap<&str, &str> = game.players.iter().map(|p| (p.id.as_str(), p.name.as_str())).collect();
-        let votes: Map<String, Value> = pc.votes.iter().map(|(pid, vote)| (names.get(pid.as_str()).unwrap_or(&pid.as_str()).to_string(), json!(vote.as_str()))).collect();
+        let votes: Map<String, Value> =
+            pc.votes.iter().map(|(pid, vote)| (names.get(pid.as_str()).unwrap_or(&pid.as_str()).to_string(), json!(vote.as_str()))).collect();
         let voters: Vec<&str> = game.voter_ids().iter().filter_map(|id| names.get(id.as_str()).copied()).collect();
         json!({
             "player": game.players[pc.player_idx].name, "words": pc.word_strs, "score": pc.score, "votes": votes,
@@ -487,11 +485,7 @@ fn remove_player(app: &Arc<App>, st: &mut ServerState, room_id: &str, player_id:
     }
     let (no_humans, manually_saved, db_game_id) = {
         let room = &st.rooms[room_id];
-        (
-            room.game.human_players().is_empty() || (!is_async && !room.game.has_connected_human()),
-            room.manually_saved,
-            room.db_game_id,
-        )
+        (room.game.human_players().is_empty() || (!is_async && !room.game.has_connected_human()), room.manually_saved, room.db_game_id)
     };
     if no_humans {
         if started && !manually_saved {
@@ -525,7 +519,11 @@ fn timer_remaining(room: &Room) -> Option<f64> {
 /// kivétel: annak a szövege kerül a naplóba). A naplósor a művelet ELŐTT íródik, így ha a naplózás hibázik, a művelet
 /// nem történik meg. Visszatér: rövid eredmény.
 pub fn room_action(app: &Arc<App>, st: &mut ServerState, ctx: &AdminContext, room_key: &str, body: &Value) -> AdminResult<Value> {
-    let act = body.get("action").and_then(|a| a.as_str()).filter(|a| ROOM_ACTIONS.contains(a)).ok_or_else(|| AdminError::field("Ismeretlen művelet.", 400, "action"))?;
+    let act = body
+        .get("action")
+        .and_then(|a| a.as_str())
+        .filter(|a| ROOM_ACTIONS.contains(a))
+        .ok_or_else(|| AdminError::field("Ismeretlen művelet.", 400, "action"))?;
     let room_id = find_room_id(st, room_key)?;
     let (join_code, room_name) = {
         let room = &st.rooms[&room_id];
@@ -818,11 +816,8 @@ pub fn alerts(app: &App, st: &ServerState) -> AdminResult<Vec<Value>> {
             json!({"count": stuck.len(), "detail": stuck.iter().take(5).map(|(n, r)| format!("{n}: {r}")).collect::<Vec<_>>().join(", ")}),
         );
     }
-    let overdue = st
-        .rooms
-        .values()
-        .filter(|r| r.is_async && r.game.started && !r.game.finished && r.game.turn_deadline.is_some_and(|d| now > d + 300.0))
-        .count();
+    let overdue =
+        st.rooms.values().filter(|r| r.is_async && r.game.started && !r.game.finished && r.game.turn_deadline.is_some_and(|d| now > d + 300.0)).count();
     if overdue > 0 {
         add("async_overdue", "yellow", json!({"count": overdue}));
     }

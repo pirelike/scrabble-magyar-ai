@@ -16,8 +16,8 @@ pub mod mail;
 pub mod moderation;
 pub mod routes;
 pub mod security;
-pub mod stats;
 pub mod session;
+pub mod stats;
 pub mod system;
 pub mod update;
 pub mod users;
@@ -106,10 +106,10 @@ pub fn ip_allowed(ip: &str, networks: &[IpNet]) -> bool {
 /// Az IPv4-be képezett IPv6 cím (::ffff:1.2.3.4) az IPv4 hálózatokra is illeszkedjen.
 pub fn candidates(address: IpAddr) -> Vec<IpAddr> {
     let mut list = vec![address];
-    if let IpAddr::V6(v6) = address {
-        if let Some(v4) = v6.to_ipv4_mapped() {
-            list.push(IpAddr::V4(v4));
-        }
+    if let IpAddr::V6(v6) = address
+        && let Some(v4) = v6.to_ipv4_mapped()
+    {
+        list.push(IpAddr::V4(v4));
     }
     list
 }
@@ -130,7 +130,14 @@ pub fn normalize_reason(reason: Option<&Value>) -> AdminResult<String> {
 }
 
 /// Egy naplósor beírása a megadott tranzakcióban. Visszaadja a sor id-ját.
-pub fn record(tx: &Transaction, ctx: &AdminContext, action: &str, target_type: Option<&str>, target_id: Option<&str>, details: &Value) -> rusqlite::Result<i64> {
+pub fn record(
+    tx: &Transaction,
+    ctx: &AdminContext,
+    action: &str,
+    target_type: Option<&str>,
+    target_id: Option<&str>,
+    details: &Value,
+) -> rusqlite::Result<i64> {
     let details_json = match details {
         Value::Null => None,
         Value::Object(o) if o.is_empty() => None,
@@ -247,11 +254,8 @@ pub fn int_arg(value: Option<&str>, default: i64, low: i64, high: i64) -> i64 {
 /// ORDER BY rész egy fehérlistából (a rendezés oszlopa sosem jön közvetlenül a felhasználótól).
 /// `allowed`: (kulcs, SQL-kifejezés); az `order` 'asc' / 'desc'. Visszatér: 'kifejezés ASC|DESC'.
 pub fn order_by(sort: Option<&str>, order: Option<&str>, allowed: &[(&str, &str)], default: &str) -> String {
-    let column = sort
-        .and_then(|s| allowed.iter().find(|(k, _)| *k == s))
-        .or_else(|| allowed.iter().find(|(k, _)| *k == default))
-        .map(|(_, v)| *v)
-        .unwrap_or("1");
+    let column =
+        sort.and_then(|s| allowed.iter().find(|(k, _)| *k == s)).or_else(|| allowed.iter().find(|(k, _)| *k == default)).map(|(_, v)| *v).unwrap_or("1");
     let direction = if order.map(|o| o.to_lowercase()) == Some("asc".to_string()) { "ASC" } else { "DESC" };
     format!("{column} {direction}")
 }
@@ -347,11 +351,65 @@ pub fn csv_cell(value: &Value) -> String {
 
 /// CSV sor szövege (RFC 4180 szerinti idézés, CRLF sorvég).
 pub fn csv_line(cells: &[String]) -> String {
-    let quoted: Vec<String> = cells
-        .iter()
-        .map(|c| if c.contains([',', '"', '\n', '\r']) { format!("\"{}\"", c.replace('"', "\"\"")) } else { c.clone() })
-        .collect();
+    let quoted: Vec<String> =
+        cells.iter().map(|c| if c.contains([',', '"', '\n', '\r']) { format!("\"{}\"", c.replace('"', "\"\"")) } else { c.clone() }).collect();
     format!("{}\r\n", quoted.join(","))
+}
+
+// ===== Tranzakció hibaátvitellel =====
+
+/// Egy tranzakció, amelyben az admin hibák (`AdminError`) is visszagörgetést okoznak (a Python `auth.transaction()`).
+pub fn txn<T>(db: &Db, body: impl FnOnce(&Transaction) -> AdminResult<T>) -> AdminResult<T> {
+    let mut conn = db.raw();
+    let tx = conn.transaction()?;
+    let value = body(&tx)?;
+    tx.commit()?;
+    Ok(value)
+}
+
+/// Egy szöveges mező a JSON törzsből, vagy None.
+pub fn str_of(value: Option<&Value>) -> Option<&str> {
+    value.and_then(|v| v.as_str())
+}
+
+// ===== Beszúrási sorrendet őrző szótár =====
+
+/// Beszúrási sorrendet őrző szótár (mint a Python `dict`): az egyenlő kulcsú rendezéseknél a kimenet determinisztikus.
+pub struct Ordered<K: std::hash::Hash + Eq + Clone, V> {
+    keys: Vec<K>,
+    map: std::collections::HashMap<K, V>,
+}
+
+impl<K: std::hash::Hash + Eq + Clone, V> Default for Ordered<K, V> {
+    fn default() -> Self {
+        Ordered { keys: Vec::new(), map: std::collections::HashMap::new() }
+    }
+}
+
+impl<K: std::hash::Hash + Eq + Clone, V> Ordered<K, V> {
+    pub fn entry_or(&mut self, key: K, default: impl FnOnce() -> V) -> &mut V {
+        if !self.map.contains_key(&key) {
+            self.keys.push(key.clone());
+            self.map.insert(key.clone(), default());
+        }
+        self.map.get_mut(&key).expect("beszúrva")
+    }
+
+    pub fn get(&self, key: &K) -> Option<&V> {
+        self.map.get(key)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
+        self.keys.iter().map(|k| (k, &self.map[k]))
+    }
+
+    pub fn len(&self) -> usize {
+        self.keys.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.keys.is_empty()
+    }
 }
 
 #[cfg(test)]
@@ -445,61 +503,5 @@ mod tests {
         assert!(ip_allowed("::ffff:10.1.2.3", &nets));
         assert!(!ip_allowed("nem ip", &nets));
         assert!(ip_allowed("bármi", &[]));
-    }
-}
-
-// ===== Tranzakció hibaátvitellel =====
-
-/// Egy tranzakció, amelyben az admin hibák (`AdminError`) is visszagörgetést okoznak (a Python `auth.transaction()`).
-pub fn txn<T>(db: &Db, body: impl FnOnce(&Transaction) -> AdminResult<T>) -> AdminResult<T> {
-    let mut conn = db.raw();
-    let tx = conn.transaction()?;
-    let value = body(&tx)?;
-    tx.commit()?;
-    Ok(value)
-}
-
-/// Egy szöveges mező a JSON törzsből, vagy None.
-pub fn str_of<'a>(value: Option<&'a Value>) -> Option<&'a str> {
-    value.and_then(|v| v.as_str())
-}
-
-// ===== Beszúrási sorrendet őrző szótár =====
-
-/// Beszúrási sorrendet őrző szótár (mint a Python `dict`): az egyenlő kulcsú rendezéseknél a kimenet determinisztikus.
-pub struct Ordered<K: std::hash::Hash + Eq + Clone, V> {
-    keys: Vec<K>,
-    map: std::collections::HashMap<K, V>,
-}
-
-impl<K: std::hash::Hash + Eq + Clone, V> Default for Ordered<K, V> {
-    fn default() -> Self {
-        Ordered { keys: Vec::new(), map: std::collections::HashMap::new() }
-    }
-}
-
-impl<K: std::hash::Hash + Eq + Clone, V> Ordered<K, V> {
-    pub fn entry_or(&mut self, key: K, default: impl FnOnce() -> V) -> &mut V {
-        if !self.map.contains_key(&key) {
-            self.keys.push(key.clone());
-            self.map.insert(key.clone(), default());
-        }
-        self.map.get_mut(&key).expect("beszúrva")
-    }
-
-    pub fn get(&self, key: &K) -> Option<&V> {
-        self.map.get(key)
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
-        self.keys.iter().map(|k| (k, &self.map[k]))
-    }
-
-    pub fn len(&self) -> usize {
-        self.keys.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.keys.is_empty()
     }
 }

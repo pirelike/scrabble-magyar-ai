@@ -15,7 +15,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// A betöltés sorrendje a HTML-ben (a későbbi fájlok az előzők globális neveit használják)
 const JS_FILES: [&str; 6] = ["admin.js", "admin-ui.js", "admin-views-a.js", "admin-views-b.js", "admin-views-c.js", "admin-main.js"];
-const ALL_JS: [&str; 8] = ["admin.js", "admin-ui.js", "admin-views-a.js", "admin-views-b.js", "admin-views-c.js", "admin-main.js", "admin-boot.js", "admin-i18n.js"];
+const ALL_JS: [&str; 8] =
+    ["admin.js", "admin-ui.js", "admin-views-a.js", "admin-views-b.js", "admin-views-c.js", "admin-main.js", "admin-boot.js", "admin-i18n.js"];
 /// Az összes menüpont (a nézetfájlok `registerSection` hívásai): azonosító → sorrend
 const SECTIONS: [(&str, i64); 15] = [
     ("overview", 10),
@@ -38,19 +39,19 @@ const SECTIONS: [(&str, i64); 15] = [
 const IMPLICIT_KEYS: [&str; 1] = ["app.title"];
 
 fn admin_js() -> String {
-    JS_FILES.iter().map(|name| read(&["admin_assets", name])).collect::<Vec<_>>().join("\n")
+    JS_FILES.iter().map(|name| read(&["web", "admin", name])).collect::<Vec<_>>().join("\n")
 }
 
 fn admin_html() -> String {
-    read(&["templates", "admin.html"])
+    read(&["web", "templates", "admin.html"])
 }
 
 fn admin_data() -> Value {
-    data_of(&read(&["admin_assets", "admin-i18n.js"]), "ADMIN_I18N")
+    data_of(&read(&["web", "admin", "admin-i18n.js"]), "ADMIN_I18N")
 }
 
 fn public_data() -> Value {
-    data_of(&read(&["static", "i18n-data.js"]), "I18N_DATA")
+    data_of(&read(&["web", "static", "i18n-data.js"]), "I18N_DATA")
 }
 
 fn ui_keys_without_implicit(translations: &Value) -> BTreeSet<String> {
@@ -65,7 +66,7 @@ fn ui_keys_without_implicit(translations: &Value) -> BTreeSet<String> {
 fn admin_files_parse() {
     require_node!();
     for name in ALL_JS {
-        if let Err(e) = node_check_file(&root().join("admin_assets").join(name)) {
+        if let Err(e) = node_check_file(&root().join("web/admin").join(name)) {
             panic!("{name}: {e}");
         }
     }
@@ -74,12 +75,17 @@ fn admin_files_parse() {
 #[test]
 fn app_js_still_parses_with_the_entry_point() {
     require_node!();
-    node_check_file(&root().join("static").join("app.js")).unwrap();
+    node_check_file(&root().join("web/static").join("app.js")).unwrap();
 }
 
 #[test]
 fn no_stray_script_in_the_assets_folder() {
-    let mut names: Vec<String> = std::fs::read_dir(root().join("admin_assets")).unwrap().filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().to_string()).filter(|n| n.ends_with(".js")).collect();
+    let mut names: Vec<String> = std::fs::read_dir(root().join("web/admin"))
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .filter(|n| n.ends_with(".js"))
+        .collect();
     names.sort();
     let mut expected: Vec<String> = ALL_JS.iter().map(|s| s.to_string()).collect();
     expected.sort();
@@ -209,7 +215,7 @@ fn the_document_title_is_overridden_for_the_admin_page() {
 
 #[test]
 fn the_translation_file_is_loadable_by_the_browser() {
-    let source = read(&["admin_assets", "admin-i18n.js"]);
+    let source = read(&["web", "admin", "admin-i18n.js"]);
     assert!(source.trim_end().ends_with("};"));
     assert_eq!(source.matches("window.ADMIN_I18N").count(), 1);
 }
@@ -367,7 +373,11 @@ fn every_static_reference_in_the_page_resolves() {
     let paths: Vec<String> = re(r#"(?:href|src)="(/(?:static|admin/assets)/[^"?{]+)"#).captures_iter(&html).map(|c| c[1].to_string()).collect();
     assert!(!paths.is_empty());
     for path in paths {
-        let file = if let Some(rest) = path.strip_prefix("/static/") { root().join("static").join(rest) } else { root().join("admin_assets").join(path.split("/admin/assets/").nth(1).unwrap()) };
+        let file = if let Some(rest) = path.strip_prefix("/static/") {
+            root().join("web/static").join(rest)
+        } else {
+            root().join("web/admin").join(path.split("/admin/assets/").nth(1).unwrap())
+        };
         assert!(file.is_file(), "{path}");
     }
 }
@@ -388,7 +398,8 @@ fn the_only_external_script_is_the_socket_io_client() {
 
 #[test]
 fn every_menu_section_is_registered_in_order() {
-    let registered: BTreeMap<String, i64> = re(r"registerSection\(\{\s*id:\s*'(\w+)',\s*order:\s*(\d+)").captures_iter(&admin_js()).map(|m| (m[1].to_string(), m[2].parse().unwrap())).collect();
+    let registered: BTreeMap<String, i64> =
+        re(r"registerSection\(\{\s*id:\s*'(\w+)',\s*order:\s*(\d+)").captures_iter(&admin_js()).map(|m| (m[1].to_string(), m[2].parse().unwrap())).collect();
     let expected: BTreeMap<String, i64> = SECTIONS.iter().map(|(k, v)| (k.to_string(), *v)).collect();
     assert_eq!(registered, expected);
 }
@@ -470,9 +481,15 @@ fn the_page_is_not_indexable() {
 
 #[test]
 fn public_sources_do_not_know_the_admin_client() {
-    for parts in [["static", "app.js"], ["static", "i18n-data.js"], ["static", "i18n.js"], ["templates", "index.html"], ["templates", "sw.js"]] {
+    for parts in [
+        ["web", "static", "app.js"],
+        ["web", "static", "i18n-data.js"],
+        ["web", "static", "i18n.js"],
+        ["web", "templates", "index.html"],
+        ["web", "templates", "sw.js"],
+    ] {
         let source = read(&parts);
-        assert!(!source.contains("/api/admin") && !source.contains("admin_assets") && !source.contains("admin-i18n"), "{parts:?}");
+        assert!(!source.contains("/api/admin") && !source.contains("web/admin") && !source.contains("admin-i18n"), "{parts:?}");
     }
 }
 
@@ -487,7 +504,8 @@ fn visible_text_is_translatable() {
                 if skipped.contains(&tag.as_str()) || self_closing {
                     continue;
                 }
-                let flagged = attrs.iter().any(|(k, _)| k.starts_with("data-i18n") && k != "data-i18n-placeholder" && k != "data-i18n-title" && k != "data-i18n-aria");
+                let flagged =
+                    attrs.iter().any(|(k, _)| k.starts_with("data-i18n") && k != "data-i18n-placeholder" && k != "data-i18n-title" && k != "data-i18n-aria");
                 stack.push((tag, flagged));
             }
             Node::End(tag) => {
@@ -531,8 +549,8 @@ global.document = {
     querySelector() { return null; },
 };
 const read = (...p) => fs.readFileSync(path.join(root, ...p), 'utf8');
-const code = read('static', 'i18n-data.js') + '\n' + read('admin_assets', 'admin-i18n.js') + '\n' + read('static', 'i18n.js') +
-             '\n' + read('admin_assets', 'admin.js') +
+const code = read('web', 'static', 'i18n-data.js') + '\n' + read('web', 'admin', 'admin-i18n.js') + '\n' + read('web', 'static', 'i18n.js') +
+             '\n' + read('web', 'admin', 'admin.js') +
              '\nmodule.exports = { I18N, t, tServer, queryString, fmtNum, fmtPercent, fmtBytes, fmtDuration, formatCountdown };';
 const m = { exports: {} };
 new Function('module', 'exports', 'window', 'document', 'localStorage', 'CustomEvent', code)(

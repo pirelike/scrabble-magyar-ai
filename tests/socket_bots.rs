@@ -70,11 +70,9 @@ async fn rooms_are_created_with_bots() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn difficulty_inputs_are_normalised() {
-    for (input, expected) in [
-        (json!(["hard", "easy"]), vec![10u8, 3]),
-        (json!(["4", "9"]), vec![4, 9]),
-        (json!(["nonsense", "hard", 5, null, 0, 11, true, 2.5, {}]), vec![10, 5]),
-    ] {
+    for (input, expected) in
+        [(json!(["hard", "easy"]), vec![10u8, 3]), (json!(["4", "9"]), vec![4, 9]), (json!(["nonsense", "hard", 5, null, 0, 11, true, 2.5, {}]), vec![10, 5])]
+    {
         let server = TestServer::start().await;
         manual_bots(&server);
         let c = server.player(1).await;
@@ -148,7 +146,7 @@ async fn the_bot_plays_and_the_turn_returns_to_the_human() {
     let server = TestServer::start().await;
     manual_bots(&server);
     let client = solo_started(&server, json!({})).await;
-    assert_eq!(client.my_turn(), true, "az első játékos az ember");
+    assert!(client.my_turn(), "az első játékos az ember");
     client.call("pass_turn", Value::Null).await;
     client.take();
     assert!(play(&server, None, None).await);

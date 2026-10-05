@@ -10,7 +10,7 @@
 //! 4. **Robot**: a bot–bot játékok sebessége (`bot_arena`, egy szálon), és az eredmény egyezése (pont / kör).
 //! 5. **Memória a terhelés végén**.
 //!
-//! A Python verziót a `python-final` git címke tartalmazza; a `perf/run.sh` ebből készít munkamásolatot és virtuális
+//! A Python verziót a `python-final` git címke tartalmazza; a `scripts/perf.sh` ebből készít munkamásolatot és virtuális
 //! környezetet. Közvetlenül: `cargo bench --bench compare -- --python-dir DIR --python-bin PYTHON [--out docs/PERFORMANCE.md]`.
 //! Kapcsolók: `--rust-bin`, `--only rust|python`, `--duration MP` (végpontonként), `--pairs N`, `--arena-games N`, `--quick`.
 //! A kérések `X-Forwarded-For` fejléccel különböző kliens-IP-ket mutatnak (különben az IP-alapú forgalomkorlát a
@@ -144,7 +144,13 @@ fn build_seed_db(path: &Path, options: &Options) {
         let ids = [a as i64 + 1, b as i64 + 1];
         let players: Vec<GamePlayerData> = [(ids[0], sa), (ids[1], sb)]
             .iter()
-            .map(|(uid, score)| GamePlayerData { player_name: format!("Játékos{}", uid - 1), user_id: Some(*uid), score: *score, is_winner: *score == sa.max(sb), resigned: false })
+            .map(|(uid, score)| GamePlayerData {
+                player_name: format!("Játékos{}", uid - 1),
+                user_id: Some(*uid),
+                score: *score,
+                is_winner: *score == sa.max(sb),
+                resigned: false,
+            })
             .collect();
         let state = json!({"players": players.iter().map(|p| json!({"name": p.player_name, "resigned": false, "is_bot": false})).collect::<Vec<_>>(), "finished": true});
         db.finish_game(&format!("seed{g}"), &state.to_string(), &players, &format!("Mintajáték {g}"), false).expect("játék");
@@ -212,10 +218,10 @@ impl Server {
             if let Ok(Some(status)) = self.child.try_wait() {
                 panic!("a(z) {} szerver kilépett ({status}): {}", self.kind.label(), std::fs::read_to_string(self.dir.join("err.log")).unwrap_or_default());
             }
-            if let Ok(response) = agent.get(&format!("{}/api/announcements", self.base())).call() {
-                if response.status().as_u16() == 200 {
-                    return self.started.elapsed();
-                }
+            if let Ok(response) = agent.get(&format!("{}/api/announcements", self.base())).call()
+                && response.status().as_u16() == 200
+            {
+                return self.started.elapsed();
             }
             assert!(self.started.elapsed() < Duration::from_secs(180), "a szerver nem indult el");
             std::thread::sleep(Duration::from_millis(20));
@@ -311,7 +317,8 @@ fn http_load(server: &Server, workers: usize, duration: Duration, make: impl Fn(
                     while Instant::now() < deadline {
                         let n = counter.fetch_add(1, Ordering::Relaxed);
                         let request = make(n);
-                        let mut builder = ureq::http::Request::builder().method(request.method).uri(format!("{base}{}", request.path)).header("X-Forwarded-For", fake_ip(n));
+                        let mut builder =
+                            ureq::http::Request::builder().method(request.method).uri(format!("{base}{}", request.path)).header("X-Forwarded-For", fake_ip(n));
                         if let Some(cookie) = &request.cookie {
                             builder = builder.header("Cookie", cookie);
                         }
@@ -351,11 +358,13 @@ fn get(path: &str) -> impl Fn(u64) -> Request + Sync + '_ {
 }
 
 const WORDS: [&str; 24] = [
-    "alma", "körte", "szék", "asztal", "ablak", "barack", "szilva", "kutya", "macska", "ház", "kert", "folyó", "hegy", "tenger", "erdő", "város", "falu", "utca", "híd", "tér", "vonat", "busz", "hajó", "repülő",
+    "alma", "körte", "szék", "asztal", "ablak", "barack", "szilva", "kutya", "macska", "ház", "kert", "folyó", "hegy", "tenger", "erdő", "város", "falu",
+    "utca", "híd", "tér", "vonat", "busz", "hajó", "repülő",
 ];
 
 fn dictionary_request(n: u64) -> Request {
-    let words: Vec<String> = (0..8).map(|i| WORDS[((n as usize) * 3 + i) % WORDS.len()].to_string() + if (n + i as u64) % 5 == 0 { "k" } else { "" }).collect();
+    let words: Vec<String> =
+        (0..8).map(|i| WORDS[((n as usize) * 3 + i) % WORDS.len()].to_string() + if (n + i as u64).is_multiple_of(5) { "k" } else { "" }).collect();
     Request { method: "POST", path: "/api/dictionary/check".into(), body: Some(json!({"words": words}).to_string()), cookie: None }
 }
 
@@ -373,11 +382,22 @@ fn login_cookie(base: &str, email: &str, ip: &str) -> Option<String> {
     if response.status().as_u16() != 200 {
         return None;
     }
-    response.headers().get_all("set-cookie").iter().filter_map(|v| v.to_str().ok()).find_map(|c| c.strip_prefix("session_token=").map(|r| format!("session_token={}", r.split(';').next().unwrap_or(""))))
+    response
+        .headers()
+        .get_all("set-cookie")
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .find_map(|c| c.strip_prefix("session_token=").map(|r| format!("session_token={}", r.split(';').next().unwrap_or(""))))
 }
 
 fn json_get(base: &str, path: &str, cookie: &str, ip: &str) -> Value {
-    let request = ureq::http::Request::builder().method("GET").uri(format!("{base}{path}")).header("Cookie", cookie).header("X-Forwarded-For", ip).body(Vec::new()).unwrap();
+    let request = ureq::http::Request::builder()
+        .method("GET")
+        .uri(format!("{base}{path}"))
+        .header("Cookie", cookie)
+        .header("X-Forwarded-For", ip)
+        .body(Vec::new())
+        .unwrap();
     let response = agent().run(request).expect("kérés");
     serde_json::from_slice(&response.into_body().read_to_vec().unwrap_or_default()).unwrap_or(Value::Null)
 }
@@ -417,15 +437,15 @@ async fn connect(port: u16, ip: &str) -> Client {
                 let _ = pong.send("40".into());
             } else if text == "2" {
                 let _ = pong.send("3".into());
-            } else if let Some(body) = text.strip_prefix("42") {
-                if let Ok(Value::Array(mut parts)) = serde_json::from_str::<Value>(body) {
-                    if parts.is_empty() {
-                        continue;
-                    }
-                    let name = parts.remove(0).as_str().unwrap_or("").to_string();
-                    let data = if parts.is_empty() { Value::Null } else { parts.remove(0) };
-                    let _ = ev_tx.send((name, data));
+            } else if let Some(body) = text.strip_prefix("42")
+                && let Ok(Value::Array(mut parts)) = serde_json::from_str::<Value>(body)
+            {
+                if parts.is_empty() {
+                    continue;
                 }
+                let name = parts.remove(0).as_str().unwrap_or("").to_string();
+                let data = if parts.is_empty() { Value::Null } else { parts.remove(0) };
+                let _ = ev_tx.send((name, data));
             }
         }
     });
@@ -589,16 +609,16 @@ async fn socket_scenario(server: &Server, options: &Options) -> SocketResult {
                 if let Ok(Some((name, data))) = tokio::time::timeout(Duration::from_millis(20), player.client.rx.recv()).await {
                     events.fetch_add(1, Ordering::Relaxed);
                     if name == "chat_message" {
-                        if let Some((text, t0)) = &chat_sent {
-                            if data["message"].as_str() == Some(text.as_str()) {
-                                chat.lock().push(t0.elapsed().as_secs_f64() * 1000.0);
-                                chat_sent = None;
-                            }
+                        if let Some((text, t0)) = &chat_sent
+                            && data["message"].as_str() == Some(text.as_str())
+                        {
+                            chat.lock().push(t0.elapsed().as_secs_f64() * 1000.0);
+                            chat_sent = None;
                         }
-                    } else if name == "rooms_list" {
-                        if let Some(t0) = rooms_sent.take() {
-                            rooms.lock().push(t0.elapsed().as_secs_f64() * 1000.0);
-                        }
+                    } else if name == "rooms_list"
+                        && let Some(t0) = rooms_sent.take()
+                    {
+                        rooms.lock().push(t0.elapsed().as_secs_f64() * 1000.0);
                     }
                 }
             }
@@ -633,8 +653,14 @@ fn arena(kind: Kind, options: &Options) -> Option<(f64, Vec<f64>)> {
     let games = options.arena_games.to_string();
     let started = Instant::now();
     let output = match kind {
-        Kind::Rust => Command::new(options.repo.join("target/release/bot_arena")).args(["ladder", "-n", &games, "-j", "1"]).current_dir(&options.repo).output().ok()?,
-        Kind::Python => Command::new(&options.python_bin).args(["tools/bot_arena.py", "ladder", "-n", &games, "-j", "1"]).current_dir(options.python_dir.as_ref()?).output().ok()?,
+        Kind::Rust => {
+            Command::new(options.repo.join("target/release/bot_arena")).args(["ladder", "-n", &games, "-j", "1"]).current_dir(&options.repo).output().ok()?
+        }
+        Kind::Python => Command::new(&options.python_bin)
+            .args(["tools/bot_arena.py", "ladder", "-n", &games, "-j", "1"])
+            .current_dir(options.python_dir.as_ref()?)
+            .output()
+            .ok()?,
     };
     if !output.status.success() {
         return None;
@@ -744,10 +770,14 @@ fn row(label: &str, python: Option<f64>, rust: Option<f64>, unit: &str, higher_i
 fn render(python: Option<&Report>, rust: Option<&Report>, options: &Options) -> String {
     let mut out = String::new();
     out.push_str("# Teljesítmény: Python és Rust verzió\n\n");
-    out.push_str("A mérést a `cargo bench --bench compare` (`perf/run.sh`) állítja elő; mindkét szerver külön folyamat, ugyanarról a mintaadatbázisról indul, és ugyanazt a terhelést kapja. Az „arány” oszlop a Rust előnye (nagyobb = a Rust jobb).\n\n");
+    out.push_str("A mérést a `cargo bench --bench compare` (`scripts/perf.sh`) állítja elő; mindkét szerver külön folyamat, ugyanarról a mintaadatbázisról indul, és ugyanazt a terhelést kapja. Az „arány” oszlop a Rust előnye (nagyobb = a Rust jobb).\n\n");
     let cpus = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
-    let cpu_model = std::fs::read_to_string("/proc/cpuinfo").ok().and_then(|t| t.lines().find(|l| l.starts_with("model name")).map(|l| l.split(':').nth(1).unwrap_or("").trim().to_string())).unwrap_or_default();
-    let python_version = Command::new(&options.python_bin).arg("--version").output().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
+    let cpu_model = std::fs::read_to_string("/proc/cpuinfo")
+        .ok()
+        .and_then(|t| t.lines().find(|l| l.starts_with("model name")).map(|l| l.split(':').nth(1).unwrap_or("").trim().to_string()))
+        .unwrap_or_default();
+    let python_version =
+        Command::new(&options.python_bin).arg("--version").output().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
     out.push_str(&format!(
         "- Gép: {cpu_model}, {cpus} logikai mag\n- Python: {python_version} (Flask + Socket.IO, gevent, egy folyamat)\n- Rust: axum + socketioxide (tokio, többszálú), `--release`\n- Terhelés: {} mp végpontonként, 16 párhuzamos kapcsolat; {} pár egyidejű játék; mintaadatbázis: {} felhasználó, {} befejezett játék\n- Dátum: {}\n\n",
         options.duration.as_secs(),
@@ -774,8 +804,22 @@ fn render(python: Option<&Report>, rust: Option<&Report>, options: &Options) -> 
     out.push_str(&row("Egy játék ideje (átlag)", p(&|x| mean(&x.socket.game_seconds)), r(&|x| mean(&x.socket.game_seconds)), "mp", false, 2));
     out.push_str(&row("Chat körülfordulás p50", p(&|x| percentile(&x.socket.chat_ms, 0.5)), r(&|x| percentile(&x.socket.chat_ms, 0.5)), "ms", false, 1));
     out.push_str(&row("Chat körülfordulás p99", p(&|x| percentile(&x.socket.chat_ms, 0.99)), r(&|x| percentile(&x.socket.chat_ms, 0.99)), "ms", false, 1));
-    out.push_str(&row("Szobalista körülfordulás p99", p(&|x| percentile(&x.socket.rooms_ms, 0.99)), r(&|x| percentile(&x.socket.rooms_ms, 0.99)), "ms", false, 1));
-    out.push_str(&row("Robot-aréna (bot–bot játékok, egy szál)", python.and_then(|x| x.arena.as_ref().map(|a| a.0)), rust.and_then(|x| x.arena.as_ref().map(|a| a.0)), "mp", false, 1));
+    out.push_str(&row(
+        "Szobalista körülfordulás p99",
+        p(&|x| percentile(&x.socket.rooms_ms, 0.99)),
+        r(&|x| percentile(&x.socket.rooms_ms, 0.99)),
+        "ms",
+        false,
+        1,
+    ));
+    out.push_str(&row(
+        "Robot-aréna (bot–bot játékok, egy szál)",
+        python.and_then(|x| x.arena.as_ref().map(|a| a.0)),
+        rust.and_then(|x| x.arena.as_ref().map(|a| a.0)),
+        "mp",
+        false,
+        1,
+    ));
     out.push_str("\n## HTTP végpontok\n\n| Végpont | Python kérés/mp | Rust kérés/mp | arány | Python p50 / p99 | Rust p50 / p99 | CPU-mp / 1000 kérés (Py → Rust) |\n|---|---|---|---|---|---|---|\n");
     let labels: Vec<String> = rust.or(python).map(|x| x.http.iter().map(|(l, _)| l.clone()).collect()).unwrap_or_default();
     for label in labels {
@@ -797,7 +841,7 @@ fn render(python: Option<&Report>, rust: Option<&Report>, options: &Options) -> 
         let fmt = |v: &Vec<f64>| v.get(level).map(|x| format!("{x:.1}")).unwrap_or_else(|| "–".into());
         out.push_str(&format!("| {} | {} | {} |\n", level + 1, fmt(&ps), fmt(&rs)));
     }
-    out.push_str("\n## Megjegyzések\n\n- A Python verzió egyetlen gevent folyamat: a CPU-igényes kérések (szókeresés, jelszó-hash, robot) egyetlen magot használnak, és egymást várakoztatják. A Rust szerver többszálú, ezért a párhuzamos terhelésnél a magok számával is skálázódik.\n- Mindkét szerver az első kérés előtt betölti a szótárat, a robot szókincsét (a ragozott alakokkal) és a napi feladványt; az indulási idő ezt is tartalmazza.\n- A ranglista végpont ideje főleg az SQLite összesítő lekérdezésére megy el (mindkét verzió ugyanazt a sémát és lekérdezést használja), ezért ott kisebb az eltérés.\n- A kérések `X-Forwarded-For` fejlécével különböző kliens-IP-k látszanak, így az IP-alapú forgalomkorlát nem torzítja a méréseket.\n- A Python verzió a `python-final` git címkén van; a mintaadatbázist a Rust kód állítja elő, és mindkét szerver ugyanazt a fájlt használja (a két verzió adatbázis-sémája azonos).\n- Újrafuttatás: `perf/run.sh --out docs/PERFORMANCE.md` (gyors próba: `--quick`).\n");
+    out.push_str("\n## Megjegyzések\n\n- A Python verzió egyetlen gevent folyamat: a CPU-igényes kérések (szókeresés, jelszó-hash, robot) egyetlen magot használnak, és egymást várakoztatják. A Rust szerver többszálú, ezért a párhuzamos terhelésnél a magok számával is skálázódik.\n- Mindkét szerver az első kérés előtt betölti a szótárat, a robot szókincsét (a ragozott alakokkal) és a napi feladványt; az indulási idő ezt is tartalmazza.\n- A ranglista végpont ideje főleg az SQLite összesítő lekérdezésére megy el (mindkét verzió ugyanazt a sémát és lekérdezést használja), ezért ott kisebb az eltérés.\n- A kérések `X-Forwarded-For` fejlécével különböző kliens-IP-k látszanak, így az IP-alapú forgalomkorlát nem torzítja a méréseket.\n- A Python verzió a `python-final` git címkén van; a mintaadatbázist a Rust kód állítja elő, és mindkét szerver ugyanazt a fájlt használja (a két verzió adatbázis-sémája azonos).\n- Újrafuttatás: `scripts/perf.sh --out docs/PERFORMANCE.md` (gyors próba: `--quick`).\n");
     out
 }
 

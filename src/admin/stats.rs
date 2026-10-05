@@ -126,10 +126,11 @@ fn stat_retention(app: &App, days: i64) -> AdminResult<Value> {
     let today = util::utcnow().date();
     let since = (today - Duration::days(days)).format("%Y-%m-%d").to_string();
     let (users, active) = txn(&app.db, |tx| {
-        let users: Vec<(i64, String)> = fetch_all(tx, "SELECT id, date(created_at) AS day FROM users WHERE date(created_at) >= ? AND deleted_at IS NULL", [&since])?
-            .iter()
-            .map(|r| (r.int("id"), r.text("day")))
-            .collect();
+        let users: Vec<(i64, String)> =
+            fetch_all(tx, "SELECT id, date(created_at) AS day FROM users WHERE date(created_at) >= ? AND deleted_at IS NULL", [&since])?
+                .iter()
+                .map(|r| (r.int("id"), r.text("day")))
+                .collect();
         let active: HashSet<(i64, String)> = fetch_all(tx, &format!("SELECT user_id, day FROM ({ACTIVITY_SQL}) WHERE day >= ?"), [&since])?
             .iter()
             .map(|r| (r.int("user_id"), r.text("day")))
@@ -166,11 +167,13 @@ fn stat_games(app: &App, days: i64) -> AdminResult<Value> {
             [&since],
         )?
         .unwrap_or_default();
-        let daily_attempts = fetch_one(tx, "SELECT COALESCE(SUM(attempts), 0) AS n FROM daily_scores WHERE puzzle_date >= ?", [&since])?.map(|r| r.int("n")).unwrap_or(0);
-        let status: HashMap<String, i64> = fetch_all(tx, "SELECT status, COUNT(*) AS n FROM saved_games WHERE date(created_at) >= ? GROUP BY status", [&since])?
-            .iter()
-            .map(|r| (r.text("status"), r.int("n")))
-            .collect();
+        let daily_attempts =
+            fetch_one(tx, "SELECT COALESCE(SUM(attempts), 0) AS n FROM daily_scores WHERE puzzle_date >= ?", [&since])?.map(|r| r.int("n")).unwrap_or(0);
+        let status: HashMap<String, i64> =
+            fetch_all(tx, "SELECT status, COUNT(*) AS n FROM saved_games WHERE date(created_at) >= ? GROUP BY status", [&since])?
+                .iter()
+                .map(|r| (r.text("status"), r.int("n")))
+                .collect();
         let length = fetch_one(
             tx,
             "SELECT AVG(m.n) AS avg_moves FROM (SELECT COUNT(*) AS n FROM game_moves gm JOIN saved_games sg ON sg.id = gm.game_id \
@@ -227,7 +230,8 @@ fn stat_bots(app: &App, days: i64) -> AdminResult<Value> {
     for row in &rows {
         let Ok(state) = serde_json::from_str::<Value>(&row.text("state_json")) else { continue };
         let players = state.get("players").and_then(|p| p.as_array()).cloned().unwrap_or_default();
-        let humans: Vec<String> = players.iter().filter(|p| !p.get("is_bot").is_some_and(util::truthy)).filter_map(|p| p["name"].as_str().map(|s| s.to_string())).collect();
+        let humans: Vec<String> =
+            players.iter().filter(|p| !p.get("is_bot").is_some_and(util::truthy)).filter_map(|p| p["name"].as_str().map(|s| s.to_string())).collect();
         let levels: HashSet<String> = players
             .iter()
             .filter(|p| p.get("is_bot").is_some_and(util::truthy))
@@ -336,7 +340,9 @@ fn stat_challenges(app: &App, days: i64) -> AdminResult<Value> {
         .iter()
         .map(|r| (r.text("action_type"), r.int("n")))
         .collect();
-        let games = fetch_one(tx, "SELECT COUNT(*) AS n FROM saved_games WHERE challenge_mode = 1 AND date(created_at) >= ?", [&since])?.map(|r| r.int("n")).unwrap_or(0);
+        let games = fetch_one(tx, "SELECT COUNT(*) AS n FROM saved_games WHERE challenge_mode = 1 AND date(created_at) >= ?", [&since])?
+            .map(|r| r.int("n"))
+            .unwrap_or(0);
         Ok((counts, games))
     })?;
     let accepted = counts.get("challenge_accept").copied().unwrap_or(0);
@@ -364,10 +370,8 @@ fn stat_practice(app: &App, days: i64) -> AdminResult<Value> {
             per_day.insert(r.text("day"), r.int("count"));
         }
     }
-    let series: Map<String, Value> = PRACTICE_KEYS
-        .iter()
-        .map(|k| (k.to_string(), json!(span.iter().map(|d| json!({"day": d, "value": data[k][d]})).collect::<Vec<_>>())))
-        .collect();
+    let series: Map<String, Value> =
+        PRACTICE_KEYS.iter().map(|k| (k.to_string(), json!(span.iter().map(|d| json!({"day": d, "value": data[k][d]})).collect::<Vec<_>>()))).collect();
     let totals: Map<String, Value> = PRACTICE_KEYS.iter().map(|k| (k.to_string(), json!(data[k].values().sum::<i64>()))).collect();
     let mut columns = vec![json!("day")];
     columns.extend(PRACTICE_KEYS.iter().map(|k| json!(k)));
@@ -392,7 +396,8 @@ fn stat_review(app: &App, days: i64) -> AdminResult<Value> {
         )?)
     })?;
     let by_day: HashMap<String, &Row> = rows.iter().map(|r| (r.text("day"), r)).collect();
-    let pick = |key: &str| -> Value { json!(span.iter().map(|d| json!({"day": d, "value": by_day.get(d).map(|r| r.int(key)).unwrap_or(0)})).collect::<Vec<_>>()) };
+    let pick =
+        |key: &str| -> Value { json!(span.iter().map(|d| json!({"day": d, "value": by_day.get(d).map(|r| r.int(key)).unwrap_or(0)})).collect::<Vec<_>>()) };
     let (decisions, rejections) = (pick("decisions"), pick("rejections"));
     let day_values: Vec<Value> = span.iter().map(|d| json!(d)).collect();
     Ok(json!({
@@ -405,10 +410,11 @@ fn stat_review(app: &App, days: i64) -> AdminResult<Value> {
 fn stat_heatmap(app: &App, days: i64) -> AdminResult<Value> {
     let since = since_date(days);
     let stamps = txn(&app.db, |tx| {
-        let mut stamps: Vec<String> = fetch_all(tx, "SELECT created_at FROM game_moves WHERE date(created_at) >= ? ORDER BY id DESC LIMIT ?", rusqlite::params![&since, MAX_MOVE_ROWS])?
-            .iter()
-            .map(|r| r.text("created_at"))
-            .collect();
+        let mut stamps: Vec<String> =
+            fetch_all(tx, "SELECT created_at FROM game_moves WHERE date(created_at) >= ? ORDER BY id DESC LIMIT ?", rusqlite::params![&since, MAX_MOVE_ROWS])?
+                .iter()
+                .map(|r| r.text("created_at"))
+                .collect();
         stamps.extend(
             fetch_all(tx, "SELECT created_at FROM login_events WHERE success = 1 AND date(created_at) >= ? LIMIT ?", rusqlite::params![&since, MAX_MOVE_ROWS])?
                 .iter()
@@ -522,13 +528,14 @@ pub fn daily_archive(app: &App, days: Option<&str>) -> AdminResult<Value> {
             [&since],
         )?)
     })?;
-    Ok(json!(rows
-        .iter()
-        .map(|r| json!({
-            "date": r.text("date"), "best_score": r.int("best_score"), "participants": r.int("participants"), "attempts": r.int("attempts"),
-            "avg_score": r.get("avg_score").and_then(|v| v.as_f64()).map(|v| json!(round1(v))).unwrap_or(Value::Null),
-        }))
-        .collect::<Vec<_>>()))
+    Ok(json!(
+        rows.iter()
+            .map(|r| json!({
+                "date": r.text("date"), "best_score": r.int("best_score"), "participants": r.int("participants"), "attempts": r.int("attempts"),
+                "avg_score": r.get("avg_score").and_then(|v| v.as_f64()).map(|v| json!(round1(v))).unwrap_or(Value::Null),
+            }))
+            .collect::<Vec<_>>()
+    ))
 }
 
 /// Egy (akár jövőbeli) nap feladványa mentés nélkül, a nehézség becslésével (a legjobb pontszám). Másodpercekig
@@ -541,7 +548,14 @@ pub fn daily_preview(date_str: &str) -> AdminResult<Value> {
 
 /// Egy nap feladványának újragenerálása (pl. a szótár módosítása után). Ha már voltak próbálkozások, sudo kell, és a
 /// ranglista torzulhat (`reset_scores`: a nap eredményei törlődnek).
-pub fn daily_regenerate(app: &App, ctx: &AdminContext, date_str: &str, reason: Option<&Value>, reset_scores: Option<&Value>, sudo_ok: bool) -> AdminResult<Value> {
+pub fn daily_regenerate(
+    app: &App,
+    ctx: &AdminContext,
+    date_str: &str,
+    reason: Option<&Value>,
+    reset_scores: Option<&Value>,
+    sudo_ok: bool,
+) -> AdminResult<Value> {
     let reset_scores = bool_field(Some(reset_scores.unwrap_or(&json!(false))), "reset_scores")?;
     let date = check_date(date_str, true)?;
     let attempts = txn(&app.db, |tx| {
@@ -551,21 +565,37 @@ pub fn daily_regenerate(app: &App, ctx: &AdminContext, date_str: &str, reason: O
         return Err(super::routes::sudo_error().with("attempts", json!(attempts)));
     }
     let puzzle = crate::daily::generate_puzzle(&date, &crate::ai::get_vocabulary()).map_err(|_| AdminError::new("A feladvány most nem állítható elő.", 503))?;
-    action(&app.db, ctx, "daily.regenerate", Some("daily"), Some(date.clone()), reason, json!({"attempts": attempts, "reset_scores": reset_scores}), true, |act| {
-        let old = fetch_one(act.tx, "SELECT best_score FROM daily_puzzles WHERE puzzle_date = ?", [&date])?;
-        act.tx.execute("DELETE FROM daily_puzzles WHERE puzzle_date = ?", [&date])?;
-        act.tx.execute(
-            "INSERT INTO daily_puzzles (puzzle_date, board_json, rack_json, best_score, best_json) VALUES (?, ?, ?, ?, ?)",
-            rusqlite::params![date, puzzle.board.to_string(), serde_json::to_string(&puzzle.rack).unwrap_or_default(), puzzle.best_score, puzzle.best.to_string()],
-        )?;
-        if reset_scores {
-            let deleted = act.tx.execute("DELETE FROM daily_scores WHERE puzzle_date = ?", [&date])?;
-            act.details.insert("scores_deleted".into(), json!(deleted));
-        }
-        act.details.insert("before".into(), json!({"best_score": old.map(|o| o.int("best_score"))}));
-        act.details.insert("after".into(), json!({"best_score": puzzle.best_score}));
-        Ok(())
-    })?;
+    action(
+        &app.db,
+        ctx,
+        "daily.regenerate",
+        Some("daily"),
+        Some(date.clone()),
+        reason,
+        json!({"attempts": attempts, "reset_scores": reset_scores}),
+        true,
+        |act| {
+            let old = fetch_one(act.tx, "SELECT best_score FROM daily_puzzles WHERE puzzle_date = ?", [&date])?;
+            act.tx.execute("DELETE FROM daily_puzzles WHERE puzzle_date = ?", [&date])?;
+            act.tx.execute(
+                "INSERT INTO daily_puzzles (puzzle_date, board_json, rack_json, best_score, best_json) VALUES (?, ?, ?, ?, ?)",
+                rusqlite::params![
+                    date,
+                    puzzle.board.to_string(),
+                    serde_json::to_string(&puzzle.rack).unwrap_or_default(),
+                    puzzle.best_score,
+                    puzzle.best.to_string()
+                ],
+            )?;
+            if reset_scores {
+                let deleted = act.tx.execute("DELETE FROM daily_scores WHERE puzzle_date = ?", [&date])?;
+                act.details.insert("scores_deleted".into(), json!(deleted));
+            }
+            act.details.insert("before".into(), json!({"best_score": old.map(|o| o.int("best_score"))}));
+            act.details.insert("after".into(), json!({"best_score": puzzle.best_score}));
+            Ok(())
+        },
+    )?;
     Ok(json!({"date": date, "best_score": puzzle.best_score, "attempts": attempts}))
 }
 

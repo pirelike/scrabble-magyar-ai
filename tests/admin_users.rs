@@ -51,8 +51,8 @@ async fn ids_of(e: &Env, query: &str) -> Vec<i64> {
 fn valid_word(index: usize) -> String {
     dictionary::warm_up();
     let candidates = ["ALMA", "KÖRTE", "ASZTAL", "LÁMPA", "HAJÓ", "ERDŐ", "TENGER", "VIRÁG"];
-    let word = candidates.iter().filter(|w| dictionary::is_word_valid(w)).nth(index).expect("érvényes szó").to_string();
-    word
+
+    candidates.iter().filter(|w| dictionary::is_word_valid(w)).nth(index).expect("érvényes szó").to_string()
 }
 
 // ===================================================================================================
@@ -122,7 +122,8 @@ async fn sorting_and_paging() {
     let data = e.api.admin_get("/users?sort=name&order=asc&limit=2&offset=1").await.json();
     assert_eq!(data["total"], 7);
     assert_eq!(data["items"].as_array().unwrap().len(), 2);
-    let names: Vec<String> = items_of(&e.api.admin_get("/users?sort=name&order=asc").await, "display_name").iter().map(|n| n.as_str().unwrap().to_string()).collect();
+    let names: Vec<String> =
+        items_of(&e.api.admin_get("/users?sort=name&order=asc").await, "display_name").iter().map(|n| n.as_str().unwrap().to_string()).collect();
     let mut sorted = names.clone();
     sorted.sort_by_key(|n| scrabble::admin::fold(n));
     assert_eq!(names, sorted);

@@ -57,7 +57,10 @@ async fn create_and_show_publicly() {
     let new_id = e.api.admin_post("/announcements", data).await.json()["id"].clone();
     let items = public(&e.server.http()).await;
     assert_eq!(items.len(), 1);
-    assert_eq!((items[0]["id"].clone(), items[0]["kind"].clone(), items[0]["text_hu"].clone(), items[0]["text_en"].clone()), (new_id.clone(), json!("warning"), json!("Szombaton frissítünk."), json!("Update on Saturday.")));
+    assert_eq!(
+        (items[0]["id"].clone(), items[0]["kind"].clone(), items[0]["text_hu"].clone(), items[0]["text_en"].clone()),
+        (new_id.clone(), json!("warning"), json!("Szombaton frissítünk."), json!("Update on Saturday."))
+    );
     assert_eq!(e.api.admin_get("/announcements").await.json()["items"][0]["status"], "active");
     let row = audit_of(&e.server, "comm.announcement_create")[0]["details"].clone();
     assert_eq!((row["text_hu"].clone(), row["announcement_id"].clone()), (json!("Szombaton frissítünk."), new_id));
@@ -77,8 +80,18 @@ async fn the_validity_window() {
     e.api.admin_post("/announcements", json!({"text_hu": "Lejárt", "ends_at": "2000-01-01"})).await;
     e.api.admin_post("/announcements", json!({"text_hu": "Most érvényes", "starts_at": "2000-01-01", "ends_at": "2999-01-01"})).await;
     assert_eq!(texts(&public(&e.server.http()).await), vec!["Most érvényes"]);
-    let statuses: std::collections::HashMap<String, String> = arr(&e.api.admin_get("/announcements").await.json()["items"]).iter().map(|i| (i["text_hu"].as_str().unwrap().to_string(), i["status"].as_str().unwrap().to_string())).collect();
-    assert_eq!(statuses, std::collections::HashMap::from([("Jövőbeli".to_string(), "scheduled".to_string()), ("Lejárt".to_string(), "expired".to_string()), ("Most érvényes".to_string(), "active".to_string())]));
+    let statuses: std::collections::HashMap<String, String> = arr(&e.api.admin_get("/announcements").await.json()["items"])
+        .iter()
+        .map(|i| (i["text_hu"].as_str().unwrap().to_string(), i["status"].as_str().unwrap().to_string()))
+        .collect();
+    assert_eq!(
+        statuses,
+        std::collections::HashMap::from([
+            ("Jövőbeli".to_string(), "scheduled".to_string()),
+            ("Lejárt".to_string(), "expired".to_string()),
+            ("Most érvényes".to_string(), "active".to_string())
+        ])
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -196,7 +209,11 @@ async fn the_admin_is_exempt() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_banner_with_a_countdown() {
     let e = env().await;
-    let state = e.api.admin_post("/maintenance", json!({"enabled": true, "message_hu": "Újraindulás.", "message_en": "Restarting.", "until": "2999-01-01 10:00"})).await.json();
+    let state = e
+        .api
+        .admin_post("/maintenance", json!({"enabled": true, "message_hu": "Újraindulás.", "message_en": "Restarting.", "until": "2999-01-01 10:00"}))
+        .await
+        .json();
     assert!(state["enabled"] == true && state["active"] == true, "{state}");
     let banner = public(&e.server.http()).await[0].clone();
     assert_eq!((banner["id"].clone(), banner["kind"].clone()), (json!("maintenance"), json!("maintenance")));
@@ -210,7 +227,13 @@ async fn maintenance_ends_automatically() {
     let mut value = e.server.app.settings.get(scrabble::settings::MAINTENANCE_KEY);
     value["until"] = json!("2000-01-01 00:00:00");
     let admin_id = e.server.user_id(ADMIN_EMAIL);
-    e.server.app.db.with(|tx| e.server.app.settings.store(tx, scrabble::settings::MAINTENANCE_KEY, &value, Some(admin_id)).map(|_| ()).map_err(|_| rusqlite::Error::InvalidQuery)).unwrap();
+    e.server
+        .app
+        .db
+        .with(|tx| {
+            e.server.app.settings.store(tx, scrabble::settings::MAINTENANCE_KEY, &value, Some(admin_id)).map(|_| ()).map_err(|_| rusqlite::Error::InvalidQuery)
+        })
+        .unwrap();
     e.server.app.settings.invalidate();
     assert!(e.server.app.settings.maintenance().is_none());
     assert!(public(&e.server.http()).await.is_empty());
@@ -389,7 +412,12 @@ async fn without_smtp_it_goes_to_the_console() {
 async fn email_validation() {
     let (e, smtp) = env_with_smtp().await;
     let a = e.server.create_user("a@example.com", "Anna");
-    for body in [json!({"subject": "", "body": "x"}), json!({"subject": "x", "body": ""}), json!({"subject": "két\nsor", "body": "x"}), json!({"subject": "x", "body": "y".repeat(5001)})] {
+    for body in [
+        json!({"subject": "", "body": "x"}),
+        json!({"subject": "x", "body": ""}),
+        json!({"subject": "két\nsor", "body": "x"}),
+        json!({"subject": "x", "body": "y".repeat(5001)}),
+    ] {
         let mut data = body.clone();
         data["user_id"] = json!(a);
         assert_eq!(e.api.admin_post("/email", data).await.status, 400);
@@ -452,7 +480,15 @@ async fn listing_the_settings() {
     let data = e.api.admin_get("/settings").await.json();
     let items: std::collections::HashMap<String, Value> = arr(&data["items"]).into_iter().map(|i| (i["key"].as_str().unwrap().to_string(), i)).collect();
     let grace = &items["grace_disconnect"];
-    for (key, expected) in [("value", json!(120)), ("default", json!(120)), ("overridden", json!(false)), ("min", json!(15)), ("max", json!(1800)), ("type", json!("int")), ("group", json!("timing"))] {
+    for (key, expected) in [
+        ("value", json!(120)),
+        ("default", json!(120)),
+        ("overridden", json!(false)),
+        ("min", json!(15)),
+        ("max", json!(1800)),
+        ("type", json!("int")),
+        ("group", json!("timing")),
+    ] {
         assert_eq!(grace[key], expected, "{key}");
     }
     for key in ["changed_by", "changed_at", "changed_by_name"] {

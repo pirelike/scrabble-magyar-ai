@@ -80,7 +80,8 @@ fn accepted_but_listed() -> String {
 
 /// Egy biztosan érvényes, szokásos szó (nem a listán).
 fn valid_word(index: usize) -> String {
-    let candidates: Vec<&str> = ["almás", "körte", "szilva", "barack", "szőlő", "dinnye"].into_iter().filter(|w| dictionary::is_word_valid(&w.to_uppercase())).collect();
+    let candidates: Vec<&str> =
+        ["almás", "körte", "szilva", "barack", "szőlő", "dinnye"].into_iter().filter(|w| dictionary::is_word_valid(&w.to_uppercase())).collect();
     candidates[index].to_string()
 }
 
@@ -194,7 +195,10 @@ async fn voted_words_are_listed_with_their_votes() {
     let word = valid_word(0);
     word_review::record_vote(&e.server.app.db, &e.server.app.settings, uid, &word.to_uppercase(), false);
     let item = e.api.admin_get("/dictionary/rejected?source=voted").await.json()["items"][0].clone();
-    assert_eq!((item["word"].clone(), item["voted"].clone(), item["bad"].clone(), item["listed"].clone()), (json!(word.to_uppercase()), json!(true), json!(1), json!(false)));
+    assert_eq!(
+        (item["word"].clone(), item["voted"].clone(), item["bad"].clone(), item["listed"].clone()),
+        (json!(word.to_uppercase()), json!(true), json!(1), json!(false))
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -235,7 +239,12 @@ async fn adding_writes_the_file_atomically_and_applies_immediately() {
     assert!(!iso.text().contains("almaa")); // érvénytelen szót nem vesz fel
     assert!(!dictionary::is_word_valid(&word.to_uppercase()));
     assert!(dictionary::rejected_version() > before);
-    let temporary: Vec<String> = std::fs::read_dir(&iso.dir).unwrap().filter_map(|f| f.ok()).map(|f| f.file_name().to_string_lossy().to_string()).filter(|n| n.starts_with(".hu_rejected")).collect();
+    let temporary: Vec<String> = std::fs::read_dir(&iso.dir)
+        .unwrap()
+        .filter_map(|f| f.ok())
+        .map(|f| f.file_name().to_string_lossy().to_string())
+        .filter(|n| n.starts_with(".hu_rejected"))
+        .collect();
     assert!(temporary.is_empty(), "{temporary:?}");
     let row = audit_of(&e.server, "dict.reject_add")[0]["details"].clone();
     assert_eq!((row["words"].clone(), row["skipped_invalid"].clone(), row["reason"].clone()), (json!([word]), json!(1), json!(REASON)));
@@ -336,7 +345,8 @@ async fn allow_overrides_the_votes_and_the_list() {
     }
     word_review::refresh(&app.db, &app.settings); // újraindítás után is érvényben marad
     assert!(dictionary::is_word_valid(&voted.to_uppercase()));
-    let mut listed_words: Vec<String> = arr(&e.api.admin_get("/dictionary/overrides").await.json()["items"]).iter().map(|o| o["word"].as_str().unwrap().to_string()).collect();
+    let mut listed_words: Vec<String> =
+        arr(&e.api.admin_get("/dictionary/overrides").await.json()["items"]).iter().map(|o| o["word"].as_str().unwrap().to_string()).collect();
     listed_words.sort();
     let mut expected = vec![voted.to_uppercase(), listed.to_uppercase()];
     expected.sort();

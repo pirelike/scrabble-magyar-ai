@@ -68,8 +68,7 @@ fn rack_words_match_python() {
     for case in golden["rack_words"].as_array().unwrap() {
         let rack = tiles(&case["rack"]);
         let words = practice::rack_words(&rack);
-        let lines: Vec<String> =
-            words.iter().map(|w| format!("{}:{}:{}", w["word"].as_str().unwrap(), w["score"], w["tiles"])).collect();
+        let lines: Vec<String> = words.iter().map(|w| format!("{}:{}:{}", w["word"].as_str().unwrap(), w["score"], w["tiles"])).collect();
         assert_eq!(lines.len() as u64, case["count"].as_u64().unwrap(), "{:?}: darabszám", case["rack"]);
         assert_eq!(sha(&lines), case["sha256"].as_str().unwrap(), "{:?}: tartalom", case["rack"]);
     }

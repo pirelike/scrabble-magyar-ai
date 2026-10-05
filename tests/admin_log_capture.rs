@@ -19,7 +19,8 @@ async fn print_output_is_captured() {
     let mut rows = std::collections::HashMap::new();
     for _ in 0..100 {
         let data = api.admin_get("/system/logs?q=teszt-").await.json();
-        rows = data["items"].as_array().unwrap().iter().map(|i| (i["message"].as_str().unwrap().to_string(), i["level"].as_str().unwrap().to_string())).collect();
+        rows =
+            data["items"].as_array().unwrap().iter().map(|i| (i["message"].as_str().unwrap().to_string(), i["level"].as_str().unwrap().to_string())).collect();
         if rows.len() >= 2 {
             break;
         }

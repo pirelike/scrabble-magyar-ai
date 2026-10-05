@@ -52,11 +52,8 @@ impl Db {
 
     pub fn set_setting(&self, key: &str, value: &str) -> rusqlite::Result<()> {
         self.with(|tx| {
-            tx.execute(
-                "INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                params![key, value],
-            )
-            .map(|_| ())
+            tx.execute("INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", params![key, value])
+                .map(|_| ())
         })
     }
 
@@ -84,8 +81,7 @@ impl Db {
     }
 
     pub fn get_push_subscriptions(&self, user_id: i64) -> Vec<Row> {
-        self.with(|tx| fetch_all(tx, "SELECT endpoint, p256dh, auth, lang FROM push_subscriptions WHERE user_id = ?", [user_id]))
-            .unwrap_or_default()
+        self.with(|tx| fetch_all(tx, "SELECT endpoint, p256dh, auth, lang FROM push_subscriptions WHERE user_id = ?", [user_id])).unwrap_or_default()
     }
 
     pub fn count_push_subscriptions(&self, user_id: i64) -> i64 {
@@ -217,11 +213,9 @@ impl Db {
 
     pub fn get_daily_entry(&self, puzzle_date: &str, user_id: i64) -> Option<DailyEntry> {
         self.with(|tx| {
-            tx.query_row(
-                "SELECT best_score, attempts, revealed FROM daily_scores WHERE puzzle_date = ? AND user_id = ?",
-                params![puzzle_date, user_id],
-                |r| Ok(DailyEntry { best_score: r.get(0)?, attempts: r.get(1)?, revealed: r.get::<_, i64>(2)? != 0 }),
-            )
+            tx.query_row("SELECT best_score, attempts, revealed FROM daily_scores WHERE puzzle_date = ? AND user_id = ?", params![puzzle_date, user_id], |r| {
+                Ok(DailyEntry { best_score: r.get(0)?, attempts: r.get(1)?, revealed: r.get::<_, i64>(2)? != 0 })
+            })
             .optional()
         })
         .ok()
@@ -241,9 +235,7 @@ impl Db {
                 )
                 .optional()?;
             match row {
-                Some((best, attempts, revealed)) if revealed != 0 => {
-                    Ok(DailyRecord { recorded: false, best, attempts, improved: false })
-                }
+                Some((best, attempts, revealed)) if revealed != 0 => Ok(DailyRecord { recorded: false, best, attempts, improved: false }),
                 None => {
                     tx.execute(
                         "INSERT INTO daily_scores (puzzle_date, user_id, best_score, attempts, first_best_at) VALUES (?, ?, ?, 1, ?)",
@@ -259,10 +251,7 @@ impl Db {
                             params![score, now, puzzle_date, user_id],
                         )?;
                     } else {
-                        tx.execute(
-                            "UPDATE daily_scores SET attempts = attempts + 1 WHERE puzzle_date = ? AND user_id = ?",
-                            params![puzzle_date, user_id],
-                        )?;
+                        tx.execute("UPDATE daily_scores SET attempts = attempts + 1 WHERE puzzle_date = ? AND user_id = ?", params![puzzle_date, user_id])?;
                     }
                     Ok(DailyRecord { recorded: true, best: best.max(score), attempts: attempts + 1, improved })
                 }
@@ -320,11 +309,9 @@ impl Db {
 
     /// A gyorsítótárazott játékelemzés: (verzió, eredmény JSON) vagy None.
     pub fn get_game_analysis(&self, game_id: i64) -> Option<(i64, String)> {
-        self.with(|tx| {
-            tx.query_row("SELECT version, result_json FROM game_analysis WHERE game_id = ?", [game_id], |r| Ok((r.get(0)?, r.get(1)?))).optional()
-        })
-        .ok()
-        .flatten()
+        self.with(|tx| tx.query_row("SELECT version, result_json FROM game_analysis WHERE game_id = ?", [game_id], |r| Ok((r.get(0)?, r.get(1)?))).optional())
+            .ok()
+            .flatten()
     }
 
     pub fn save_game_analysis(&self, game_id: i64, version: i64, result_json: &str) -> rusqlite::Result<()> {
@@ -346,10 +333,7 @@ impl Db {
         self.with(|tx| {
             let mut new = Vec::new();
             for badge in sorted {
-                let inserted = tx.execute(
-                    "INSERT OR IGNORE INTO achievements (user_id, badge, game_id) VALUES (?, ?, ?)",
-                    params![user_id, badge, game_id],
-                )?;
+                let inserted = tx.execute("INSERT OR IGNORE INTO achievements (user_id, badge, game_id) VALUES (?, ?, ?)", params![user_id, badge, game_id])?;
                 if inserted > 0 {
                     new.push(badge.clone());
                 }
@@ -362,11 +346,7 @@ impl Db {
     /// A felhasználó kitüntetései, megszerzés sorrendjében.
     pub fn get_user_achievements(&self, user_id: i64) -> Vec<Value> {
         self.with(|tx| {
-            let rows = fetch_all(
-                tx,
-                "SELECT badge, game_id, earned_at FROM achievements WHERE user_id = ? ORDER BY earned_at, rowid",
-                [user_id],
-            )?;
+            let rows = fetch_all(tx, "SELECT badge, game_id, earned_at FROM achievements WHERE user_id = ? ORDER BY earned_at, rowid", [user_id])?;
             Ok(rows.into_iter().map(Value::Object).collect())
         })
         .unwrap_or_default()
@@ -424,22 +404,13 @@ impl Db {
                 )
             })
             .unwrap_or(0);
-        if updated > 0 {
-            (true, "Barátkérés elfogadva.".to_string())
-        } else {
-            (false, "Barátkérés nem található vagy már elfogadtad.".to_string())
-        }
+        if updated > 0 { (true, "Barátkérés elfogadva.".to_string()) } else { (false, "Barátkérés nem található vagy már elfogadtad.".to_string()) }
     }
 
     /// Barátkérés elutasítása.
     pub fn decline_friend_request(&self, user_id: i64, requester_id: i64) -> (bool, String) {
         let deleted = self
-            .with(|tx| {
-                tx.execute(
-                    "DELETE FROM friendships WHERE user_id = ? AND friend_id = ? AND status = 'pending'",
-                    params![requester_id, user_id],
-                )
-            })
+            .with(|tx| tx.execute("DELETE FROM friendships WHERE user_id = ? AND friend_id = ? AND status = 'pending'", params![requester_id, user_id]))
             .unwrap_or(0);
         if deleted > 0 { (true, "Barátkérés elutasítva.".to_string()) } else { (false, "Barátkérés nem található.".to_string()) }
     }

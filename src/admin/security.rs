@@ -24,10 +24,10 @@ impl IpBans {
     fn load(&self, db: &Db) -> Vec<(IpNet, i64, String)> {
         let now = util::now();
         let mut cache = self.cache.lock();
-        if let Some((loaded, bans)) = cache.as_ref() {
-            if now - loaded < CACHE_SECONDS {
-                return bans.clone();
-            }
+        if let Some((loaded, bans)) = cache.as_ref()
+            && now - loaded < CACHE_SECONDS
+        {
+            return bans.clone();
         }
         let stamp = util::now_ts();
         let rows = db
@@ -64,9 +64,9 @@ use crate::admin::{AdminContext, AdminError, AdminResult, action, like, page_arg
 use crate::app::App;
 use crate::db::{RowExt, fetch_all, fetch_one};
 use crate::ratelimit::RateLimiter;
+use rusqlite::Transaction;
 use rusqlite::params_from_iter;
 use rusqlite::types::Value as SqlValue;
-use rusqlite::Transaction;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 
@@ -101,10 +101,11 @@ pub fn list_ip_bans(app: &App) -> AdminResult<Vec<Value>> {
 /// IP vagy hálózat tiltása (lejárattal vagy véglegesen). A saját IP-d nem tiltható ki.
 pub fn add_ip_ban(app: &App, ctx: &AdminContext, ip: Option<&Value>, until: Option<&Value>, reason: Option<&Value>, own_ip: &str) -> AdminResult<i64> {
     let network = parse_network(ip)?;
-    if let Ok(own) = own_ip.trim().parse::<IpAddr>() {
-        if own.is_ipv4() == network.addr.is_ipv4() && network.contains(&own) {
-            return Err(AdminError::field("Saját IP-címedet nem tilthatod ki.", 409, "ip"));
-        }
+    if let Ok(own) = own_ip.trim().parse::<IpAddr>()
+        && own.is_ipv4() == network.addr.is_ipv4()
+        && network.contains(&own)
+    {
+        return Err(AdminError::field("Saját IP-címedet nem tilthatod ki.", 409, "ip"));
     }
     let expires: Option<String> = match until {
         None | Some(Value::Null) => None,
@@ -113,7 +114,10 @@ pub fn add_ip_ban(app: &App, ctx: &AdminContext, ip: Option<&Value>, until: Opti
     };
     let id = action(&app.db, ctx, "security.ip_ban", Some("ip"), Some(network.to_string()), reason, json!({"until": expires}), true, |act| {
         let reason_text: String = crate::admin::normalize_reason(reason)?.chars().take(BAN_REASON_MAX).collect();
-        act.tx.execute("INSERT INTO ip_bans (ip, reason, expires_at, created_by) VALUES (?, ?, ?, ?)", rusqlite::params![network.to_string(), reason_text, expires, ctx.admin_user_id])?;
+        act.tx.execute(
+            "INSERT INTO ip_bans (ip, reason, expires_at, created_by) VALUES (?, ?, ?, ?)",
+            rusqlite::params![network.to_string(), reason_text, expires, ctx.admin_user_id],
+        )?;
         let id = act.tx.last_insert_rowid();
         act.details.insert("ban_id".into(), json!(id));
         Ok(id)
@@ -124,7 +128,8 @@ pub fn add_ip_ban(app: &App, ctx: &AdminContext, ip: Option<&Value>, until: Opti
 
 pub fn remove_ip_ban(app: &App, ctx: &AdminContext, ban_id: i64, reason: Option<&Value>) -> AdminResult<()> {
     action(&app.db, ctx, "security.ip_unban", Some("ip"), None, reason, json!({}), true, |act| {
-        let row = fetch_one(act.tx, "SELECT ip, expires_at FROM ip_bans WHERE id = ?", [ban_id])?.ok_or_else(|| AdminError::new("A tiltás nem található.", 404))?;
+        let row =
+            fetch_one(act.tx, "SELECT ip, expires_at FROM ip_bans WHERE id = ?", [ban_id])?.ok_or_else(|| AdminError::new("A tiltás nem található.", 404))?;
         act.tx.execute("DELETE FROM ip_bans WHERE id = ?", [ban_id])?;
         act.details.insert("ip".into(), json!(row.text("ip")));
         act.details.insert("ban_id".into(), json!(ban_id));
@@ -216,13 +221,16 @@ pub fn list_logins(app: &App, args: &HashMap<String, String>, paging: Option<(i6
     let since = util::format_ts(util::utcnow() - chrono::Duration::hours(24));
     let ((ips, accounts, spread), total, rows) = txn(&app.db, |tx| {
         let sets = suspicious_sets(tx, &since)?;
-        let total = fetch_one(tx, &format!("SELECT COUNT(*) AS n FROM login_events e {clause}"), params_from_iter(params.clone()))?.map(|r| r.int("n")).unwrap_or(0);
+        let total =
+            fetch_one(tx, &format!("SELECT COUNT(*) AS n FROM login_events e {clause}"), params_from_iter(params.clone()))?.map(|r| r.int("n")).unwrap_or(0);
         let mut page = params.clone();
         page.push(SqlValue::Integer(limit));
         page.push(SqlValue::Integer(offset));
         let rows = fetch_all(
             tx,
-            &format!("SELECT e.*, u.display_name AS display_name FROM login_events e LEFT JOIN users u ON u.id = e.user_id {clause} ORDER BY e.id DESC LIMIT ? OFFSET ?"),
+            &format!(
+                "SELECT e.*, u.display_name AS display_name FROM login_events e LEFT JOIN users u ON u.id = e.user_id {clause} ORDER BY e.id DESC LIMIT ? OFFSET ?"
+            ),
             params_from_iter(page),
         )?;
         Ok((sets, total, rows))
@@ -273,7 +281,8 @@ pub fn list_codes(app: &App, ctx: &AdminContext) -> AdminResult<Vec<Value>> {
 
 pub fn invalidate_code(app: &App, ctx: &AdminContext, code_id: i64, reason: Option<&Value>) -> AdminResult<()> {
     action(&app.db, ctx, "security.code_invalidate", Some("verification"), Some(code_id.to_string()), reason, json!({}), true, |act| {
-        let row = fetch_one(act.tx, "SELECT email FROM verification_codes WHERE id = ? AND used = 0", [code_id])?.ok_or_else(|| AdminError::new("A kód nem található.", 404))?;
+        let row = fetch_one(act.tx, "SELECT email FROM verification_codes WHERE id = ? AND used = 0", [code_id])?
+            .ok_or_else(|| AdminError::new("A kód nem található.", 404))?;
         act.tx.execute("UPDATE verification_codes SET used = 1 WHERE id = ?", [code_id])?;
         act.details.insert("email".into(), json!(row.text("email")));
         Ok(())
@@ -330,7 +339,8 @@ pub fn list_sessions(app: &App, args: &HashMap<String, String>, token: Option<&s
 /// Egy munkamenet érvénytelenítése. A saját (aktuális) munkameneted nem.
 pub fn revoke_session(app: &App, ctx: &AdminContext, session_id: i64, reason: Option<&Value>, token: Option<&str>) -> AdminResult<i64> {
     action(&app.db, ctx, "security.session_revoke", Some("session"), Some(session_id.to_string()), reason, json!({}), true, |act| {
-        let row = fetch_one(act.tx, "SELECT user_id, token FROM sessions WHERE id = ?", [session_id])?.ok_or_else(|| AdminError::new("A munkamenet nem található.", 404))?;
+        let row = fetch_one(act.tx, "SELECT user_id, token FROM sessions WHERE id = ?", [session_id])?
+            .ok_or_else(|| AdminError::new("A munkamenet nem található.", 404))?;
         if token.is_some_and(|t| !t.is_empty() && t == row.text("token")) {
             return Err(AdminError::new("A saját munkameneted nem zárható be.", 409));
         }
@@ -361,7 +371,10 @@ pub fn close_other_admin_sessions(app: &App, ctx: &AdminContext, keep_token: Opt
         let mut params: Vec<SqlValue> = vec![SqlValue::Text(keep_token.unwrap_or("").to_string())];
         params.extend(emails.iter().cloned().map(SqlValue::Text));
         let removed = act.tx.execute(
-            &format!("DELETE FROM sessions WHERE token != ? AND user_id IN (SELECT id FROM users WHERE email_lower IN ({}))", crate::db::placeholders(emails.len())),
+            &format!(
+                "DELETE FROM sessions WHERE token != ? AND user_id IN (SELECT id FROM users WHERE email_lower IN ({}))",
+                crate::db::placeholders(emails.len())
+            ),
             params_from_iter(params),
         )?;
         act.details.insert("removed".into(), json!(removed));
@@ -387,4 +400,3 @@ pub fn unblock_ip(app: &App, ctx: &AdminContext, ip: Option<&Value>, reason: Opt
     app.limiter.clear_ip(address);
     Ok(())
 }
-

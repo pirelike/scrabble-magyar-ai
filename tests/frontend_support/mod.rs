@@ -48,7 +48,8 @@ pub fn node_check_file(path: &std::path::Path) -> Result<(), String> {
 
 /// `node --check` egy forrásszövegre (stdin).
 pub fn node_check_source(source: &str) -> Result<(), String> {
-    let mut child = Command::new("node").args(["--check", "-"]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().map_err(|e| e.to_string())?;
+    let mut child =
+        Command::new("node").args(["--check", "-"]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().map_err(|e| e.to_string())?;
     child.stdin.take().unwrap().write_all(source.as_bytes()).map_err(|e| e.to_string())?;
     let out = child.wait_with_output().map_err(|e| e.to_string())?;
     if out.status.success() { Ok(()) } else { Err(String::from_utf8_lossy(&out.stderr).to_string()) }
@@ -56,15 +57,8 @@ pub fn node_check_source(source: &str) -> Result<(), String> {
 
 /// `node -e HARNESS ARG...` futtatása; a bemenet JSON az stdin-en, a kimenet utolsó sora JSON.
 pub fn run_node(harness: &str, args: &[&str], input: &Value) -> Value {
-    let mut child = Command::new("node")
-        .arg("-e")
-        .arg(harness)
-        .args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("node");
+    let mut child =
+        Command::new("node").arg("-e").arg(harness).args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().expect("node");
     let mut stdin = child.stdin.take().unwrap();
     let payload = input.to_string();
     let writer = std::thread::spawn(move || {

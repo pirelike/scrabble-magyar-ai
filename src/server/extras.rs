@@ -106,20 +106,14 @@ pub fn finish_puzzle(app: &Arc<App>, st: &mut ServerState, sid: &str, room_id: &
     let Some(puzzle) = app.db.get_daily_puzzle(&date) else { return };
     let user_id = registered_user_id(st, sid);
     let empty = json!([]);
-    let result = daily::record_result(
-        &app.db,
-        &puzzle,
-        user_id,
-        score as i64,
-        details.get("tiles").unwrap_or(&empty),
-        details.get("words").unwrap_or(&empty),
-    );
-    if let Some(uid) = user_id {
-        if result["recorded"] == json!(true) && result["is_best"] == json!(true) {
-            let new = app.db.grant_achievements(uid, &HashSet::from(["daily_best".to_string()]), None);
-            if !new.is_empty() {
-                app.emit_to(sid, "achievements_earned", &json!({"badges": new}));
-            }
+    let result = daily::record_result(&app.db, &puzzle, user_id, score as i64, details.get("tiles").unwrap_or(&empty), details.get("words").unwrap_or(&empty));
+    if let Some(uid) = user_id
+        && result["recorded"] == json!(true)
+        && result["is_best"] == json!(true)
+    {
+        let new = app.db.grant_achievements(uid, &HashSet::from(["daily_best".to_string()]), None);
+        if !new.is_empty() {
+            app.emit_to(sid, "achievements_earned", &json!({"badges": new}));
         }
     }
     app.emit_to(sid, "daily_result", &result);
@@ -150,11 +144,7 @@ pub fn reveal_daily(app: &Arc<App>, st: &mut ServerState, sid: &str, _data: Valu
     if let Some(uid) = registered_user_id(st, sid) {
         app.db.mark_daily_revealed(&puzzle.date, uid);
     }
-    app.emit_to(
-        sid,
-        "daily_solution",
-        &json!({"tiles": puzzle.best["tiles"], "words": puzzle.best["words"], "score": puzzle.best_score, "ranked": false}),
-    );
+    app.emit_to(sid, "daily_solution", &json!({"tiles": puzzle.best["tiles"], "words": puzzle.best["words"], "score": puzzle.best_score, "ranked": false}));
 }
 
 // --- Levelezős (aszinkron) játék ---
@@ -200,10 +190,8 @@ pub fn create_async_game(app: &Arc<App>, st: &mut ServerState, sid: &str, data: 
     let name = sanitize_room_name(object.get("name").unwrap_or(&json!(""))).unwrap_or_else(|| "Levelezős játék".to_string());
     let player_name = st.player_names.get(sid).cloned().unwrap_or_else(|| "Névtelen".to_string());
     let room_id = new_id();
-    let friends: Vec<(i64, String)> = ids
-        .iter()
-        .map(|id| (*id, sanitize_name_str(&friend_name(*id).unwrap_or_default()).unwrap_or_else(|| "Játékos".to_string())))
-        .collect();
+    let friends: Vec<(i64, String)> =
+        ids.iter().map(|id| (*id, sanitize_name_str(&friend_name(*id).unwrap_or_default()).unwrap_or_else(|| "Játékos".to_string()))).collect();
     let (mut game, known) = async_games::build_game(&room_id, sid, &player_name, user_id, &friends, turn_hours, &mut rand::rng());
     if let Some(first) = *app.async_starter.lock() {
         game.current_player_idx = first % game.players.len();
@@ -567,10 +555,10 @@ pub fn respond_invite(app: &Arc<App>, st: &mut ServerState, sid: &str, data: Val
 /// Az admin felhasználó azonosítója a kapcsolathoz, vagy None. Vagy bejelentkezett játékos kapcsolata
 /// (`set_name`), vagy külön aláírt token (az admin panel oldala nem regisztrálja magát online játékosként).
 fn admin_user_id_for_sid(app: &Arc<App>, st: &mut ServerState, sid: &str, data: &Value) -> Option<i64> {
-    if let Some(uid) = st.get_user_id_for_sid(sid) {
-        if app.db.get_user_by_id(uid).ok().flatten().is_some_and(|u| app.is_admin_email(&u.email)) {
-            return Some(uid);
-        }
+    if let Some(uid) = st.get_user_id_for_sid(sid)
+        && app.db.get_user_by_id(uid).ok().flatten().is_some_and(|u| app.is_admin_email(&u.email))
+    {
+        return Some(uid);
     }
     let token = data.get("auth_token").and_then(|t| t.as_str());
     let verified = verify_socket_token(&app.config.secret_key, token, TOKEN_MAX_AGE)?;

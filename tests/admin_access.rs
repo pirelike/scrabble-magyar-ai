@@ -460,11 +460,7 @@ async fn other_addresses_keep_the_development_convenience() {
 async fn the_code_is_still_valid_for_whoever_reads_the_server_console() {
     let server = TestServer::start().await;
     server.http().post("/api/auth/request-code", json!({"email": ADMIN_EMAIL})).await;
-    let code: String = server
-        .app
-        .db
-        .with(|tx| tx.query_row("SELECT code FROM verification_codes WHERE email = ?", [ADMIN_EMAIL], |r| r.get(0)))
-        .unwrap();
+    let code: String = server.app.db.with(|tx| tx.query_row("SELECT code FROM verification_codes WHERE email = ?", [ADMIN_EMAIL], |r| r.get(0))).unwrap();
     let response = server.http().post("/api/auth/verify-code", json!({"email": ADMIN_EMAIL, "code": code})).await;
     assert_eq!(response.status, 200);
 }
@@ -479,7 +475,7 @@ fn read(relative: &str) -> String {
 
 #[test]
 fn index_html_has_no_admin_element() {
-    assert!(!read("templates/index.html").to_lowercase().contains("admin"));
+    assert!(!read("web/templates/index.html").to_lowercase().contains("admin"));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -491,15 +487,15 @@ async fn the_served_index_has_no_admin_element() {
 
 #[test]
 fn the_public_i18n_has_no_admin_text() {
-    let source = read("static/i18n-data.js");
+    let source = read("web/static/i18n-data.js");
     assert!(!source.contains("\"admin."));
     assert!(!source.to_lowercase().contains("admin"));
 }
 
 #[test]
 fn app_js_only_has_the_entry_point() {
-    let source = read("static/app.js");
-    assert!(!source.contains("admin_assets") && !source.contains("admin-i18n"));
+    let source = read("web/static/app.js");
+    assert!(!source.contains("web/admin") && !source.contains("admin-i18n"));
     assert!(!source.contains("t('admin"));
     assert!(!source.contains("/api/admin"), "az API-t csak a panel hívja");
 }
@@ -518,7 +514,7 @@ fn no_admin_file_in_the_public_static_folder() {
         }
     }
     let mut found = Vec::new();
-    walk(&Path::new(ROOT).join("static"), &mut found);
+    walk(&Path::new(ROOT).join("web/static"), &mut found);
     assert!(found.is_empty(), "{found:?}");
 }
 
@@ -680,7 +676,8 @@ async fn a_referer_is_accepted_when_the_origin_is_missing() {
 async fn a_foreign_referer_is_refused() {
     let server = TestServer::start().await;
     let http = server.admin_http().await;
-    let response = http.request("POST", "/api/admin/sudo", Some(json!({"password": PASSWORD})), &[("X-Admin-Request", "1"), ("Referer", "http://evil.example/x")]).await;
+    let response =
+        http.request("POST", "/api/admin/sudo", Some(json!({"password": PASSWORD})), &[("X-Admin-Request", "1"), ("Referer", "http://evil.example/x")]).await;
     assert_eq!(response.status, 403);
 }
 

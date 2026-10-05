@@ -8,11 +8,7 @@ use std::net::IpAddr;
 pub fn client_ip(headers: &HeaderMap, peer: Option<IpAddr>) -> String {
     let remote = peer.map(unmap).unwrap_or(IpAddr::from([127, 0, 0, 1]));
     if remote.is_loopback() {
-        let forwarded = headers
-            .get("cf-connecting-ip")
-            .or_else(|| headers.get("x-forwarded-for"))
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("");
+        let forwarded = headers.get("cf-connecting-ip").or_else(|| headers.get("x-forwarded-for")).and_then(|v| v.to_str().ok()).unwrap_or("");
         let candidate = forwarded.split(',').next().unwrap_or("").trim();
         if !candidate.is_empty() {
             return candidate.to_string();

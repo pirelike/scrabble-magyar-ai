@@ -62,7 +62,14 @@ fn tile_total(server: &TestServer) -> usize {
 async fn first_move(server: &TestServer, client: &Sio, player_name: &str) {
     let tiles: Vec<Value> = with_room(server, |room| {
         let player = room.game.players.iter().find(|p| p.name == player_name).unwrap();
-        player.hand.iter().filter(|t| !t.is_blank()).take(2).enumerate().map(|(i, t)| json!({"row": 7, "col": 7 + i, "letter": t.as_str(), "is_blank": false})).collect()
+        player
+            .hand
+            .iter()
+            .filter(|t| !t.is_blank())
+            .take(2)
+            .enumerate()
+            .map(|(i, t)| json!({"row": 7, "col": 7 + i, "letter": t.as_str(), "is_blank": false}))
+            .collect()
     });
     client.call("place_tiles", json!({"tiles": tiles})).await;
 }
@@ -340,7 +347,8 @@ async fn kicking_an_unknown_player_or_a_bot() {
 async fn transferring_the_ownership() {
     let d = duo().await;
     assert_eq!(action(&d.api, &d.id, json!({"action": "transfer", "player": "Béla"})).await.status, 200);
-    let (owner_name, owner, bela_id) = with_room(&d.server, |room| (room.owner_name.clone(), room.owner.clone(), room.game.players.iter().find(|p| p.name == "Béla").unwrap().id.clone()));
+    let (owner_name, owner, bela_id) =
+        with_room(&d.server, |room| (room.owner_name.clone(), room.owner.clone(), room.game.players.iter().find(|p| p.name == "Béla").unwrap().id.clone()));
     assert_eq!(owner_name, "Béla");
     assert_eq!(owner, Some(bela_id));
     d.bela.settle().await;
@@ -455,7 +463,9 @@ async fn voting() -> Duo {
 async fn a_forced_acceptance() {
     let d = voting().await;
     assert_eq!(action(&d.api, &d.id, json!({"action": "resolve_vote", "accept": true})).await.status, 200);
-    let (pending, cell, current) = with_room(&d.server, |room| (room.game.pending_challenge.is_some(), room.game.board.cells[7][7].is_some(), room.game.current_player().unwrap().name.clone()));
+    let (pending, cell, current) = with_room(&d.server, |room| {
+        (room.game.pending_challenge.is_some(), room.game.board.cells[7][7].is_some(), room.game.current_player().unwrap().name.clone())
+    });
     assert!(!pending && cell);
     assert_eq!(current, "Béla");
     assert_eq!(tile_total(&d.server), 100);
@@ -468,7 +478,9 @@ async fn a_forced_acceptance() {
 async fn a_forced_rejection_returns_the_tiles() {
     let d = voting().await;
     assert_eq!(action(&d.api, &d.id, json!({"action": "resolve_vote", "accept": false})).await.status, 200);
-    let (pending, cell, hand) = with_room(&d.server, |room| (room.game.pending_challenge.is_some(), room.game.board.cells[7][7].is_some(), room.game.players.iter().find(|p| p.name == "Anna").unwrap().hand.len()));
+    let (pending, cell, hand) = with_room(&d.server, |room| {
+        (room.game.pending_challenge.is_some(), room.game.board.cells[7][7].is_some(), room.game.players.iter().find(|p| p.name == "Anna").unwrap().hand.len())
+    });
     assert!(!pending && !cell);
     assert_eq!(hand, 7);
     assert_eq!(tile_total(&d.server), 100);
@@ -618,7 +630,9 @@ async fn ending_returns_the_pending_tiles_first() {
     let d = voting().await;
     d.api.sudo().await;
     action(&d.api, &d.id, json!({"action": "end"})).await;
-    let (finished, pending, hands) = with_room(&d.server, |room| (room.game.finished, room.game.pending_challenge.is_some(), room.game.players.iter().map(|p| p.hand.len()).collect::<Vec<_>>()));
+    let (finished, pending, hands) = with_room(&d.server, |room| {
+        (room.game.finished, room.game.pending_challenge.is_some(), room.game.players.iter().map(|p| p.hand.len()).collect::<Vec<_>>())
+    });
     assert!(finished && !pending);
     assert!(hands.iter().all(|h| *h == 7), "{hands:?}");
 }

@@ -51,9 +51,7 @@ pub fn is_admin_sid(app: &Arc<App>, st: &ServerState, sid: &str) -> bool {
     if st.admin_sids.contains_key(sid) {
         return true;
     }
-    st.get_user_id_for_sid(sid)
-        .and_then(|uid| app.db.get_user_by_id(uid).ok().flatten())
-        .is_some_and(|user| app.is_admin_email(&user.email))
+    st.get_user_id_for_sid(sid).and_then(|uid| app.db.get_user_by_id(uid).ok().flatten()).is_some_and(|user| app.is_admin_email(&user.email))
 }
 
 /// Karbantartási módban új játék nem indítható (az admin kivétel). Visszatér: hibaüzenet vagy None.
@@ -116,10 +114,10 @@ pub fn handle_disconnect(app: &Arc<App>, st: &mut ServerState, sid: &str) {
     for room in st.rooms.values_mut() {
         room.admin_watchers.remove(sid);
     }
-    if let Some(spectated) = st.remove_spectator(sid) {
-        if st.rooms.contains_key(&spectated) {
-            emit_all_states(app, st, &spectated);
-        }
+    if let Some(spectated) = st.remove_spectator(sid)
+        && st.rooms.contains_key(&spectated)
+    {
+        emit_all_states(app, st, &spectated);
     }
     let room_id = st.player_rooms.get(sid).cloned();
     let token = st.get_reconnect_token_for_sid(sid);
@@ -169,10 +167,7 @@ pub fn handle_disconnect(app: &Arc<App>, st: &mut ServerState, sid: &str) {
                 let (no_humans, was_owner_sid) = {
                     let room = st.rooms.get_mut(&room_id).expect("létező szoba");
                     room.game.remove_player(sid);
-                    (
-                        room.game.human_players().is_empty() || (room.is_async && !room.game.has_connected_human()),
-                        room.owner.as_deref() == Some(sid),
-                    )
+                    (room.game.human_players().is_empty() || (room.is_async && !room.game.has_connected_human()), room.owner.as_deref() == Some(sid))
                 };
                 app.leave_room(sid, &room_id);
                 if no_humans {
@@ -200,10 +195,11 @@ pub fn handle_disconnect(app: &Arc<App>, st: &mut ServerState, sid: &str) {
     st.player_names.remove(sid);
     st.hidden_sids.remove(sid);
     st.remove_online_user(sid);
-    if let Some(uid) = registered {
-        if was_online && !st.is_user_online(uid) {
-            notify_friends_presence(app, st, uid, false);
-        }
+    if let Some(uid) = registered
+        && was_online
+        && !st.is_user_online(uid)
+    {
+        notify_friends_presence(app, st, uid, false);
     }
     // player_auth törlése: csak ha NEM türelmi időben van (aktív játék vagy várakozó szoba). Türelmi idő esetén az
     // auth info a disconnected_players-ben van mentve, és a finalize_player_disconnect törli.
@@ -233,10 +229,8 @@ pub fn finalize_player_disconnect(app: &Arc<App>, st: &mut ServerState, token: &
     if is_owner && is_active_game && has_players {
         // Automatikus mentés, ha a tulajdonos időtúllép
         let (success, _) = save_game_to_db(app, st, &room_id);
-        if success {
-            if let Some(room) = st.rooms.get_mut(&room_id) {
-                room.manually_saved = true;
-            }
+        if success && let Some(room) = st.rooms.get_mut(&room_id) {
+            room.manually_saved = true;
         }
         disband_active_room(
             app,
@@ -256,12 +250,7 @@ pub fn finalize_player_disconnect(app: &Arc<App>, st: &mut ServerState, token: &
         if !is_active_game {
             room.game.remove_player(&old_sid);
         }
-        (
-            !room.game.has_connected_human(),
-            room.game.started && !room.game.finished,
-            room.manually_saved,
-            room.db_game_id,
-        )
+        (!room.game.has_connected_human(), room.game.started && !room.game.finished, room.manually_saved, room.db_game_id)
     };
     if no_humans {
         // Ha minden ember lecsatlakozott:
@@ -294,7 +283,8 @@ pub fn set_name(app: &Arc<App>, st: &mut ServerState, sid: &str, data: Value) {
         return;
     }
     let Some(object) = data.as_object() else { return };
-    let mut name = sanitize_name(object.get("name").unwrap_or(&json!(""))).filter(|n| util::casefold(n) != "rendszer").unwrap_or_else(|| "Névtelen".to_string());
+    let mut name =
+        sanitize_name(object.get("name").unwrap_or(&json!(""))).filter(|n| util::casefold(n) != "rendszer").unwrap_or_else(|| "Névtelen".to_string());
 
     let mut user_id: Option<i64> = None;
     let mut is_guest = true;
@@ -317,7 +307,11 @@ pub fn set_name(app: &Arc<App>, st: &mut ServerState, sid: &str, data: Value) {
         if let Some(user) = &user {
             let ban = user.ban();
             if ban.is_some() || user.deleted_at.is_some() {
-                app.emit_to(sid, "account_banned", &json!({"reason": ban.as_ref().map(|b| b.reason.clone()).unwrap_or_default(), "until": ban.as_ref().and_then(|b| b.until.clone())}));
+                app.emit_to(
+                    sid,
+                    "account_banned",
+                    &json!({"reason": ban.as_ref().map(|b| b.reason.clone()).unwrap_or_default(), "until": ban.as_ref().and_then(|b| b.until.clone())}),
+                );
                 app.emit_error(sid, "A fiókod ki van tiltva.");
                 return;
             }
@@ -336,21 +330,23 @@ pub fn set_name(app: &Arc<App>, st: &mut ServerState, sid: &str, data: Value) {
     }
     st.register_player(sid, &name, AuthInfo { user_id, is_guest });
 
-    if let Some(previous) = previous_user_id {
-        if Some(previous) != user_id && !st.is_user_online(previous) {
-            notify_friends_presence(app, st, previous, false);
-        }
+    if let Some(previous) = previous_user_id
+        && Some(previous) != user_id
+        && !st.is_user_online(previous)
+    {
+        notify_friends_presence(app, st, previous, false);
     }
-    if let Some(uid) = user_id {
-        if !was_online && st.is_user_online(uid) {
-            notify_friends_presence(app, st, uid, true);
-        }
+    if let Some(uid) = user_id
+        && !was_online
+        && st.is_user_online(uid)
+    {
+        notify_friends_presence(app, st, uid, true);
     }
 }
 
 pub fn logout(app: &Arc<App>, st: &mut ServerState, sid: &str, _data: Value) {
     app.leave_room(sid, ADMIN_ROOM); // a kijelentkezett kapcsolat ne kapjon több admin eseményt
-    if st.player_rooms.get(sid).is_some() {
+    if st.player_rooms.contains_key(sid) {
         leave_room(app, st, sid, Value::Null);
     }
     if st.get_spectated_room(sid).is_some() {
@@ -360,10 +356,10 @@ pub fn logout(app: &Arc<App>, st: &mut ServerState, sid: &str, _data: Value) {
     st.remove_online_user(sid);
     st.player_auth.remove(sid);
     st.player_names.remove(sid);
-    if let Some(prev) = previous {
-        if !st.is_user_online(prev) {
-            notify_friends_presence(app, st, prev, false);
-        }
+    if let Some(prev) = previous
+        && !st.is_user_online(prev)
+    {
+        notify_friends_presence(app, st, prev, false);
     }
 }
 
@@ -418,11 +414,11 @@ pub fn rejoin_room(app: &Arc<App>, st: &mut ServerState, sid: &str, data: Value)
         fail("Érvénytelen vagy lejárt token.");
         return;
     };
-    if let Some(uid) = token_info.auth_info.as_ref().and_then(|a| a.registered_id()) {
-        if app.db.get_ban(uid).is_some() {
-            fail("A fiókod ki van tiltva.");
-            return;
-        }
+    if let Some(uid) = token_info.auth_info.as_ref().and_then(|a| a.registered_id())
+        && app.db.get_ban(uid).is_some()
+    {
+        fail("A fiókod ki van tiltva.");
+        return;
     }
 
     let room_id = dc_info.room_id.clone();
@@ -539,10 +535,10 @@ pub fn create_room(app: &Arc<App>, st: &mut ServerState, sid: &str, data: Value)
 
     // Számítógépes ellenfelek: a nehézségek listája; a robotok is férőhelyet foglalnak
     let mut levels: Vec<ai::Difficulty> = Vec::new();
-    if app.settings.get_bool("bots_enabled") {
-        if let Some(list) = object.get("ai_players").and_then(|v| v.as_array()) {
-            levels = list.iter().filter_map(ai::parse_difficulty).collect();
-        }
+    if app.settings.get_bool("bots_enabled")
+        && let Some(list) = object.get("ai_players").and_then(|v| v.as_array())
+    {
+        levels = list.iter().filter_map(ai::parse_difficulty).collect();
     }
     levels.truncate(MAX_BOTS.min(app.settings.get_i64("max_bots").max(0) as usize));
     levels.truncate(max_players - 1);
@@ -783,10 +779,7 @@ pub fn leave_room(app: &Arc<App>, st: &mut ServerState, sid: &str, _data: Value)
         st.player_rooms.remove(sid);
         let (no_humans, was_owner) = {
             let room = &st.rooms[&room_id];
-            (
-                room.game.human_players().is_empty() || (room.is_async && !room.game.has_connected_human()),
-                room.owner.as_deref() == Some(sid),
-            )
+            (room.game.human_players().is_empty() || (room.is_async && !room.game.has_connected_human()), room.owner.as_deref() == Some(sid))
         };
         if no_humans {
             cleanup_room(app, st, &room_id);
@@ -931,10 +924,8 @@ pub fn save_game(app: &Arc<App>, st: &mut ServerState, sid: &str, _data: Value) 
         }
     }
     let (success, message) = save_game_to_db(app, st, &room_id);
-    if success {
-        if let Some(room) = st.rooms.get_mut(&room_id) {
-            room.manually_saved = true;
-        }
+    if success && let Some(room) = st.rooms.get_mut(&room_id) {
+        room.manually_saved = true;
     }
     action_result(app, sid, success, &message);
 }

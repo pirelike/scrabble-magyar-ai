@@ -7,7 +7,7 @@ use rand::SeedableRng;
 use rand::rngs::StdRng;
 use scrabble::dictionary;
 use scrabble::practice::{self, BINGO_BONUS, MAX_QUESTIONS, RACK_SIZE};
-use scrabble::tiles::{self, Tile, TILE_DISTRIBUTION, tokenize_word};
+use scrabble::tiles::{self, TILE_DISTRIBUTION, Tile, tokenize_word};
 use serde_json::{Value, json};
 use std::collections::HashSet;
 
@@ -187,7 +187,9 @@ fn tricky_quiz_fakes_are_vowel_length_swaps_of_valid_words() {
                 // a hamis szó egyetlen magánhangzó hosszúságának cseréjével lesz érvényes
                 let chars: Vec<char> = word.to_lowercase().chars().collect();
                 let twins: Vec<String> = (0..chars.len())
-                    .filter_map(|i| length_pair(chars[i]).map(|p| chars.iter().enumerate().map(|(j, c)| if j == i { p } else { *c }).collect::<String>().to_uppercase()))
+                    .filter_map(|i| {
+                        length_pair(chars[i]).map(|p| chars.iter().enumerate().map(|(j, c)| if j == i { p } else { *c }).collect::<String>().to_uppercase())
+                    })
                     .collect();
                 let valid_twins = dictionary::filter_valid(twins.iter().map(|s| s.as_str()));
                 assert!(twins.iter().any(|t| valid_twins.contains(t)), "{word}");
@@ -453,7 +455,12 @@ async fn the_quiz_endpoint() {
     let data = http.get("/api/practice/quiz").await.json();
     assert_eq!((data["success"].clone(), data["mode"].clone(), data["questions"].as_array().unwrap().len()), (json!(true), json!("mixed"), 10));
     // a kérdésekhez a zsetonok is járnak (a kliens ezekből rajzolja a szót)
-    let tiles: Vec<Value> = data["questions"].as_array().unwrap().iter().map(|q| json!(tokenize_word(q.as_str().unwrap()).unwrap().iter().map(|t| t.as_str()).collect::<Vec<_>>())).collect();
+    let tiles: Vec<Value> = data["questions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|q| json!(tokenize_word(q.as_str().unwrap()).unwrap().iter().map(|t| t.as_str()).collect::<Vec<_>>()))
+        .collect();
     assert_eq!(data["tiles"], json!(tiles));
 }
 
@@ -528,7 +535,8 @@ async fn the_answer_endpoint() {
 async fn answer_validation() {
     let server = TestServer::start().await;
     let http = server.http();
-    for body in [json!({"word": "ALMA"}), json!({"word": "ALMA", "answer": "igen"}), json!({"word": 5, "answer": true}), json!({"word": "QWX", "answer": true})] {
+    for body in [json!({"word": "ALMA"}), json!({"word": "ALMA", "answer": "igen"}), json!({"word": 5, "answer": true}), json!({"word": "QWX", "answer": true})]
+    {
         assert_eq!(http.post("/api/practice/answer", body.clone()).await.status, 400, "{body}");
     }
     assert_eq!(http.request("POST", "/api/practice/answer", None, &[("Content-Type", "application/json")]).await.status, 400);

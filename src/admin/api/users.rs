@@ -131,10 +131,10 @@ fn users_patch(req: &AdminReq) -> HResult {
     let mut result = json!({});
     if wants_name {
         let new_name = users::sanitize_name(req.field("display_name"));
-        if let Some(name) = new_name {
-            if !live::rename_conflicts(&req.app.state.lock(), user_id, &name).is_empty() {
-                return Err(AdminError::new("Már van ilyen nevű játékos abban a szobában, ahol a felhasználó játszik.", 409));
-            }
+        if let Some(name) = new_name
+            && !live::rename_conflicts(&req.app.state.lock(), user_id, &name).is_empty()
+        {
+            return Err(AdminError::new("Már van ilyen nevű játékos abban a szobában, ahol a felhasználó játszik.", 409));
         }
         let (old, new, _games) = users::rename(&req.app, req.ctx(), user_id, req.field("display_name"), req.reason())?;
         {

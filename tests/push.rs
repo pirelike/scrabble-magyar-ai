@@ -61,7 +61,10 @@ async fn subscriptions_are_saved_and_listed() {
     let subs = server.app.db.get_push_subscriptions(uid);
     assert_eq!(subs.len(), 1);
     use scrabble::db::RowExt;
-    assert_eq!((subs[0].text("endpoint"), subs[0].text("p256dh"), subs[0].text("auth"), subs[0].text("lang")), (ENDPOINT.into(), P256DH.into(), AUTH_KEY.into(), "en".into()));
+    assert_eq!(
+        (subs[0].text("endpoint"), subs[0].text("p256dh"), subs[0].text("auth"), subs[0].text("lang")),
+        (ENDPOINT.into(), P256DH.into(), AUTH_KEY.into(), "en".into())
+    );
     assert_eq!(server.app.db.count_push_subscriptions(uid), 1);
 }
 

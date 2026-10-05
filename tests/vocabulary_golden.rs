@@ -19,8 +19,7 @@ fn vocabulary_matches_python() {
 
     // ha megvan a Python kimenete, pontos különbséget is mutat
     if let Ok(path) = std::env::var("SCRABBLE_PY_VOCAB") {
-        let python: std::collections::HashSet<String> =
-            std::fs::read_to_string(path).unwrap().split('\n').map(|s| s.to_string()).collect();
+        let python: std::collections::HashSet<String> = std::fs::read_to_string(path).unwrap().split('\n').map(|s| s.to_string()).collect();
         let rust: std::collections::HashSet<String> = words.iter().map(|s| s.to_string()).collect();
         let mut only_rust: Vec<&String> = rust.difference(&python).collect();
         let mut only_python: Vec<&String> = python.difference(&rust).collect();

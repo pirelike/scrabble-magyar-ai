@@ -175,40 +175,6 @@ pub fn create_report(
     .ok()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn words(list: &[&str]) -> Vec<String> {
-        list.iter().map(|w| w.to_string()).collect()
-    }
-
-    #[test]
-    fn banned_words_ignore_case_and_accents() {
-        let w = words(&["rossz", "csunya"]);
-        assert!(contains_banned(&w, "Te ROSSZ vagy"));
-        assert!(contains_banned(&w, "csúnya"));
-        assert!(!contains_banned(&w, "szép"));
-        assert!(!contains_banned(&[], "rossz"));
-    }
-
-    #[test]
-    fn masking_preserves_the_rest() {
-        let w = words(&["rossz", "csunya"]);
-        assert_eq!(mask_banned(&w, "Te ROSSZ és csúnya"), ("Te ***** és ******".to_string(), true));
-        assert_eq!(mask_banned(&w, "minden rendben"), ("minden rendben".to_string(), false));
-        assert_eq!(mask_banned(&words(&["ab", "bc"]), "xabcx").0, "x***x", "az átfedő találatok összeolvadnak");
-    }
-
-    #[test]
-    fn chat_filter_modes() {
-        let w = words(&["rossz"]);
-        assert_eq!(filter_chat(&w, false, "rossz"), (Some("*****".to_string()), true));
-        assert_eq!(filter_chat(&w, true, "rossz"), (None, true));
-        assert_eq!(filter_chat(&w, true, "jó"), (Some("jó".to_string()), false));
-    }
-}
-
 /// Push értesítés az adminoknak egy új bejelentésről (háttérben; push híján nem történik semmi).
 pub fn notify_admins_of_report(app: &std::sync::Arc<crate::app::App>, room_name: &str) {
     let mut emails: Vec<&String> = app.config.admin_emails.iter().collect();
@@ -306,7 +272,9 @@ pub fn query_chat_log(app: &App, ctx: &AdminContext, args: &HashMap<String, Stri
     let filters: serde_json::Map<String, Value> =
         ["q", "room", "user", "since", "until"].iter().filter_map(|k| arg(k).map(|v| (k.to_string(), json!(v)))).collect();
     let (total, rows) = txn(&app.db, |tx| {
-        let total = fetch_one(tx, &format!("SELECT COUNT(*) AS n FROM chat_log c {clause}"), rusqlite::params_from_iter(params.clone()))?.map(|r| r.int("n")).unwrap_or(0);
+        let total = fetch_one(tx, &format!("SELECT COUNT(*) AS n FROM chat_log c {clause}"), rusqlite::params_from_iter(params.clone()))?
+            .map(|r| r.int("n"))
+            .unwrap_or(0);
         let mut page = params.clone();
         page.push(SqlValue::Integer(limit));
         page.push(SqlValue::Integer(offset));
@@ -355,7 +323,8 @@ pub fn list_reports(app: &App, args: &HashMap<String, String>) -> AdminResult<Va
     let (limit, offset) = page_args(args, 50, 200);
     let clause = if where_.is_empty() { String::new() } else { format!("WHERE {}", where_.join(" AND ")) };
     let (total, new_count, rows) = txn(&app.db, |tx| {
-        let total = fetch_one(tx, &format!("SELECT COUNT(*) AS n FROM reports {clause}"), rusqlite::params_from_iter(params.clone()))?.map(|r| r.int("n")).unwrap_or(0);
+        let total =
+            fetch_one(tx, &format!("SELECT COUNT(*) AS n FROM reports {clause}"), rusqlite::params_from_iter(params.clone()))?.map(|r| r.int("n")).unwrap_or(0);
         let new_count = fetch_one(tx, "SELECT COUNT(*) AS n FROM reports WHERE status = 'new'", [])?.map(|r| r.int("n")).unwrap_or(0);
         let mut page = params.clone();
         page.push(SqlValue::Integer(limit));
@@ -382,11 +351,18 @@ pub fn update_report(app: &App, ctx: &AdminContext, report_id: i64, status: Opti
         return Err(AdminError::field("Érvénytelen állapot.", 400, "status"));
     };
     action(&app.db, ctx, "mod.report_update", Some("report"), Some(report_id.to_string()), note, json!({}), true, |act| {
-        let row = fetch_one(act.tx, "SELECT status FROM reports WHERE id = ?", [report_id])?.ok_or_else(|| AdminError::new("A bejelentés nem található.", 404))?;
+        let row =
+            fetch_one(act.tx, "SELECT status FROM reports WHERE id = ?", [report_id])?.ok_or_else(|| AdminError::new("A bejelentés nem található.", 404))?;
         let handled = status != "new";
         act.tx.execute(
             "UPDATE reports SET status = ?, handled_by = ?, handled_at = ?, handler_note = ? WHERE id = ?",
-            rusqlite::params![status, if handled { Some(ctx.admin_user_id) } else { None }, if handled { Some(util::now_ts()) } else { None }, normalize_reason(note)?, report_id],
+            rusqlite::params![
+                status,
+                if handled { Some(ctx.admin_user_id) } else { None },
+                if handled { Some(util::now_ts()) } else { None },
+                normalize_reason(note)?,
+                report_id
+            ],
         )?;
         act.details.insert("before".into(), json!({"status": row.text("status")}));
         act.details.insert("after".into(), json!({"status": status}));
@@ -406,7 +382,11 @@ pub fn recent_names(app: &App, args: &HashMap<String, String>) -> AdminResult<Va
         for r in fetch_all(tx, "SELECT id, display_name, created_at FROM users WHERE deleted_at IS NULL ORDER BY id DESC LIMIT ?", [limit])? {
             items.push(json!({"user_id": r.int("id"), "display_name": r.text("display_name"), "at": r.text("created_at"), "kind": "registered", "flagged": contains_banned(&banned, &r.text("display_name"))}));
         }
-        for r in fetch_all(tx, "SELECT a.target_id, a.created_at, a.details_json FROM admin_audit a WHERE a.action = 'user.rename' ORDER BY a.id DESC LIMIT ?", [limit])? {
+        for r in fetch_all(
+            tx,
+            "SELECT a.target_id, a.created_at, a.details_json FROM admin_audit a WHERE a.action = 'user.rename' ORDER BY a.id DESC LIMIT ?",
+            [limit],
+        )? {
             let after = r
                 .opt_text("details_json")
                 .and_then(|d| serde_json::from_str::<Value>(&d).ok())
@@ -421,4 +401,38 @@ pub fn recent_names(app: &App, args: &HashMap<String, String>) -> AdminResult<Va
     items.sort_by(|a, b| b["at"].as_str().unwrap_or("").cmp(a["at"].as_str().unwrap_or("")));
     items.truncate(limit as usize);
     Ok(json!({"items": items}))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn words(list: &[&str]) -> Vec<String> {
+        list.iter().map(|w| w.to_string()).collect()
+    }
+
+    #[test]
+    fn banned_words_ignore_case_and_accents() {
+        let w = words(&["rossz", "csunya"]);
+        assert!(contains_banned(&w, "Te ROSSZ vagy"));
+        assert!(contains_banned(&w, "csúnya"));
+        assert!(!contains_banned(&w, "szép"));
+        assert!(!contains_banned(&[], "rossz"));
+    }
+
+    #[test]
+    fn masking_preserves_the_rest() {
+        let w = words(&["rossz", "csunya"]);
+        assert_eq!(mask_banned(&w, "Te ROSSZ és csúnya"), ("Te ***** és ******".to_string(), true));
+        assert_eq!(mask_banned(&w, "minden rendben"), ("minden rendben".to_string(), false));
+        assert_eq!(mask_banned(&words(&["ab", "bc"]), "xabcx").0, "x***x", "az átfedő találatok összeolvadnak");
+    }
+
+    #[test]
+    fn chat_filter_modes() {
+        let w = words(&["rossz"]);
+        assert_eq!(filter_chat(&w, false, "rossz"), (Some("*****".to_string()), true));
+        assert_eq!(filter_chat(&w, true, "rossz"), (None, true));
+        assert_eq!(filter_chat(&w, true, "jó"), (Some("jó".to_string()), false));
+    }
 }

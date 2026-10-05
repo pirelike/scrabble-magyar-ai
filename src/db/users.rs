@@ -1,9 +1,7 @@
 //! Felhasználók, munkamenetek, verifikációs kódok, kitiltás / némítás, belépési napló, admin munkamenet.
 
 use super::{Db, Row, RowExt, fetch_one};
-use crate::config::{
-    EMAIL_VERIFIED_WINDOW_MINUTES, SESSION_MAX_AGE_DAYS, VERIFICATION_CODE_EXPIRY_MINUTES, VERIFICATION_MAX_ATTEMPTS,
-};
+use crate::config::{EMAIL_VERIFIED_WINDOW_MINUTES, SESSION_MAX_AGE_DAYS, VERIFICATION_CODE_EXPIRY_MINUTES, VERIFICATION_MAX_ATTEMPTS};
 use crate::password::{check_password_hash, generate_password_hash};
 use crate::util::{self, format_ts, parse_ts, token_urlsafe, utcnow};
 use chrono::Duration;
@@ -95,11 +93,7 @@ pub fn ban_from_parts(banned_until: Option<&str>, ban_reason: Option<&str>) -> O
         return None;
     }
     let permanent = banned_until == Some(PERMANENT_UNTIL);
-    Some(Ban {
-        reason: ban_reason.unwrap_or("").to_string(),
-        until: if permanent { None } else { banned_until.map(|s| s.to_string()) },
-        permanent,
-    })
+    Some(Ban { reason: ban_reason.unwrap_or("").to_string(), until: if permanent { None } else { banned_until.map(|s| s.to_string()) }, permanent })
 }
 
 /// A munkamenethez tartozó felhasználó (a `validate_session` eredménye).
@@ -190,11 +184,10 @@ impl Db {
             return None;
         }
         self.with(|tx| {
-            Ok(tx
-                .query_row("SELECT banned_until, ban_reason FROM users WHERE id = ?", [user_id], |r| {
-                    Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<String>>(1)?))
-                })
-                .optional()?)
+            tx.query_row("SELECT banned_until, ban_reason FROM users WHERE id = ?", [user_id], |r| {
+                Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<String>>(1)?))
+            })
+            .optional()
         })
         .ok()
         .flatten()
@@ -206,10 +199,8 @@ impl Db {
         if user_id == 0 {
             return false;
         }
-        let until: Option<Option<String>> = self
-            .with(|tx| tx.query_row("SELECT chat_muted_until FROM users WHERE id = ?", [user_id], |r| r.get(0)).optional())
-            .ok()
-            .flatten();
+        let until: Option<Option<String>> =
+            self.with(|tx| tx.query_row("SELECT chat_muted_until FROM users WHERE id = ?", [user_id], |r| r.get(0)).optional()).ok().flatten();
         until.is_some_and(|u| until_active(u.as_deref()))
     }
 
@@ -234,10 +225,7 @@ impl Db {
                 params![user_id, email, ip, agent, success as i64, reason],
             )?;
             if let (true, Some(uid)) = (success, user_id) {
-                tx.execute(
-                    "UPDATE users SET last_login_at = ?, last_login_ip = ? WHERE id = ?",
-                    params![util::now_ts(), ip, uid],
-                )?;
+                tx.execute("UPDATE users SET last_login_at = ?, last_login_ip = ? WHERE id = ?", params![util::now_ts(), ip, uid])?;
             }
             Ok(())
         });
@@ -256,10 +244,7 @@ impl Db {
         let email_lower = email_lower.trim().to_string();
         self.with(|tx| {
             tx.execute("UPDATE verification_codes SET used = 1 WHERE email = ? AND used = 0", [&email_lower])?;
-            tx.execute(
-                "INSERT INTO verification_codes (email, code, expires_at) VALUES (?, ?, ?)",
-                params![email_lower, code, expires_at],
-            )?;
+            tx.execute("INSERT INTO verification_codes (email, code, expires_at) VALUES (?, ?, ?)", params![email_lower, code, expires_at])?;
             Ok(())
         })?;
         Ok(code)
@@ -270,11 +255,7 @@ impl Db {
         let email_lower = email.to_lowercase();
         let email_lower = email_lower.trim().to_string();
         let result = self.with(|tx| {
-            let Some(row) = fetch_one(
-                tx,
-                "SELECT * FROM verification_codes WHERE email = ? AND used = 0 ORDER BY created_at DESC LIMIT 1",
-                [&email_lower],
-            )?
+            let Some(row) = fetch_one(tx, "SELECT * FROM verification_codes WHERE email = ? AND used = 0 ORDER BY created_at DESC LIMIT 1", [&email_lower])?
             else {
                 return Ok((false, "Nincs érvényes verifikációs kód. Kérj újat.".to_string()));
             };
@@ -291,10 +272,8 @@ impl Db {
             }
             if row.text("code") != code {
                 // Atomi attempts növelés: UPDATE csak ha attempts < MAX
-                let updated = tx.execute(
-                    "UPDATE verification_codes SET attempts = attempts + 1 WHERE id = ? AND attempts < ?",
-                    params![id, VERIFICATION_MAX_ATTEMPTS],
-                )?;
+                let updated =
+                    tx.execute("UPDATE verification_codes SET attempts = attempts + 1 WHERE id = ? AND attempts < ?", params![id, VERIFICATION_MAX_ATTEMPTS])?;
                 if updated == 0 {
                     tx.execute("UPDATE verification_codes SET used = 1 WHERE id = ?", [id])?;
                     return Ok((false, "Túl sok próbálkozás. Kérj új kódot.".to_string()));
@@ -304,10 +283,7 @@ impl Db {
             }
             tx.execute("UPDATE verification_codes SET used = 1 WHERE id = ?", [id])?;
             let verified_until = expiry_after(EMAIL_VERIFIED_WINDOW_MINUTES);
-            tx.execute(
-                "INSERT OR REPLACE INTO verified_emails (email, expires_at) VALUES (?, ?)",
-                params![email_lower, verified_until],
-            )?;
+            tx.execute("INSERT OR REPLACE INTO verified_emails (email, expires_at) VALUES (?, ?)", params![email_lower, verified_until])?;
             Ok((true, "Kód elfogadva.".to_string()))
         });
         result.unwrap_or_else(|e| (false, format!("Adatbázis-hiba: {e}")))
@@ -318,8 +294,7 @@ impl Db {
         let email_lower = email.to_lowercase();
         let email_lower = email_lower.trim().to_string();
         self.with(|tx| {
-            let expires: Option<String> =
-                tx.query_row("SELECT expires_at FROM verified_emails WHERE email = ?", [&email_lower], |r| r.get(0)).optional()?;
+            let expires: Option<String> = tx.query_row("SELECT expires_at FROM verified_emails WHERE email = ?", [&email_lower], |r| r.get(0)).optional()?;
             let Some(expires) = expires else { return Ok(false) };
             if parse_ts(&expires).is_none_or(|e| utcnow() > e) {
                 tx.execute("DELETE FROM verified_emails WHERE email = ?", [&email_lower])?;
@@ -374,7 +349,8 @@ impl Db {
                 tx.execute("DELETE FROM sessions WHERE id = ?", [sid])?;
                 return Ok(None);
             }
-            if row.opt_text("deleted_at").is_some() || ban_from_parts(row.opt_text("banned_until").as_deref(), row.opt_text("ban_reason").as_deref()).is_some() {
+            if row.opt_text("deleted_at").is_some() || ban_from_parts(row.opt_text("banned_until").as_deref(), row.opt_text("ban_reason").as_deref()).is_some()
+            {
                 return Ok(None);
             }
             // Az „utoljára látva” idő ritkított frissítése (a legtöbb kérésnél nincs írás)
@@ -427,26 +403,19 @@ impl Db {
     /// A sudo mód lejáratának beállítása (None → lezárás). Frissíti a tétlenségi időzítőt is.
     pub fn set_admin_sudo(&self, token: &str, until: Option<chrono::NaiveDateTime>) {
         let sudo_until = until.map(format_ts);
-        let _ = self.with(|tx| {
-            tx.execute(
-                "UPDATE sessions SET sudo_until = ?, admin_seen_at = ? WHERE token = ?",
-                params![sudo_until, util::now_ts(), token],
-            )
-        });
+        let _ = self.with(|tx| tx.execute("UPDATE sessions SET sudo_until = ?, admin_seen_at = ? WHERE token = ?", params![sudo_until, util::now_ts(), token]));
     }
 
     /// Visszaadja a felhasználó reconnect tokenjét, vagy generál egyet (kriptográfiailag erős).
     pub fn get_or_create_user_reconnect_token(&self, user_id: i64) -> rusqlite::Result<String> {
         self.with(|tx| {
-            let existing: Option<Option<String>> =
-                tx.query_row("SELECT reconnect_token FROM users WHERE id = ?", [user_id], |r| r.get(0)).optional()?;
+            let existing: Option<Option<String>> = tx.query_row("SELECT reconnect_token FROM users WHERE id = ?", [user_id], |r| r.get(0)).optional()?;
             if let Some(Some(token)) = existing.clone().filter(|t| t.as_ref().is_some_and(|s| !s.is_empty())) {
                 return Ok(token);
             }
             loop {
                 let token = token_urlsafe(16);
-                let taken: Option<i64> =
-                    tx.query_row("SELECT id FROM users WHERE reconnect_token = ?", [&token], |r| r.get(0)).optional()?;
+                let taken: Option<i64> = tx.query_row("SELECT id FROM users WHERE reconnect_token = ?", [&token], |r| r.get(0)).optional()?;
                 if taken.is_none() {
                     tx.execute("UPDATE users SET reconnect_token = ? WHERE id = ?", params![token, user_id])?;
                     return Ok(token);

@@ -84,10 +84,13 @@ async fn a_saved_configuration_turns_mail_on_without_environment() {
 async fn a_failed_verification_send_does_not_panic() {
     let server = TestServer::start().await;
     let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
-    store(&server, &json!({
-        "host": "127.0.0.1", "port": closed, "security": "none", "username": "", "password": "",
-        "from_address": "noreply@example.org", "from_name": "", "verify_tls": true
-    }));
+    store(
+        &server,
+        &json!({
+            "host": "127.0.0.1", "port": closed, "security": "none", "username": "", "password": "",
+            "from_address": "noreply@example.org", "from_name": "", "verify_tls": true
+        }),
+    );
     let mailer = server.app.mailer.clone();
     tokio::task::spawn_blocking(move || mailer.send_verification_email("test@example.com", "111222")).await.unwrap();
     tokio::time::sleep(std::time::Duration::from_millis(500)).await; // a háttérszál hibája a konzolra megy

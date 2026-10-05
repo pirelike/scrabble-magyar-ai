@@ -480,7 +480,11 @@ async fn cannot_create_while_in_a_room() {
 #[tokio::test(flavor = "multi_thread")]
 async fn the_feature_switch_blocks_creation() {
     let server = TestServer::start().await;
-    server.app.db.with(|tx| server.app.settings.store(tx, "feature_async", &json!(false), None).map(|_| ()).map_err(|_| rusqlite::Error::InvalidQuery)).unwrap();
+    server
+        .app
+        .db
+        .with(|tx| server.app.settings.store(tx, "feature_async", &json!(false), None).map(|_| ()).map_err(|_| rusqlite::Error::InvalidQuery))
+        .unwrap();
     let a = server.player(1).await;
     let b = server.player(2).await;
     let (a_id, b_id) = (server.user_id("u1@example.com"), server.user_id("u2@example.com"));

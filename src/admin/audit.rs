@@ -2,8 +2,8 @@
 
 use super::*;
 use crate::db::{RowExt, fetch_all, fetch_one};
-use rusqlite::types::Value as SqlValue;
 use rusqlite::params_from_iter;
+use rusqlite::types::Value as SqlValue;
 
 fn text_filter(value: Option<&str>) -> AdminResult<Option<String>> {
     let Some(value) = value else { return Ok(None) };
@@ -61,8 +61,13 @@ impl AuditFilters {
     pub fn active(&self) -> Value {
         let mut map = Map::new();
         for (k, v) in [
-            ("admin", &self.admin), ("action", &self.action), ("target_type", &self.target_type),
-            ("target_id", &self.target_id), ("since", &self.since), ("until", &self.until), ("q", &self.q),
+            ("admin", &self.admin),
+            ("action", &self.action),
+            ("target_type", &self.target_type),
+            ("target_id", &self.target_id),
+            ("since", &self.since),
+            ("until", &self.until),
+            ("q", &self.q),
         ] {
             if let Some(v) = v.as_ref().filter(|v| !v.is_empty()) {
                 map.insert(k.to_string(), json!(v));
@@ -114,9 +119,7 @@ pub fn query_audit(db: &Db, filters: &AuditFilters, limit: Option<&str>, offset:
     }
     if let Some(q) = text_filter(filters.q.as_deref())? {
         let pattern = like(&q);
-        where_.push(
-            "(a.action LIKE ? ESCAPE '\\' OR a.target_id LIKE ? ESCAPE '\\' OR a.ip LIKE ? ESCAPE '\\' OR a.details_json LIKE ? ESCAPE '\\')".into(),
-        );
+        where_.push("(a.action LIKE ? ESCAPE '\\' OR a.target_id LIKE ? ESCAPE '\\' OR a.ip LIKE ? ESCAPE '\\' OR a.details_json LIKE ? ESCAPE '\\')".into());
         for _ in 0..4 {
             params.push(SqlValue::Text(pattern.clone()));
         }
@@ -130,11 +133,8 @@ pub fn query_audit(db: &Db, filters: &AuditFilters, limit: Option<&str>, offset:
         let mut page_params = params.clone();
         page_params.push(SqlValue::Integer(limit));
         page_params.push(SqlValue::Integer(offset));
-        let rows = fetch_all(
-            tx,
-            &format!("SELECT a.*, u.display_name AS admin_name {source} ORDER BY a.id DESC LIMIT ? OFFSET ?"),
-            params_from_iter(page_params),
-        )?;
+        let rows =
+            fetch_all(tx, &format!("SELECT a.*, u.display_name AS admin_name {source} ORDER BY a.id DESC LIMIT ? OFFSET ?"), params_from_iter(page_params))?;
         Ok((total, rows))
     })?;
     Ok(json!({"items": rows.iter().map(audit_item).collect::<Vec<_>>(), "total": total, "limit": limit, "offset": offset}))

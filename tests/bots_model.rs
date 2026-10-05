@@ -134,7 +134,10 @@ fn bots_survive_save_and_restore() {
     }
     g.start().unwrap();
     let restored = Game::from_save_dict(&g.to_save_dict()).unwrap();
-    assert_eq!(restored.players[1..].iter().map(|p| p.difficulty).collect::<Vec<_>>(), vec![Some(Difficulty::Level(1)), Some(Difficulty::Level(5)), Some(Difficulty::Level(8))]);
+    assert_eq!(
+        restored.players[1..].iter().map(|p| p.difficulty).collect::<Vec<_>>(),
+        vec![Some(Difficulty::Level(1)), Some(Difficulty::Level(5)), Some(Difficulty::Level(8))]
+    );
 }
 
 #[test]
@@ -149,7 +152,10 @@ fn old_saves_load_on_the_new_scale() {
         pd["difficulty"] = json!(old);
     }
     let restored = Game::from_save_dict(&data).unwrap();
-    assert_eq!(restored.players[1..].iter().map(|p| p.difficulty).collect::<Vec<_>>(), vec![Some(Difficulty::Level(3)), Some(Difficulty::Level(6)), Some(Difficulty::Level(10))]);
+    assert_eq!(
+        restored.players[1..].iter().map(|p| p.difficulty).collect::<Vec<_>>(),
+        vec![Some(Difficulty::Level(3)), Some(Difficulty::Level(6)), Some(Difficulty::Level(10))]
+    );
     // szint nélkül az alapérték (6), a robot sosem lecsatlakozott
     let mut g = with_human(false);
     g.add_bot("Robi", &json!("hard")).unwrap();
@@ -221,7 +227,8 @@ fn history_listing() {
     let mut g = pair();
     set_hand(&mut g, 0, &ALMAKOR);
     g.place_tiles("A", &word_at(7, 7, &ALMA)).unwrap();
-    let cells: std::collections::HashSet<(i64, i64)> = g.get_state(Some("A"))["last_move_tiles"].as_array().unwrap().iter().map(|t| (t["row"].as_i64().unwrap(), t["col"].as_i64().unwrap())).collect();
+    let cells: std::collections::HashSet<(i64, i64)> =
+        g.get_state(Some("A"))["last_move_tiles"].as_array().unwrap().iter().map(|t| (t["row"].as_i64().unwrap(), t["col"].as_i64().unwrap())).collect();
     assert_eq!(cells, [(7, 7), (7, 8), (7, 9), (7, 10)].into_iter().collect());
     g.pass_turn("B", false).unwrap();
     assert_eq!(g.get_state(Some("A"))["last_move_tiles"], json!([]));

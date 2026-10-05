@@ -1,9 +1,9 @@
 //! Az adatbázis-réteg tesztjei (a Python `test_auth.py`, `test_friends.py`, `test_elo.py` és a ranglista
 //! tesztek megfelelői).
 
+use rusqlite::params;
 use scrabble::db::{Db, GamePlayerData, StoredMove};
 use scrabble::util;
-use rusqlite::params;
 use std::collections::HashSet;
 
 fn db() -> Db {
@@ -297,9 +297,8 @@ fn finish_game_updates_stats_and_players() {
     let alice = user(&db, "alice@example.com", "Alice");
     let bob = user(&db, "bob@example.com", "Bob");
     let id = db.save_game("room-1", "Szoba", "{}", false, &[player("Alice", Some(alice), 50, false)], "Alice", None, false, false).unwrap();
-    let finished = db
-        .finish_game("room-1", "{\"f\":1}", &[player("Alice", Some(alice), 150, true), player("Bob", Some(bob), 80, false)], "Szoba", false)
-        .unwrap();
+    let finished =
+        db.finish_game("room-1", "{\"f\":1}", &[player("Alice", Some(alice), 150, true), player("Bob", Some(bob), 80, false)], "Szoba", false).unwrap();
     assert_eq!(finished, id);
     assert_eq!(db.get_game_by_id(id).unwrap().unwrap()["status"], "finished");
     let a = db.get_user_by_id(alice).unwrap().unwrap();
@@ -354,7 +353,13 @@ fn game_moves_roundtrip_in_order() {
     for n in [3, 1, 2] {
         db.add_game_move(
             id,
-            &StoredMove { move_number: n, player_name: "A".into(), action_type: "place".into(), details_json: Some("{}".into()), board_snapshot_json: Some("[]".into()) },
+            &StoredMove {
+                move_number: n,
+                player_name: "A".into(),
+                action_type: "place".into(),
+                details_json: Some("{}".into()),
+                board_snapshot_json: Some("[]".into()),
+            },
         )
         .unwrap();
     }

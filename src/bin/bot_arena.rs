@@ -51,7 +51,8 @@ fn play_game(levels: &[Difficulty], seed: u64) -> Outcome {
         if player.difficulty == Some(Difficulty::Auto) {
             outcome.adaptive_levels.push(level);
         }
-        let action = ai::choose_action(&game.board, &player.hand, level, game.bag.remaining(), &mut rng, &vocab, Some(&game.rejected_placements), ai::TIME_BUDGET);
+        let action =
+            ai::choose_action(&game.board, &player.hand, level, game.bag.remaining(), &mut rng, &vocab, Some(&game.rejected_placements), ai::TIME_BUDGET);
         outcome.turns[idx] += 1;
         let mut ok = false;
         match &action {
@@ -112,14 +113,25 @@ fn mean(values: &[f64]) -> f64 {
 
 fn match_levels(a: u8, b: u8, games: usize, workers: usize, seed: u64) {
     let jobs: Vec<(Vec<Difficulty>, u64)> = (0..games)
-        .map(|g| (if g % 2 == 0 { vec![Difficulty::Level(a), Difficulty::Level(b)] } else { vec![Difficulty::Level(b), Difficulty::Level(a)] }, seed * 1000 + g as u64))
+        .map(|g| {
+            (
+                if g % 2 == 0 { vec![Difficulty::Level(a), Difficulty::Level(b)] } else { vec![Difficulty::Level(b), Difficulty::Level(a)] },
+                seed * 1000 + g as u64,
+            )
+        })
         .collect();
     let (mut wins, mut diffs) = (0.0, Vec::new());
     for ((order, _), outcome) in jobs.iter().zip(run(&jobs, workers)) {
         let a_idx = if a != b { order.iter().position(|d| *d == Difficulty::Level(a)).unwrap_or(0) } else { 0 };
         let diff = outcome.scores[a_idx] - outcome.scores[1 - a_idx];
         diffs.push(diff as f64);
-        wins += if diff > 0 { 1.0 } else if diff == 0 { 0.5 } else { 0.0 };
+        wins += if diff > 0 {
+            1.0
+        } else if diff == 0 {
+            0.5
+        } else {
+            0.0
+        };
     }
     println!(
         "{a}. fokozat vs {b}.: {wins}-{} ({:.0}% az elsőnek), átlagos pontkülönbség {:+.0}",
@@ -133,7 +145,12 @@ fn match_levels(a: u8, b: u8, games: usize, workers: usize, seed: u64) {
 /// el körönként, és hányszor nyer.
 fn adapt(reference: u8, games: usize, workers: usize, seed: u64) {
     let jobs: Vec<(Vec<Difficulty>, u64)> = (0..games)
-        .map(|g| (if g % 2 == 0 { vec![Difficulty::Auto, Difficulty::Level(reference)] } else { vec![Difficulty::Level(reference), Difficulty::Auto] }, seed * 1000 + g as u64))
+        .map(|g| {
+            (
+                if g % 2 == 0 { vec![Difficulty::Auto, Difficulty::Level(reference)] } else { vec![Difficulty::Level(reference), Difficulty::Auto] },
+                seed * 1000 + g as u64,
+            )
+        })
         .collect();
     let (mut levels, mut auto_points, mut auto_turns, mut ref_points, mut ref_turns, mut wins) = (Vec::new(), 0i64, 0i64, 0i64, 0i64, 0.0);
     for ((order, _), outcome) in jobs.iter().zip(run(&jobs, workers)) {
@@ -144,7 +161,13 @@ fn adapt(reference: u8, games: usize, workers: usize, seed: u64) {
         ref_points += outcome.points[1 - a];
         ref_turns += outcome.turns[1 - a];
         let diff = outcome.scores[a] - outcome.scores[1 - a];
-        wins += if diff > 0 { 1.0 } else if diff == 0 { 0.5 } else { 0.0 };
+        wins += if diff > 0 {
+            1.0
+        } else if diff == 0 {
+            0.5
+        } else {
+            0.0
+        };
     }
     println!(
         "igazodó robot vs {reference}. fokozat: átlagosan a {:.1}. fokozatot használta, {:.1} pont/kör (az ellenfél {:.1}), győzelem {:.0}%",
@@ -156,7 +179,9 @@ fn adapt(reference: u8, games: usize, workers: usize, seed: u64) {
 }
 
 fn usage() -> ! {
-    eprintln!("használat: bot_arena ladder|match|adapt [fokozatok] [-n JÁTÉK] [-j SZÁL] [--seed MAG]\n  match: két fokozat (1–10); adapt: az ellenfél fokozata (1–10)");
+    eprintln!(
+        "használat: bot_arena ladder|match|adapt [fokozatok] [-n JÁTÉK] [-j SZÁL] [--seed MAG]\n  match: két fokozat (1–10); adapt: az ellenfél fokozata (1–10)"
+    );
     std::process::exit(2)
 }
 

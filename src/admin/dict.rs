@@ -394,7 +394,8 @@ pub fn remove_override(app: &App, ctx: &AdminContext, raw: Option<&Value>, reaso
     let word = normalize(raw)?;
     let lower = word.to_lowercase();
     action(&app.db, ctx, "dict.override_remove", Some("word"), Some(lower.clone()), reason, json!({}), true, |act| {
-        let row = fetch_one(act.tx, "SELECT verdict FROM word_overrides WHERE word = ?", [&lower])?.ok_or_else(|| AdminError::new("Ehhez a szóhoz nincs felülbírálat.", 404))?;
+        let row = fetch_one(act.tx, "SELECT verdict FROM word_overrides WHERE word = ?", [&lower])?
+            .ok_or_else(|| AdminError::new("Ehhez a szóhoz nincs felülbírálat.", 404))?;
         act.tx.execute("DELETE FROM word_overrides WHERE word = ?", [&lower])?;
         act.details.insert("before".into(), json!({"verdict": row.text("verdict")}));
         Ok(())
@@ -411,7 +412,10 @@ pub fn list_additions(app: &App) -> AdminResult<Vec<Value>> {
             [],
         )?)
     })?;
-    Ok(rows.iter().map(|r| json!({"word": r.text("word").to_uppercase(), "reason": r.get("reason"), "at": r.text("created_at"), "admin": r.get("admin_name")})).collect())
+    Ok(rows
+        .iter()
+        .map(|r| json!({"word": r.text("word").to_uppercase(), "reason": r.get("reason"), "at": r.text("created_at"), "admin": r.get("admin_name")}))
+        .collect())
 }
 
 /// Saját szó: a szótárban nem szereplő, de a játékban elfogadott szó (szavanként indoklással). A robot szókincsébe nem
@@ -426,7 +430,10 @@ pub fn add_addition(app: &App, ctx: &AdminContext, raw: Option<&Value>, reason: 
         if fetch_one(act.tx, "SELECT 1 AS x FROM word_additions WHERE word = ?", [&lower])?.is_some() {
             return Err(AdminError::field("Ez a szó már szerepel a saját szavak között.", 409, "word"));
         }
-        act.tx.execute("INSERT INTO word_additions (word, admin_user_id, reason) VALUES (?, ?, ?)", rusqlite::params![lower, ctx.admin_user_id, normalize_reason(reason)?])?;
+        act.tx.execute(
+            "INSERT INTO word_additions (word, admin_user_id, reason) VALUES (?, ?, ?)",
+            rusqlite::params![lower, ctx.admin_user_id, normalize_reason(reason)?],
+        )?;
         Ok(())
     })?;
     refresh_lists(app);
@@ -459,7 +466,10 @@ pub fn delete_votes(app: &App, ctx: &AdminContext, raw: Option<&Value>, reason: 
         }
         act.tx.execute("DELETE FROM word_reviews WHERE word = ?", [&lower])?;
         act.details.insert("count".into(), json!(votes.len()));
-        act.details.insert("votes".into(), json!(votes.iter().take(200).map(|v| json!({"user_id": v.get("user_id"), "valid": v.flag("verdict")})).collect::<Vec<_>>()));
+        act.details.insert(
+            "votes".into(),
+            json!(votes.iter().take(200).map(|v| json!({"user_id": v.get("user_id"), "valid": v.flag("verdict")})).collect::<Vec<_>>()),
+        );
         Ok(votes.len())
     })?;
     word_review::refresh(&app.db, &app.settings);
@@ -487,14 +497,16 @@ pub fn second_opinion(count: Option<&str>) -> AdminResult<Value> {
     listed.sort();
     let indices = crate::practice::sample_indices(&mut rand::rng(), listed.len(), (count as usize).min(listed.len()));
     let checker = dictionary::get_checker();
-    Ok(json!(indices
-        .iter()
-        .map(|i| {
-            let w = &listed[*i];
-            let tiles = tokenize_word(&w.to_uppercase()).map(|t| t.iter().map(|x| x.as_str().to_string()).collect::<Vec<_>>());
-            json!({"word": w.to_uppercase(), "tiles": tiles, "dictionary_accepts": checker.as_ref().map(|c| c.check(w))})
-        })
-        .collect::<Vec<_>>()))
+    Ok(json!(
+        indices
+            .iter()
+            .map(|i| {
+                let w = &listed[*i];
+                let tiles = tokenize_word(&w.to_uppercase()).map(|t| t.iter().map(|x| x.as_str().to_string()).collect::<Vec<_>>());
+                json!({"word": w.to_uppercase(), "tiles": tiles, "dictionary_accepts": checker.as_ref().map(|c| c.check(w))})
+            })
+            .collect::<Vec<_>>()
+    ))
 }
 
 // ===== Szótár-építő felügyelet =====
@@ -517,7 +529,8 @@ pub fn review_summary(app: &App, days: Option<&str>) -> AdminResult<Value> {
             "SELECT date(created_at) AS day, COUNT(*) AS decisions, COALESCE(SUM(1 - verdict), 0) AS rejections FROM word_reviews WHERE created_at >= ? GROUP BY day ORDER BY day",
             [&since],
         )?;
-        let totals = fetch_one(tx, "SELECT COUNT(*) AS decisions, COUNT(DISTINCT word) AS words, COUNT(DISTINCT user_id) AS reviewers FROM word_reviews", [])?.unwrap_or_default();
+        let totals = fetch_one(tx, "SELECT COUNT(*) AS decisions, COUNT(DISTINCT word) AS words, COUNT(DISTINCT user_id) AS reviewers FROM word_reviews", [])?
+            .unwrap_or_default();
         let active = fetch_one(tx, "SELECT COUNT(DISTINCT user_id) AS n FROM word_reviews WHERE created_at >= ?", [&week])?.map(|r| r.int("n")).unwrap_or(0);
         Ok((daily, totals, active))
     })?;

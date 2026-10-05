@@ -47,19 +47,24 @@ fn load_counts(path: &str, min_count: u64) -> std::io::Result<HashMap<String, u6
     let mut counts = HashMap::new();
     for line in text.lines() {
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if let [word, count] = parts[..] {
-            if let Ok(count) = count.parse::<u64>() {
-                if count >= min_count {
-                    counts.insert(word.to_string(), count);
-                }
-            }
+        if let [word, count] = parts[..]
+            && let Ok(count) = count.parse::<u64>()
+            && count >= min_count
+        {
+            counts.insert(word.to_string(), count);
         }
     }
     Ok(counts)
 }
 
 /// Egy sokkal gyakoribb, kockázat nélkül érvényes szó elírása-e (ékezet hiánya, kimaradt vagy megkettőzött betű)?
-fn is_typo(checker: &scrabble::affix::AffixChecker, word: &str, count: u64, frequent: &HashMap<String, u64>, by_skeleton: &HashMap<String, Vec<String>>) -> bool {
+fn is_typo(
+    checker: &scrabble::affix::AffixChecker,
+    word: &str,
+    count: u64,
+    frequent: &HashMap<String, u64>,
+    by_skeleton: &HashMap<String, Vec<String>>,
+) -> bool {
     let limit = TYPO_RATIO * count;
     let chars: Vec<char> = word.chars().collect();
     let mut neighbours: HashSet<String> = by_skeleton.get(&strip_accents(word)).into_iter().flatten().cloned().collect();
@@ -89,7 +94,8 @@ fn usage() -> ! {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let (mut list, mut min_count, mut out, mut with_counts) = (None::<String>, 2u64, config::dict_dir().join("hu_attested.txt").to_string_lossy().to_string(), false);
+    let (mut list, mut min_count, mut out, mut with_counts) =
+        (None::<String>, 2u64, config::dict_dir().join("hu_attested.txt").to_string_lossy().to_string(), false);
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {

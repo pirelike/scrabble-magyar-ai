@@ -32,10 +32,10 @@ impl Mail {
                 }
                 break;
             }
-            if let Some((k, v)) = line.split_once(':') {
-                if k.eq_ignore_ascii_case(name) {
-                    value = Some(v.trim().to_string());
-                }
+            if let Some((k, v)) = line.split_once(':')
+                && k.eq_ignore_ascii_case(name)
+            {
+                value = Some(v.trim().to_string());
             }
         }
         value
@@ -71,12 +71,12 @@ fn decode_qp(text: &str) -> String {
                 i += 3;
                 continue;
             }
-            if let (Some(a), Some(b)) = (bytes.get(i + 1), bytes.get(i + 2)) {
-                if let Ok(v) = u8::from_str_radix(&format!("{}{}", *a as char, *b as char), 16) {
-                    out.push(v);
-                    i += 3;
-                    continue;
-                }
+            if let (Some(a), Some(b)) = (bytes.get(i + 1), bytes.get(i + 2))
+                && let Ok(v) = u8::from_str_radix(&format!("{}{}", *a as char, *b as char), 16)
+            {
+                out.push(v);
+                i += 3;
+                continue;
             }
         }
         out.push(bytes[i]);
@@ -335,9 +335,7 @@ fn serve(stream: std::net::TcpStream, mails: Arc<Mutex<Vec<Mail>>>, behavior: Ar
             let raw = data.strip_suffix("\r\n").unwrap_or(&data).to_string();
             mails.lock().push(Mail { from: from.clone(), to: to.clone(), raw });
             say(&mut writer, "250 OK elfogadva");
-        } else if upper == "RSET" {
-            say(&mut writer, "250 OK");
-        } else if upper == "NOOP" {
+        } else if upper == "RSET" || upper == "NOOP" {
             say(&mut writer, "250 OK");
         } else if upper == "QUIT" {
             say(&mut writer, "221 viszlát");

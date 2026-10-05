@@ -155,10 +155,7 @@ impl Settings {
         if self.cache.read().loaded {
             return;
         }
-        let rows = self
-            .db
-            .with(|tx| crate::db::fetch_all(tx, "SELECT key, value FROM app_settings WHERE key LIKE 'cfg%'", []))
-            .unwrap_or_default(); // nincs még adatbázis / séma: minden alapértelmezett
+        let rows = self.db.with(|tx| crate::db::fetch_all(tx, "SELECT key, value FROM app_settings WHERE key LIKE 'cfg%'", [])).unwrap_or_default(); // nincs még adatbázis / séma: minden alapértelmezett
         let mut cache = self.cache.write();
         cache.values.clear();
         cache.meta.clear();
@@ -250,7 +247,11 @@ impl Settings {
             }
             Kind::Limits => validate_limits(value),
             Kind::Json => {
-                if value.is_object() { Ok(value.clone()) } else { Err(err("Érvénytelen érték.")) }
+                if value.is_object() {
+                    Ok(value.clone())
+                } else {
+                    Err(err("Érvénytelen érték."))
+                }
             }
         }
     }

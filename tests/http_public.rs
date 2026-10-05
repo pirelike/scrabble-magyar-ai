@@ -194,7 +194,12 @@ async fn manifest_and_icons() {
     assert!(manifest["start_url"].as_str().unwrap().starts_with('/'));
     assert_eq!(manifest["scope"], "/");
     assert!(!manifest["name"].as_str().unwrap().is_empty() && !manifest["short_name"].as_str().unwrap().is_empty());
-    let sizes: Vec<(String, String)> = manifest["icons"].as_array().unwrap().iter().map(|i| (i["sizes"].as_str().unwrap().to_string(), i["purpose"].as_str().unwrap_or("").to_string())).collect();
+    let sizes: Vec<(String, String)> = manifest["icons"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| (i["sizes"].as_str().unwrap().to_string(), i["purpose"].as_str().unwrap_or("").to_string()))
+        .collect();
     assert!(sizes.contains(&("192x192".into(), "any".into())) && sizes.contains(&("512x512".into(), "maskable".into())));
     for icon in manifest["icons"].as_array().unwrap() {
         let r = http.get(icon["src"].as_str().unwrap()).await;
@@ -205,7 +210,7 @@ async fn manifest_and_icons() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn png_icons_have_the_right_dimensions() {
-    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("static/icons");
+    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("web/static/icons");
     for (name, size) in [("icon-192.png", 192u32), ("icon-512.png", 512), ("icon-maskable-512.png", 512), ("apple-touch-icon.png", 180)] {
         let bytes = std::fs::read(base.join(name)).unwrap();
         assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");

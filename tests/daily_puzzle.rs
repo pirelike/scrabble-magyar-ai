@@ -5,7 +5,7 @@ use common::*;
 use scrabble::ai;
 use scrabble::board::{Board, Placed};
 use scrabble::daily;
-use scrabble::db::{Db, DailyPuzzle};
+use scrabble::db::{DailyPuzzle, Db};
 use scrabble::game::Game;
 use scrabble::server::core;
 use scrabble::tiles::{TILE_DISTRIBUTION, Tile};
@@ -50,7 +50,14 @@ fn placed(tiles: &Value) -> Vec<Placed> {
         .as_array()
         .unwrap()
         .iter()
-        .map(|t| Placed::new(t["row"].as_i64().unwrap() as i32, t["col"].as_i64().unwrap() as i32, Tile::from_str(t["letter"].as_str().unwrap()).unwrap(), t["is_blank"].as_bool().unwrap_or(false)))
+        .map(|t| {
+            Placed::new(
+                t["row"].as_i64().unwrap() as i32,
+                t["col"].as_i64().unwrap() as i32,
+                Tile::from_str(t["letter"].as_str().unwrap()).unwrap(),
+                t["is_blank"].as_bool().unwrap_or(false),
+            )
+        })
         .collect()
 }
 
@@ -593,7 +600,11 @@ async fn starting_is_rate_limited() {
 async fn the_feature_switch_blocks_the_puzzle() {
     let server = TestServer::start().await;
     store_today(&server.app.db);
-    server.app.db.with(|tx| server.app.settings.store(tx, "feature_daily", &json!(false), None).map(|_| ()).map_err(|_| rusqlite::Error::InvalidQuery)).unwrap();
+    server
+        .app
+        .db
+        .with(|tx| server.app.settings.store(tx, "feature_daily", &json!(false), None).map(|_| ()).map_err(|_| rusqlite::Error::InvalidQuery))
+        .unwrap();
     let anna = server.player(1).await;
     let got = start(&anna).await;
     assert!(!error_messages(&got).is_empty(), "{got:?}");

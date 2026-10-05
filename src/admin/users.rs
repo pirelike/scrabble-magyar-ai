@@ -312,12 +312,14 @@ pub fn user_detail(app: &App, ctx: &AdminContext, user_id: i64, online: bool) ->
             "SELECT puzzle_date, best_score, attempts, revealed FROM daily_scores WHERE user_id = ? ORDER BY puzzle_date DESC LIMIT 60",
             [user_id],
         )?;
-        let review = fetch_one(tx, "SELECT COUNT(*) AS total, COALESCE(SUM(1 - verdict), 0) AS invalid FROM word_reviews WHERE user_id = ?", [user_id])?.unwrap_or_default();
+        let review = fetch_one(tx, "SELECT COUNT(*) AS total, COALESCE(SUM(1 - verdict), 0) AS invalid FROM word_reviews WHERE user_id = ?", [user_id])?
+            .unwrap_or_default();
         let (total, invalid) = (review.int("total"), review.int("invalid"));
-        let recent: Vec<Value> = fetch_all(tx, "SELECT word, verdict, created_at FROM word_reviews WHERE user_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 50", [user_id])?
-            .iter()
-            .map(|r| json!({"word": r["word"], "valid": r.flag("verdict"), "at": r["created_at"]}))
-            .collect();
+        let recent: Vec<Value> =
+            fetch_all(tx, "SELECT word, verdict, created_at FROM word_reviews WHERE user_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 50", [user_id])?
+                .iter()
+                .map(|r| json!({"word": r["word"], "valid": r.flag("verdict"), "at": r["created_at"]}))
+                .collect();
         let reviews = json!({"total": total, "invalid": invalid, "invalid_share": if total > 0 { round1(invalid as f64 / total as f64 * 100.0) } else { 0.0 }, "recent": recent});
         let games = fetch_all(
             tx,
@@ -332,18 +334,15 @@ pub fn user_detail(app: &App, ctx: &AdminContext, user_id: i64, online: bool) ->
              LEFT JOIN users u ON u.id = n.admin_user_id WHERE n.user_id = ? ORDER BY n.id DESC",
             [user_id],
         )?;
-        let logins: Vec<Value> = fetch_all(
-            tx,
-            "SELECT id, ip, user_agent, success, reason, created_at FROM login_events WHERE user_id = ? ORDER BY id DESC LIMIT 20",
-            [user_id],
-        )?
-        .into_iter()
-        .map(|mut r| {
-            let agent: String = r.text("user_agent").chars().take(USER_AGENT_SHOW).collect();
-            r.insert("user_agent".into(), json!(agent));
-            Value::Object(r)
-        })
-        .collect();
+        let logins: Vec<Value> =
+            fetch_all(tx, "SELECT id, ip, user_agent, success, reason, created_at FROM login_events WHERE user_id = ? ORDER BY id DESC LIMIT 20", [user_id])?
+                .into_iter()
+                .map(|mut r| {
+                    let agent: String = r.text("user_agent").chars().take(USER_AGENT_SHOW).collect();
+                    r.insert("user_agent".into(), json!(agent));
+                    Value::Object(r)
+                })
+                .collect();
         let rating_history = rating_history(tx, user_id)?;
         record(tx, ctx, "view.user", Some("user"), Some(&user_id.to_string()), &Value::Null)?;
         Ok(json!({
@@ -401,15 +400,15 @@ fn patch_state_names(state_json: &str, old: &str, new: &str) -> Option<String> {
             }
         }
     }
-    if let Some(names) = data.get_mut("winner_names").and_then(|n| n.as_array_mut()) {
-        if names.iter().any(|n| n.as_str() == Some(old)) {
-            for name in names.iter_mut() {
-                if name.as_str() == Some(old) {
-                    *name = json!(new);
-                }
+    if let Some(names) = data.get_mut("winner_names").and_then(|n| n.as_array_mut())
+        && names.iter().any(|n| n.as_str() == Some(old))
+    {
+        for name in names.iter_mut() {
+            if name.as_str() == Some(old) {
+                *name = json!(new);
             }
-            changed = true;
         }
+        changed = true;
     }
     changed.then(|| data.to_string())
 }
@@ -528,10 +527,7 @@ pub fn ban(app: &App, ctx: &AdminContext, user_id: i64, until: Option<&Value>, r
     action(&app.db, ctx, "user.ban", Some("user"), Some(user_id.to_string()), reason, json!({}), true, |act| {
         let row = get_row(act.tx, user_id)?;
         require_manageable(app, &row, false)?;
-        act.tx.execute(
-            "UPDATE users SET banned_until = ?, ban_reason = ? WHERE id = ?",
-            rusqlite::params![stamp, normalize_reason(reason)?, user_id],
-        )?;
+        act.tx.execute("UPDATE users SET banned_until = ?, ban_reason = ? WHERE id = ?", rusqlite::params![stamp, normalize_reason(reason)?, user_id])?;
         let killed = act.tx.execute("DELETE FROM sessions WHERE user_id = ?", [user_id])?;
         act.details.insert("before".into(), json!({"banned_until": row.get("banned_until"), "ban_reason": row.get("ban_reason")}));
         act.details.insert("after".into(), json!({"banned_until": stamp, "permanent": stamp == crate::db::PERMANENT_UNTIL}));
@@ -743,8 +739,22 @@ pub fn export_user(app: &App, ctx: &AdminContext, user_id: i64) -> AdminResult<V
         let row = get_row(tx, user_id)?;
         let mut account = Map::new();
         for key in [
-            "id", "email", "display_name", "created_at", "games_played", "games_won", "total_score", "rating", "rated_games",
-            "last_login_at", "last_login_ip", "banned_until", "ban_reason", "chat_muted_until", "review_blocked", "deleted_at",
+            "id",
+            "email",
+            "display_name",
+            "created_at",
+            "games_played",
+            "games_won",
+            "total_score",
+            "rating",
+            "rated_games",
+            "last_login_at",
+            "last_login_ip",
+            "banned_until",
+            "ban_reason",
+            "chat_muted_until",
+            "review_blocked",
+            "deleted_at",
         ] {
             account.insert(key.to_string(), row.get(key).cloned().unwrap_or(Value::Null));
         }
@@ -799,7 +809,14 @@ pub fn export_user(app: &App, ctx: &AdminContext, user_id: i64) -> AdminResult<V
 /// Fiók törlése. `anonymize` (alapértelmezett): név → „Törölt felhasználó #id”, e-mail és jelszó törölve, a játékok és
 /// az értékszám-előzmények megmaradnak. `delete`: a fiók sora is törlődik. A célpont nevének begépelése kötelező. A
 /// név a játékokban is átíródik (névtelenítés). Visszatér: az érintett (régi) név.
-pub fn delete_user(app: &App, ctx: &AdminContext, user_id: i64, mode: Option<&Value>, confirm_name: Option<&Value>, reason: Option<&Value>) -> AdminResult<String> {
+pub fn delete_user(
+    app: &App,
+    ctx: &AdminContext,
+    user_id: i64,
+    mode: Option<&Value>,
+    confirm_name: Option<&Value>,
+    reason: Option<&Value>,
+) -> AdminResult<String> {
     let mode = match mode {
         None | Some(Value::Null) => "anonymize",
         Some(Value::String(m)) if m == "anonymize" || m == "delete" => m.as_str(),

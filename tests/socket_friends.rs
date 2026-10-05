@@ -297,17 +297,11 @@ async fn friends_see_the_presence_change_on_login_and_logout() {
     let subject = server.player(2).await;
     observer.settle().await;
     let events = observer.take();
-    assert!(
-        named(&events, "friend_presence_changed").iter().any(|e| e["friend_id"] == b_id && e["online"] == json!(true)),
-        "{events:?}"
-    );
+    assert!(named(&events, "friend_presence_changed").iter().any(|e| e["friend_id"] == b_id && e["online"] == json!(true)), "{events:?}");
     subject.close();
     observer.settle_long().await;
     let events = observer.take();
-    assert!(
-        named(&events, "friend_presence_changed").iter().any(|e| e["friend_id"] == b_id && e["online"] == json!(false)),
-        "{events:?}"
-    );
+    assert!(named(&events, "friend_presence_changed").iter().any(|e| e["friend_id"] == b_id && e["online"] == json!(false)), "{events:?}");
 }
 
 #[tokio::test(flavor = "multi_thread")]

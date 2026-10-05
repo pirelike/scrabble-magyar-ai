@@ -32,7 +32,8 @@ fn splits() -> Vec<(String, String)> {
 fn the_seven_digraphs() {
     let mut pairs = splits();
     pairs.sort();
-    let expected: Vec<(String, String)> = [("C", "S"), ("G", "Y"), ("L", "Y"), ("N", "Y"), ("S", "Z"), ("T", "Y"), ("Z", "S")].iter().map(|(a, b)| (a.to_string(), b.to_string())).collect();
+    let expected: Vec<(String, String)> =
+        [("C", "S"), ("G", "Y"), ("L", "Y"), ("N", "Y"), ("S", "Z"), ("T", "Y"), ("Z", "S")].iter().map(|(a, b)| (a.to_string(), b.to_string())).collect();
     let mut expected = expected;
     expected.sort();
     assert_eq!(pairs, expected);

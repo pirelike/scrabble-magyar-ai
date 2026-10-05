@@ -26,8 +26,7 @@ fn canonical(moves: &[ai::Move]) -> Vec<String> {
         .map(|m| {
             let mut tiles = m.tiles.clone();
             tiles.sort_by_key(|p| (p.row, p.col));
-            let tiles: Vec<String> =
-                tiles.iter().map(|p| format!("{},{},{},{}", p.row, p.col, p.letter.as_str(), p.is_blank as i32)).collect();
+            let tiles: Vec<String> = tiles.iter().map(|p| format!("{},{},{},{}", p.row, p.col, p.letter.as_str(), p.is_blank as i32)).collect();
             format!("{}|{}|{}", tiles.join(";"), m.words.join(","), m.score)
         })
         .collect();
@@ -39,9 +38,7 @@ fn canonical(moves: &[ai::Move]) -> Vec<String> {
 fn move_generation_matches_python() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden/moves.json");
     let cases: Vec<Value> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
-    let full: Option<Vec<Value>> = std::env::var("SCRABBLE_PY_MOVES")
-        .ok()
-        .map(|p| serde_json::from_slice(&std::fs::read(p).unwrap()).unwrap());
+    let full: Option<Vec<Value>> = std::env::var("SCRABBLE_PY_MOVES").ok().map(|p| serde_json::from_slice(&std::fs::read(p).unwrap()).unwrap());
     let vocab = vocab();
     let mut total = 0;
     for (i, case) in cases.iter().enumerate() {
@@ -57,8 +54,7 @@ fn move_generation_matches_python() {
         if lines.len() as u64 != case["count"].as_u64().unwrap() || digest != case["sha256"].as_str().unwrap() {
             let mut detail = String::new();
             if let Some(full) = &full {
-                let python: std::collections::HashSet<String> =
-                    full[i]["lines"].as_array().unwrap().iter().map(|l| l.as_str().unwrap().to_string()).collect();
+                let python: std::collections::HashSet<String> = full[i]["lines"].as_array().unwrap().iter().map(|l| l.as_str().unwrap().to_string()).collect();
                 let rust: std::collections::HashSet<String> = lines.iter().cloned().collect();
                 let mut only_rust: Vec<&String> = rust.difference(&python).collect();
                 let mut only_python: Vec<&String> = python.difference(&rust).collect();

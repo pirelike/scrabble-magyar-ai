@@ -60,7 +60,8 @@ fn clean(text: &str) -> String {
 /// Egy külső parancs futtatása időkorláttal. Visszatér: (sikeres-e, stdout, stderr).
 fn run(mut command: Command, timeout: u64) -> Result<(bool, String, String), String> {
     command.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
-    let mut child = command.spawn().map_err(|e| if e.kind() == std::io::ErrorKind::NotFound { "a program nem található".to_string() } else { e.to_string() })?;
+    let mut child =
+        command.spawn().map_err(|e| if e.kind() == std::io::ErrorKind::NotFound { "a program nem található".to_string() } else { e.to_string() })?;
     let (mut out_pipe, mut err_pipe) = (child.stdout.take(), child.stderr.take());
     let out_thread = std::thread::spawn(move || {
         let mut text = Vec::new();
@@ -190,10 +191,10 @@ fn remote_branches(app: &App) -> Vec<Value> {
 }
 
 fn default_branch(app: &App, branches: &[Value]) -> Option<String> {
-    if let Some(head) = try_git(app, &["symbolic-ref", "--short", "-q", &format!("refs/remotes/{REMOTE}/HEAD")]) {
-        if let Some(name) = head.strip_prefix(&format!("{REMOTE}/")) {
-            return Some(name.to_string());
-        }
+    if let Some(head) = try_git(app, &["symbolic-ref", "--short", "-q", &format!("refs/remotes/{REMOTE}/HEAD")])
+        && let Some(name) = head.strip_prefix(&format!("{REMOTE}/"))
+    {
+        return Some(name.to_string());
     }
     let names: Vec<&str> = branches.iter().filter_map(|b| b["name"].as_str()).collect();
     ["main", "master"].iter().find(|n| names.contains(n)).map(|n| n.to_string()).or_else(|| names.first().map(|n| n.to_string()))
@@ -210,14 +211,15 @@ fn plan(app: &App, branch: &str) -> Value {
     let count = |range: String| try_git(app, &["rev-list", "--count", &range]).and_then(|c| c.parse::<i64>().ok()).unwrap_or(0);
     let behind = count(format!("HEAD..{target}"));
     let ahead = count(format!("{target}..HEAD"));
-    let incoming: Vec<Value> = try_git(app, &["log", &format!("--format=%h{SEP}%s{SEP}%cI{SEP}%an"), &format!("--max-count={MAX_INCOMING}"), &format!("HEAD..{target}")])
-        .unwrap_or_default()
-        .lines()
-        .map(|line| {
-            let p = split_fields(line, 4);
-            json!({"short": p[0], "subject": p[1].chars().take(200).collect::<String>(), "date": p[2], "author": p[3].chars().take(80).collect::<String>()})
-        })
-        .collect();
+    let incoming: Vec<Value> =
+        try_git(app, &["log", &format!("--format=%h{SEP}%s{SEP}%cI{SEP}%an"), &format!("--max-count={MAX_INCOMING}"), &format!("HEAD..{target}")])
+            .unwrap_or_default()
+            .lines()
+            .map(|line| {
+                let p = split_fields(line, 4);
+                json!({"short": p[0], "subject": p[1].chars().take(200).collect::<String>(), "date": p[2], "author": p[3].chars().take(80).collect::<String>()})
+            })
+            .collect();
     let files: Vec<(String, String)> = try_git(app, &["diff", "--name-status", "HEAD", &target])
         .unwrap_or_default()
         .lines()
@@ -264,14 +266,16 @@ pub fn check(app: &App, branch: Option<&str>, fetch: bool) -> AdminResult<Value>
         Some(_) => return Err(AdminError::field("Ez az ág nincs a GitHubon.", 400, "branch")),
     };
     let mut result = status(app);
-    result["branches"] = json!(branches
-        .into_iter()
-        .map(|mut b| {
-            let is_current = current.as_deref() == b["name"].as_str();
-            b["current"] = json!(is_current);
-            b
-        })
-        .collect::<Vec<_>>());
+    result["branches"] = json!(
+        branches
+            .into_iter()
+            .map(|mut b| {
+                let is_current = current.as_deref() == b["name"].as_str();
+                b["current"] = json!(is_current);
+                b
+            })
+            .collect::<Vec<_>>()
+    );
     result["default_branch"] = json!(default);
     result["plan"] = plan(app, &branch);
     Ok(result)
@@ -280,7 +284,13 @@ pub fn check(app: &App, branch: Option<&str>, fetch: bool) -> AdminResult<Value>
 fn valid_branch(branch: Option<&Value>) -> AdminResult<String> {
     let invalid = || AdminError::field("Érvénytelen ág.", 400, "branch");
     let branch = branch.and_then(|b| b.as_str()).ok_or_else(invalid)?;
-    if !BRANCH_RE.is_match(branch) || branch.contains("..") || branch.contains("//") || branch.ends_with('/') || branch.ends_with(".lock") || branch.ends_with('.') {
+    if !BRANCH_RE.is_match(branch)
+        || branch.contains("..")
+        || branch.contains("//")
+        || branch.ends_with('/')
+        || branch.ends_with(".lock")
+        || branch.ends_with('.')
+    {
         return Err(invalid());
     }
     Ok(branch.to_string())
@@ -336,7 +346,8 @@ pub fn apply(app: &Arc<App>, ctx: &AdminContext, branch: Option<&Value>, reason:
     }
     let dirty = dirty_files(app);
     if !dirty.is_empty() {
-        return Err(AdminError::new("A programmappában helyi módosítások vannak: a frissítés nem írja felül őket.", 409).with("files", json!(dirty.iter().take(MAX_DIRTY).collect::<Vec<_>>())));
+        return Err(AdminError::new("A programmappában helyi módosítások vannak: a frissítés nem írja felül őket.", 409)
+            .with("files", json!(dirty.iter().take(MAX_DIRTY).collect::<Vec<_>>())));
     }
     let old_head = head(app).unwrap_or_default();
     let old_branch = current_branch(app);
@@ -380,7 +391,12 @@ pub fn apply(app: &Arc<App>, ctx: &AdminContext, branch: Option<&Value>, reason:
         if let Err(detail) = cargo_build(app) {
             // az új kód nem fordul le: vissza az előző állapotra (a futó program és a lemez egyezzen)
             let restored = restore(app, &old_head, old_branch.as_deref());
-            record_system(app, ctx, "system.update_failed", json!({"branch": branch, "from": old_head, "to": new_head, "restored": restored, "reason": "build"}))?;
+            record_system(
+                app,
+                ctx,
+                "system.update_failed",
+                json!({"branch": branch, "from": old_head, "to": new_head, "restored": restored, "reason": "build"}),
+            )?;
             return Err(AdminError::new("Az új kód nem fordítható le, a frissítés visszaállt az előző állapotra.", 422).with("detail", json!(detail)));
         }
         Some(true)
@@ -404,10 +420,11 @@ pub fn apply(app: &Arc<App>, ctx: &AdminContext, branch: Option<&Value>, reason:
 fn restart_executable(app: &App) -> Option<std::path::PathBuf> {
     let current = std::env::current_exe().ok()?;
     let built = app.base_dir.join("target/release/scrabble");
-    let newer = |a: &std::path::Path, b: &std::path::Path| match (std::fs::metadata(a).and_then(|m| m.modified()), std::fs::metadata(b).and_then(|m| m.modified())) {
-        (Ok(x), Ok(y)) => x > y,
-        _ => false,
-    };
+    let newer =
+        |a: &std::path::Path, b: &std::path::Path| match (std::fs::metadata(a).and_then(|m| m.modified()), std::fs::metadata(b).and_then(|m| m.modified())) {
+            (Ok(x), Ok(y)) => x > y,
+            _ => false,
+        };
     if built.is_file() && newer(&built, &current) { Some(built) } else { Some(current) }
 }
 
@@ -455,7 +472,17 @@ pub fn restart(app: &Arc<App>, ctx: &AdminContext, reason: Option<&Value>) -> Ad
         return Err(AdminError::new("Az újraindítás már folyamatban van.", 409));
     }
     let running = app.running_commit.lock().clone();
-    action(&app.db, ctx, "system.restart", Some("system"), Some("server".to_string()), reason, json!({"commit": running, "head": head(app)}), true, |_| Ok(()))?;
+    action(
+        &app.db,
+        ctx,
+        "system.restart",
+        Some("system"),
+        Some("server".to_string()),
+        reason,
+        json!({"commit": running, "head": head(app)}),
+        true,
+        |_| Ok(()),
+    )?;
     schedule_restart(app);
     Ok(json!({"restarting": true}))
 }
