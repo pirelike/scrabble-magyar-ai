@@ -290,11 +290,19 @@ fn restore(app: &App, old_head: &str, old_branch: Option<&str>) -> bool {
     result.is_ok()
 }
 
-/// A `cargo build --release` futtatása. Visszatér: sikerült-e.
-fn cargo_build(app: &App) -> bool {
+/// A `cargo build --release` futtatása. Hiba esetén a fordító kimenetének utolsó sorai (maszkolva).
+fn cargo_build(app: &App) -> Result<(), String> {
     let mut command = Command::new("cargo");
     command.args(["build", "--release"]).current_dir(&app.base_dir);
-    matches!(run(command, BUILD_TIMEOUT), Ok((true, _, _)))
+    match run(command, BUILD_TIMEOUT) {
+        Ok((true, _, _)) => Ok(()),
+        Ok((false, out, err)) => {
+            let text = if err.trim().is_empty() { out } else { err };
+            let tail: Vec<&str> = text.lines().rev().take(8).collect();
+            Err(clean(&tail.into_iter().rev().collect::<Vec<_>>().join("\n")))
+        }
+        Err(e) => Err(e),
+    }
 }
 
 fn record_system(app: &App, ctx: &AdminContext, name: &str, details: Value) -> AdminResult<()> {
@@ -359,7 +367,17 @@ pub fn apply(app: &Arc<App>, ctx: &AdminContext, branch: Option<&Value>, reason:
 
     let new_head = head(app).unwrap_or_default();
     let changed: Vec<String> = try_git(app, &["diff", "--name-only", &old_head, &new_head]).unwrap_or_default().lines().map(|l| l.to_string()).collect();
-    let installed = if install && changed.iter().any(|p| is_build_input(p)) { Some(cargo_build(app)) } else { None };
+    let installed = if install && changed.iter().any(|p| is_build_input(p)) {
+        if let Err(detail) = cargo_build(app) {
+            // az új kód nem fordul le: vissza az előző állapotra (a futó program és a lemez egyezzen)
+            let restored = restore(app, &old_head, old_branch.as_deref());
+            record_system(app, ctx, "system.update_failed", json!({"branch": branch, "from": old_head, "to": new_head, "restored": restored, "reason": "build"}))?;
+            return Err(AdminError::new("Az új kód nem fordítható le, a frissítés visszaállt az előző állapotra.", 422).with("detail", json!(detail)));
+        }
+        Some(true)
+    } else {
+        None
+    };
     record_system(app, ctx, "system.update_done", json!({"branch": branch, "from": old_head, "to": new_head, "files": changed.len(), "installed": installed}))?;
     drop(_guard);
     let scheduled = if restart { schedule_restart(app) } else { false };

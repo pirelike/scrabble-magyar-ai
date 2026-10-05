@@ -334,7 +334,13 @@ fn mailbox(address: &str, name: &str) -> Result<Mailbox, MailError> {
 
 fn build_message(cfg: &MailConfig, to: &str, subject: &str, body: Body) -> Result<Message, MailError> {
     let to_box = to.parse::<Mailbox>().map_err(|_| MailError::new("recipient", format!("érvénytelen címzett: {to}")))?;
-    let builder = Message::builder().from(mailbox(&cfg.from_address, &cfg.from_name)?).to(to_box).subject(subject.replace(['\r', '\n'], " "));
+    let domain = cfg.from_address.rsplit_once('@').map(|(_, d)| d.trim()).filter(|d| !d.is_empty()).unwrap_or("localhost");
+    let message_id = format!("<{}@{}>", crate::util::token_urlsafe(18), domain);
+    let builder = Message::builder()
+        .from(mailbox(&cfg.from_address, &cfg.from_name)?)
+        .to(to_box)
+        .subject(subject.replace(['\r', '\n'], " "))
+        .message_id(Some(message_id));
     let message = match body {
         Body::Plain(text) => builder.header(ContentType::TEXT_PLAIN).body(text),
         Body::Alternative(text, html) => builder.multipart(
