@@ -251,6 +251,16 @@ Ugyanazon a gépen (4 mag), ugyanarról a mintaadatbázisról (400 felhasználó
 | `scripts/perf.sh` | Teljesítményteszt a Python és a Rust verzió között (`docs/PERFORMANCE.md`) |
 | `target/release/engine_duel` | A robot párharca egy külső Scrabble motorral (`cargo build --release --features engine-duel --bin engine_duel`; leírás és eredmények: [docs/ENGINE_DUEL.md](docs/ENGINE_DUEL.md)) |
 
+
+### A robot egy külső Scrabble motorral szemben
+
+A 10. fokozatú robotot egy független motorral (a `scrabble` crate vendorolt, a magyar ábécéhez kiszélesített változata)
+vetettük össze, azonos szabályokkal és szószedettel, tükrözött játékpárokban (400 pár). A motor a mi magyar
+maradék-értékeinkkel statikus kereséssel **+16,0 ± 2,6** ponttal veri a robotot játékonként, pontos végjátékkal **+20,1**,
+gyors szimulációval **+38,2**, alap szimulációval **+44,6 ± 2,6** (71% nyerési arány; 22 mp processzoridő egy játékra a
+robot 0,13 mp-ével szemben). Az éles robottal (teljes szótárból vett keresztszavakkal) szemben a motor előnye +14,2
+± 3,7. Módszer, kontrollok és korlátok: [docs/ENGINE_DUEL.md](docs/ENGINE_DUEL.md).
+
 ---
 
 ## Projekt struktúra / Project Structure
