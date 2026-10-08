@@ -1,0 +1,28 @@
+# systemd egység az otthoni szerverhez: másold a /etc/systemd/system/ mappába, majd
+#   sudo systemctl daemon-reload && sudo systemctl enable --now scrabble
+#
+# Feltételezés: a repo a /opt/scrabble mappában van, lefordítva (`cargo build --release`), a futtató felhasználó
+# `scrabble`. A beállítások a /opt/scrabble/.env fájlba kerülnek (lásd .env.example).
+[Unit]
+Description=Magyar Scrabble
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=scrabble
+WorkingDirectory=/opt/scrabble
+# --no-tunnel: csak a helyi hálózaton / saját fordított proxy mögött; tunnellel az argumentum elhagyható
+ExecStart=/opt/scrabble/target/release/scrabble --no-tunnel
+Restart=on-failure
+RestartSec=3
+
+# Védelem: csak az adatbázis és a mentések írhatók
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/scrabble
+
+[Install]
+WantedBy=multi-user.target

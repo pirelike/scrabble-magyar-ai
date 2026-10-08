@@ -2,7 +2,9 @@
 
 **Hungarian Scrabble** — Online multiplayer word game with full Hungarian letter support.
 
-Webes magyar Scrabble játék online multiplayer támogatással. Flask + Socket.IO backend, vanilla JS frontend.
+Webes magyar Scrabble játék online multiplayer támogatással. **Rust** backend (axum + Socket.IO, SQLite), vanilla JS frontend — egyetlen, könnyen futtatható program, otthoni szerverre is: kis memória, gyors indulás, külső szolgáltatás nélkül.
+
+> A korábbi Python (Flask) változat a `python-final` ágon található. A Rust verzió ugyanazt a HTTP / Socket.IO protokollt és ugyanazt az SQLite sémát használja (a meglévő `scrabble.db` változtatás nélkül folytatható), a böngészős kliens változatlan. Mérések: [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
 
 ---
 
@@ -11,9 +13,8 @@ Webes magyar Scrabble játék online multiplayer támogatással. Flask + Socket.
 ```bash
 git clone <repo-url>
 cd scrabble
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt    # Linux / macOS
-.venv/bin/python3 server.py --no-tunnel      # Start server
+cargo build --release                  # egyszer; Rust 1.85+ (https://rustup.rs)
+target/release/scrabble --no-tunnel    # a szerver indítása
 ```
 
 Open http://localhost:5000 in your browser.
@@ -67,48 +68,21 @@ Open http://localhost:5000 in your browser.
 
 ### Követelmények / Requirements
 
-- **Python 3.10+**
-- **pip** (Python csomagkezelő)
+- **Rust 1.85+** (edition 2024) — telepítés: <https://rustup.rs>; a SQLite beépítve (bundled) fordul, ehhez C fordító kell (Linuxon `build-essential` / `gcc`, macOS-en az Xcode parancssori eszközök, Windowson a Visual Studio Build Tools)
 - Opcionális: `cloudflared` (Cloudflare tunnel-hez, publikus URL-hez — lásd lent)
+- Csak a teszteléshez: `git`, opcionálisan `node` (a kliens-tesztek) és Playwright + Chromium (a böngészős admin teszt)
 
-### Linux
-
-```bash
-git clone <repo-url>
-cd scrabble
-
-# Virtual environment létrehozása és függőségek telepítése
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-```
-
-A `dict/` mappában lévő beágyazott magyar szótár automatikusan működik.
-
-### Windows
-
-```powershell
-git clone <repo-url>
-cd scrabble
-
-# Virtual environment létrehozása és függőségek telepítése
-python -m venv .venv
-.venv\Scripts\pip install -r requirements.txt
-```
-
-A magyar szótár fájlok (`hu_HU.dic`, `hu_HU.aff`) a repó `dict/` mappájában vannak, amit a program automatikusan megtalál; semmilyen rendszercsomag nem kell hozzá.
-
-A `dict/hu_attested.txt` a nyelvtanilag lehetséges, de gyakran értelmetlen alakok (pl. melléknév + birtokos személyjel, „-ék”, „-ul/-ül” főnéven) közül a ténylegesen használtakat sorolja fel; a szótár ezeket a csoportokat csak a listán szereplő alakokkal fogadja el. Forrása Hermit Dave [FrequencyWords](https://github.com/hermitdave/FrequencyWords) gyakorisági listája (OpenSubtitles 2018, magyar), ezért a fájl CC BY-SA 4.0 licencű. Újraépítés: `python tools/build_attested.py hu_full.txt`.
-
-### macOS
+### Fordítás
 
 ```bash
 git clone <repo-url>
 cd scrabble
-
-# Homebrew-vel ha szükséges: brew install python3
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+cargo build --release          # target/release/scrabble (+ a karbantartó eszközök)
 ```
+
+Linuxon, macOS-en és Windowson ugyanígy (Windowson: `target\release\scrabble.exe`). A program a mappájában keresi a `web/` (kliens) és a `dict/` (szótár) mappát; ezek a repóban vannak, rendszercsomag nem kell hozzá. Másik helyről futtatva a `SCRABBLE_BASE_DIR` környezeti változóval adható meg a mappa.
+
+A `dict/hu_attested.txt` a nyelvtanilag lehetséges, de gyakran értelmetlen alakok (pl. melléknév + birtokos személyjel, „-ék”, „-ul/-ül” főnéven) közül a ténylegesen használtakat sorolja fel; a szótár ezeket a csoportokat csak a listán szereplő alakokkal fogadja el. Forrása Hermit Dave [FrequencyWords](https://github.com/hermitdave/FrequencyWords) gyakorisági listája (OpenSubtitles 2018, magyar), ezért a fájl CC BY-SA 4.0 licencű. Újraépítés: `target/release/build_attested hu_full.txt`.
 
 ---
 
@@ -117,25 +91,18 @@ python3 -m venv .venv
 ### Helyi hálózat (LAN only)
 
 ```bash
-# Linux / macOS
-.venv/bin/python3 server.py --no-tunnel
-
-# Windows
-.venv\Scripts\python server.py --no-tunnel
+scripts/run.sh --no-tunnel                  # szükség esetén előbb fordít
+# vagy: target/release/scrabble --no-tunnel   (Windows: target\release\scrabble.exe --no-tunnel)
 ```
 
 Böngészőben: **http://localhost:5000**
 
-A szerver gevent WSGI-t használ websocket támogatással (production-ready). A `PORT` környezeti változóval a port módosítható (alapértelmezett: 5000).
+A `PORT` környezeti változóval (vagy a `.env` fájlban) a port módosítható (alapértelmezett: 5000).
 
 ### Publikus URL (Cloudflare Tunnel)
 
 ```bash
-# Linux / macOS
-.venv/bin/python3 server.py
-
-# Windows
-.venv\Scripts\python server.py
+scripts/run.sh                              # vagy: target/release/scrabble
 ```
 
 Ha a `cloudflared` telepítve van, a szerver indításakor automatikusan elindul a tunnel:
@@ -206,33 +173,39 @@ brew install cloudflared
 
 ## Környezeti változók / Environment Variables
 
-A szerver opcionális környezeti változókat olvas. Egyik sem kötelező — minden alapértelmezéssel működik.
+A szerver opcionális környezeti változókat olvas. Egyik sem kötelező — minden alapértelmezéssel működik. Minta: `.env.example`.
 
 | Változó | Alapértelmezett | Leírás |
 |---|---|---|
 | `PORT` | `5000` | Szerver port |
-| `SECRET_KEY` | *(random generált)* | Flask session kulcs |
+| `ADMIN_EMAILS` | *(üres: nincs admin panel)* | Az admin panelhez kötött e-mail címek (vesszővel elválasztva) |
+| `SECRET_KEY` | *(random generált)* | Az aláírt tokenek (socket-token) kulcsa; nélküle minden induláskor új kulcs készül |
 | `SCRABBLE_DB_PATH` | `scrabble.db` | SQLite adatbázis útvonal |
+| `SCRABBLE_BACKUP_DIR` | `backups` | Az admin panelről / ütemezve készült mentések mappája |
+| `SCRABBLE_BASE_DIR` | *(futtatás helye / a program környéke)* | A program mappája (`web/`, `dict/`) |
 | `SMTP_HOST` | `smtp.gmail.com` | SMTP szerver |
-| `SMTP_PORT` | `587` | SMTP port |
+| `SMTP_PORT` | `587` | SMTP port (STARTTLS) |
 | `SMTP_USER` | *(üres)* | SMTP felhasználó |
 | `SMTP_PASSWORD` | *(üres)* | SMTP jelszó (app password) |
 | `SMTP_FROM` | *(üres)* | Feladó email cím |
 | `VAPID_PRIVATE_KEY` | *(első induláskor generált, az adatbázisban marad)* | Web Push VAPID privát kulcs (PEM, sortörések `\n`-nel; vagy a `web-push generate-vapid-keys` base64url kulcsa) |
 | `VAPID_SUBJECT` | `mailto:SMTP_FROM` | Web Push `sub` mező (`mailto:` vagy `https:` cím) |
+| `ADMIN_SESSION_IDLE_MINUTES`, `ADMIN_SUDO_MINUTES`, `ADMIN_IP_ALLOWLIST` | 30, 10, *(üres)* | Admin munkamenet tétlenségi ideje, sudo mód hossza, opcionális IP-engedélylista |
+| `WORD_REJECT_THRESHOLD` | `1` | Ennyivel kell több „nem szó” szavazat a „rendes szó”-nál a szó kizárásához (szótár-építő) |
 
 Ha az SMTP változók nincsenek beállítva, a verifikációs kódok a szerver konzolra íródnak ki (fejlesztéshez elegendő).
-Az admin panelen (Rendszer → „Levelező szerver (SMTP)”) a levelező szerver újraindítás nélkül is beállítható és kipróbálható; az ott mentett beállítás erősebb a környezeti változóknál. Ugyanott a Rendszer oldalon a program GitHubról is frissíthető (a legfrissebb vagy egy megadott ágra).
+Az admin panelen (Rendszer → „Levelező szerver (SMTP)”) a levelező szerver újraindítás nélkül is beállítható és kipróbálható; az ott mentett beállítás erősebb a környezeti változóknál. Ugyanott a Rendszer oldalon a program GitHubról is frissíthető (a legfrissebb vagy egy megadott ágra; ha a Rust forrás változott, a `cargo build --release` is lefut), majd újraindítható.
 
-A Web Push a `pywebpush` csomagot használja (a `requirements.txt` tartalmazza); ha nincs telepítve, az értesítések kikapcsolnak, a játék többi része változatlanul működik. Az értesítésekhez a böngészőnek HTTPS (vagy `localhost`) kell; iPhone-on az alkalmazást előbb a Főképernyőhöz kell adni.
+A Web Push saját megvalósítás (külső csomag nem kell); az értesítésekhez a böngészőnek HTTPS (vagy `localhost`) kell; iPhone-on az alkalmazást előbb a Főképernyőhöz kell adni.
 
-**Gépre jellemző beállítások (pl. másik `PORT`)**: a program mappájában lévő `.env` fájlt a szerver indításkor magától beolvassa (soronként `KULCS=érték`, opcionális `export`; a ténylegesen beállított környezeti változó erősebb). A fájl nincs a git tárban, ezért az admin panelről indított GitHubos frissítés sosem írja felül. **Ne írd át a portot a `server.py`-ban**: a követett fájl módosítása blokkolja a frissítést.
+**Gépre jellemző beállítások (pl. másik `PORT`)**: a program mappájában lévő `.env` fájlt a szerver indításkor magától beolvassa (soronként `KULCS=érték`, opcionális `export`; a ténylegesen beállított környezeti változó erősebb). A fájl nincs a git tárban, ezért az admin panelről indított GitHubos frissítés sosem írja felül.
 
 <details>
 <summary>Példa .env fájl</summary>
 
 ```bash
 PORT=8080
+ADMIN_EMAILS=te@example.com
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=yourscrabble@gmail.com
@@ -244,46 +217,78 @@ SMTP_FROM=yourscrabble@gmail.com
 
 ---
 
+## Üzemeltetés otthoni szerveren / Home server
+
+- **Folyamatos futtatás**: a `deploy/scrabble.service` egy kész systemd egység (`/opt/scrabble`, `.env` a beállításokhoz); `sudo systemctl enable --now scrabble`.
+- **Fordított proxy** (nginx / Caddy): a websocket (`Upgrade`) átengedése és a `X-Forwarded-For` fejléc átadása kell; a szerver a kliens IP-jét csak a helyi (loopback) proxy fejlécéből fogadja el. Cloudflare tunnellel mindez magától működik.
+- **Frissítés**: `git pull && cargo build --release`, majd újraindítás — vagy az admin panelen Rendszer → „Frissítés GitHubról” (fast-forward, szükség esetén újrafordítás, visszagörgetés hiba esetén, majd újraindítás).
+- **Mentés**: az adatbázis egyetlen fájl (`scrabble.db`, WAL módban); az admin panelről kérhető konzisztens mentés / letöltés, és beállítható napi automatikus mentés (`backup_daily`, `backup_keep`).
+- **Régi adatbázis**: a Python verzió `scrabble.db` fájlja változtatás nélkül használható (a migrációk futnak indításkor).
+
+### Teljesítmény a Python verzióhoz képest
+
+Ugyanazon a gépen (4 mag), ugyanarról a mintaadatbázisról (400 felhasználó, 4000 játék) indított két szerver összevetése; a teljes táblázat, a módszer és az újrafuttatás: [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
+
+| Mérőszám | Python | Rust |
+|---|---|---|
+| Indulás az első kérésig | 7,3 mp | 1,9 mp |
+| Memória üresjáratban | 164 MiB | 66 MiB |
+| Teljes játékok (szoba + passzok + mentés) | 17,5 játék/mp | 101,5 játék/mp |
+| Chat körülfordulás p99 | 42,9 ms | 3,4 ms |
+| Szó-ellenőrzés (8 szó) | 130 kérés/mp | 1432 kérés/mp |
+| Bejelentkezés (PBKDF2) | 12 kérés/mp | 105 kérés/mp |
+| Robot-aréna (bot–bot játékok, egy szál) | 32,1 mp | 7,7 mp |
+
+---
+
+## Karbantartó eszközök / Tools
+
+| Eszköz | Mire jó |
+|---|---|
+| `target/release/word_review` | Szótár-építő tömeges párja: `sample` (véletlen szavak átnézésre), `apply` (elutasított szavak felvétele a `dict/hu_rejected.txt`-be), `stats` |
+| `target/release/bot_arena` | A robot-fokozatok erejének mérése bot–bot játékokkal (`ladder`, `match`, `adapt`) |
+| `target/release/build_attested` | A `dict/hu_attested.txt` előállítása szógyakorisági listából |
+| `scripts/perf.sh` | Teljesítményteszt a Python és a Rust verzió között (`docs/PERFORMANCE.md`) |
+| `target/release/engine_duel` | A robot párharca egy külső Scrabble motorral (`cargo build --release --features engine-duel --bin engine_duel`; leírás és eredmények: [docs/ENGINE_DUEL.md](docs/ENGINE_DUEL.md)) |
+
+
+### A robot egy külső Scrabble motorral szemben
+
+A 10. fokozatú robotot egy független motorral (a `scrabble` crate vendorolt, a magyar ábécéhez kiszélesített változata)
+vetettük össze, azonos szabályokkal és szószedettel, tükrözött játékpárokban (400 pár). A motor a mi magyar
+maradék-értékeinkkel statikus kereséssel **+16,0 ± 2,6** ponttal veri a robotot játékonként, pontos végjátékkal **+20,1**,
+gyors szimulációval **+38,2**, alap szimulációval **+44,6 ± 2,6** (71% nyerési arány; 22 mp processzoridő egy játékra a
+robot 0,13 mp-ével szemben). Az éles robottal (teljes szótárból vett keresztszavakkal) szemben a motor előnye +14,2
+± 3,7. Módszer, kontrollok és korlátok: [docs/ENGINE_DUEL.md](docs/ENGINE_DUEL.md).
+
+---
+
 ## Projekt struktúra / Project Structure
 
 ```
-server.py          — Flask + Socket.IO (gevent) szerver, lobby/szoba kezelés, Socket.IO event handlerek, robotlépések, napi feladvány, levelezős játékok, push
-game.py            — Játéklogika (Game osztály), körök, pontozás, challenge rendszer, kör időlimit, lépéstörténet, előnézet
-player.py          — Player osztály (id, név, kéz, pontszám, disconnected állapot, robot jelző)
-ai_player.py       — Robot ellenfél: szókincs (tőszavak + gyakori ragozott alakok), lépésgenerátor, 10 fokozat + „igazodik hozzám”, tippek
-achievements.py    — Kitüntetések kiértékelése
-analysis.py        — Játékelemzés (legjobb lépés / kint maradt pont lépésenként)
-async_games.py     — Levelezős játék felállítása, lista
-daily.py           — Napi feladvány előállítása és eredmény-rögzítés
-elo.py             — ELO értékszám
-practice.py        — Szókvíz, betűvadász / bingó-edző, rövid szavak listája
-push_service.py    — Web Push (VAPID, feliratkozások, küldés)
-board.py           — 15×15 tábla, premium mezők, szóelhelyezés validáció és pontozás
-dictionary.py      — Magyar szótár-ellenőrzés (beágyazott), tömeges ellenőrzés, javaslatok
-affix_checker.py   — Hunspell-szerű, függőségmentes szóellenőrző a dict/hu_HU fájlokhoz (ragozott alakok előállításával)
-tiles.py           — Magyar betűkészlet (100 zseton), TileBag osztály, szó → zsetonok felbontás
-challenge.py       — Challenge (megtámadás) logika, szavazási állapotgép
-room.py            — Room osztály (szoba állapot, owner, chat, timer kezelés, megfigyelők)
-state.py           — ServerState singleton (szobák, játékosok, tokenek, reconnect tracking, megfigyelők)
-routes.py          — Flask blueprint-ek: auth, game, publikus API (ranglista, szótár), index, PWA végpontok
-config.py          — Konfigurációs konstansok (SMTP, auth, DB, rate limit)
-auth.py            — SQLite DB, regisztráció, login, session, jelszó hash, játék mentés
-email_service.py   — Email verifikációs kód küldés (SMTP / konzol fallback)
-rate_limiter.py    — Generikus rate limiter (Socket.IO + HTTP)
-socket_auth.py     — Aláírt socket-token a Socket.IO identitás igazolásához
-tunnel.py          — Cloudflare tunnel subprocess kezelés
-dict/              — Beágyazott hu_HU hunspell szótár fájlok + hu_attested.txt (használati lista, CC BY-SA 4.0)
-templates/
-  index.html       — Egyoldalas UI (auth, lobby, várakozó szoba, játék, profil, replay)
-  sw.js            — Service worker (Jinja sablon: a verzió a kliens fájlok módosítási idejéből jön)
-static/
-  app.js           — Kliens logika, drag & drop, pinch-to-zoom, Socket.IO, auth, téma, hang, megfigyelés, ranglista, szótár
-  i18n.js          — Fordító (t(), data-i18n attribútumok, szerverüzenet-fordítás)
-  i18n-data.js     — Fordítások (hu / en) — szigorú JSON, a tesztek is ezt olvassák
-  style.css        — Stílusok, sötét/világos téma (Slate+Gold paletta), reszponzív layout, animációk
-  manifest.webmanifest, offline.html, icons/ — PWA: manifest, kapcsolat nélküli oldal, ikonok
-tests/             — Tesztek (pytest, 1360 teszt)
+Cargo.toml, build.rs   — Rust projekt (szerver + eszközök + mérés)
+src/                   — a Rust forrás, témakörönként:
+  engine/              —   játékszabályok: zsetonok, tábla, játékmenet, játékosok, megtámadás
+  robot/               —   robot ellenfél (lépéskeresés, 10 fokozat, „igazodik hozzám”), napi feladvány, játékelemzés
+  words/               —   hu_HU szóellenőrző (ragozott alakokkal), szótár, gyakorló módok, szótár-építő
+  accounts/            —   jelszó-hash, socket-token, értékszám (ELO), kitüntetések
+  services/            —   levelezés (SMTP), Web Push, Cloudflare tunnel, forgalomkorlát
+  db/                  —   SQLite réteg (séma: schema.sql)
+  server/              —   HTTP útvonalak, Socket.IO események, szobák és szerverállapot, robotlépések
+  admin/               —   admin panel (logika, őr, végpontok)
+  bin/                 —   karbantartó eszközök (word_review, bot_arena, build_attested)
+web/
+  static/              —   nyilvános kliens: app.js, i18n, style.css, PWA (manifest, ikonok, offline oldal)
+  templates/           —   index.html, admin.html, sw.js (service worker)
+  admin/               —   az admin felület kliense (csak az őrzött /admin útvonalon érhető el)
+dict/                  — beágyazott hu_HU szótár (hu_HU.aff / .dic), használati lista (hu_attested.txt), elutasított szavak
+tests/                 — integrációs tesztek (*.rs), segédek, aranyfájlok (golden/), összevetés a régi szerverrel (compat/)
+benches/compare.rs     — teljesítményteszt a Python és a Rust verzió között
+scripts/, deploy/      — indító és mérő szkriptek, systemd egység
+docs/                  — ADMIN_PANEL.md (specifikáció), PERFORMANCE.md (mérések)
 ```
+
+A részletes leírás a `CLAUDE.md`-ben van.
 
 ---
 
@@ -317,7 +322,7 @@ A játék kiemelt figyelmet fordít a multiplayer sessionök stabilitására:
 - A tippek **korlátozottak**: szoba létrehozásakor (lobby → Új szoba → *Tippek száma*) kikapcsolhatók, vagy 1 / 3 (alapértelmezett) / 5 / 10 tipp engedélyezhető játékonként. A gomb a hátralévő számot mutatja (`Tipp (2)`), kikapcsolt tippnél nem jelenik meg.
 - A robotos játékok a profil statisztikájában szerepelnek, de a **ranglistában és az értékszámban nem**.
 - Emberi néző vagy játékos nélkül a robotok nem játszanak egymás ellen.
-- Az erősség újramérése: `python tools/bot_arena.py ladder -n 24 -j 4`; az „igazodó” robot ellenőrzése: `python tools/bot_arena.py adapt 5`.
+- Az erősség újramérése: `target/release/bot_arena ladder -n 24 -j 4`; az „igazodó” robot ellenőrzése: `target/release/bot_arena adapt 5`.
 
 ## Megfigyelő mód / Spectating
 
@@ -391,43 +396,24 @@ Támogatott böngészőben a lobby felső sávjában megjelenik a **Telepítés*
 ## Tesztek / Tests
 
 ```bash
-.venv/bin/python -m pytest tests/ -v
+cargo test                        # minden teszt
+cargo test --test admin_users     # egy fájl
+cargo clippy --all-targets        # lint
 ```
 
-| Fájl | Tesztek | Lefedettség |
-|---|---|---|
-| `tests/test_auth.py` | 63 | DB, user CRUD, jelszó hash, verifikációs kódok, session kezelés |
-| `tests/test_game_logic.py` | 160 | TileBag, Board, Player, Game, Challenge, kör időlimit |
-| `tests/test_server_auth.py` | 52 | HTTP auth route-ok, cookie flow |
-| `tests/test_server_socket.py` | 68 | Socket.IO eventek, lobby, szobák, challenge, chat, owner kilépés |
-| `tests/test_challenge.py` | 17 | Challenge szavazásos rendszer |
-| `tests/test_dictionary.py` | 99 | Szótár-ellenőrzés (valódi szótárral: kisbetűs keresés, tulajdonnevek, rövidítések, értelmetlen szavak pl. SALYT), elérhetőség, javaslatok, tábla-validáció |
-| `tests/test_affix_checker.py` | 46 | Beépített szóellenőrző: toldalékok, előtagok, folytatási osztályok, speciális jelzők, a valódi szótár (hunspellel összevetve) |
-| `tests/test_email_service.py` | 4 | Email küldés |
-| `tests/test_room.py` | 12 | Room osztály |
-| `tests/test_friends.py` | 27 | Barát CRUD, kérések, felhasználókeresés, szobameghívó, online státusz |
-| `tests/test_timer_and_replay.py` | 30 | Körszámláló UI, kör időlimit, replay perzisztencia |
-| `tests/test_regressions.py` | 82 | Kódátvizsgálás során talált hibák regressziós tesztjei |
-| `tests/test_ai_player.py` | 82 | Robot: szókincs (ragozott alakok), lépésgenerátor, nehézségi szintek, tipp |
-| `tests/test_bots.py` | 114 | Robotok a játékmodellben és a szerveren, lépéstörténet, előnézet, tipp |
-| `tests/test_spectator.py` | 30 | Megfigyelő mód, élő játékok listája |
-| `tests/test_public_api.py` | 52 | Ranglista (DB + route), szótár-ellenőrző API, PWA végpontok |
-| `tests/test_tiles_dictionary.py` | 30 | Zseton-felbontás, tömeges szótár-ellenőrzés, javaslatok |
-| `tests/test_i18n.py` | 27 | Fordítások teljessége (kulcsok, helyőrzők, szerverüzenetek), a böngészős fordító futtatása node-ban |
-| `tests/test_frontend_consistency.py` | 23 | Kliens ↔ szerver összhang: konstansok, elem-azonosítók, Socket.IO események, JS szintaxis |
+Az integrációs tesztek valódi szervert indítanak ideiglenes adatbázissal, és valódi HTTP / Socket.IO kliensekkel beszélnek vele (az e-mail és a Web Push is valódi, helyi „szolgáltatásra” megy). A node-ot / Playwrightot igénylő tesztek ezek hiányában kimaradnak.
 
-| `tests/test_adaptive_bot.py` | 40 | „Igazodik hozzám” robot |
-| `tests/test_achievements.py` | 27 | Kitüntetések |
-| `tests/test_elo.py` | 27 | ELO értékszám, értékszám szerinti ranglista |
-| `tests/test_replay_share.py` | 11 | Megosztható visszajátszás |
-| `tests/test_analysis.py` | 25 | Játékelemzés |
-| `tests/test_daily.py` | 50 | Napi feladvány és ranglistája |
-| `tests/test_practice.py` | 47 | Szókvíz, betűvadász / bingó, rövid szavak |
-| `tests/test_practice_client.py` | 15 | A gyakorló felület kliensoldali logikája (node) |
-| `tests/test_push.py` | 44 | Web Push |
-| `tests/test_async_games.py` | 56 | Levelezős játék |
+| Terület | Tesztek |
+|---|---|
+| Játéklogika, adatbázis, auth, HTTP API | 119 |
+| Socket.IO: szobák, újracsatlakozás, megfigyelés, visszajátszás, barátok, robotok | 163 |
+| Levelezős játék, napi feladvány, kétjegyű betűk, gyakorlás, szótár-építő, push, e-mail | 258 |
+| Admin panel (hozzáférés, napló, felhasználók, szobák, játékok, szótár, kommunikáció, rendszer, moderáció, levelezés, frissítés, böngészős próba) | 500 |
+| Kliens: fordítások, admin kliens, kliens ↔ szerver összhang, node-os logika | 104 |
+| Eszközök, aranyfájlok (egyezés a Python verzióval) | 30 |
+| Egységtesztek a modulokban | 96 |
 
-**Összesen: 1360 teszt** (a node-ot igénylő tesztek node nélkül kimaradnak)
+**Összesen: 1270 teszt**
 
 ---
 
@@ -441,20 +427,23 @@ A szótár a `dict/hu_HU.aff` és `dict/hu_HU.dic` fájlokból töltődik be, k�
 </details>
 
 <details>
-<summary><strong>gevent telepítési hiba</strong></summary>
+<summary><strong>Fordítási hiba (cargo build)</strong></summary>
 
-Egyes rendszereken a `gevent` fordítási hibát adhat. Próbáld:
-```bash
-pip install --upgrade pip setuptools wheel
-pip install gevent gevent-websocket
-```
+Frissítsd a Rust toolchaint (`rustup update`; legalább 1.85 kell), és ellenőrizd, hogy van C fordító (a beépített SQLite-hoz). Linuxon: `sudo apt install build-essential`.
+
+</details>
+
+<details>
+<summary><strong>„A program nem találja a web/ vagy a dict/ mappát”</strong></summary>
+
+A program a futtatás mappájában, a futtatható fájl környékén, végül a fordítás helyén keresi a `web/` és a `dict/` mappát. Máshonnan indítva add meg: `SCRABBLE_BASE_DIR=/út/a/repohoz target/release/scrabble`.
 
 </details>
 
 <details>
 <summary><strong>A szótár nem ismeri fel a szavakat</strong></summary>
 
-Ellenőrizd, hogy a `dict/hu_HU.dic` és `dict/hu_HU.aff` fájlok megvannak a projekt mappában. Ezek a beágyazott szótár fájlok, amelyeket a program automatikusan használ.
+Ellenőrizd, hogy a `dict/hu_HU.dic` és `dict/hu_HU.aff` fájlok megvannak a program mappájában. Ezek a beágyazott szótár fájlok, amelyeket a program automatikusan használ.
 
 </details>
 

@@ -1,5 +1,19 @@
 # Admin panel — részletes specifikáció (utasítás a megvalósításhoz)
 
+> **Rust átírás.** Ez a specifikáció a Python (Flask) verzióhoz készült, a viselkedése (útvonalak, JSON, naplózás,
+> jogosultságok) változatlanul érvényes. A fájlnevek megfeleltetése a Rust forrásnak:
+>
+> | Python | Rust |
+> |---|---|
+> | `admin.py` (napló, munkamenet, segédek) | `src/admin/mod.rs`, `audit.rs`, `session.rs` |
+> | `admin_users.py`, `admin_live.py`, `admin_games.py`, `admin_dict.py`, `admin_comm.py`, `admin_stats.py`, `admin_mod.py`, `admin_security.py`, `admin_system.py`, `admin_mail.py`, `admin_update.py` | `src/admin/users.rs`, `live.rs`, `games.rs`, `dict.rs`, `comm.rs`, `stats.rs`, `moderation.rs`, `security.rs`, `system.rs`, `mail.rs`, `update.rs` |
+> | `admin_routes.py`, `admin_api_*.py` | `src/admin/routes.rs` (őr, jogosultsági szintek), `src/admin/api/*.rs` (végpontok) |
+> | `settings.py` | `src/settings.rs` |
+> | `templates/admin.html`, `admin_assets/` | `web/templates/admin.html`, `web/admin/` |
+> | `tests/test_admin_*.py` | `tests/admin_*.rs`, `tests/frontend_admin.rs`, `tests/admin_browser.rs` |
+>
+> A `config.py` / `auth.py` / `server.py` említései a `src/config.rs`, `src/db/`, `src/server/` fájlokra vonatkoznak.
+
 > Ez a dokumentum a megvalósítás utasítása. Aki az admin panelt elkészíti (ember vagy Claude),
 > ezt kövesse pontról pontra. A meglévő konvenciók (CLAUDE.md) érvényesek: DOM API `innerHTML`
 > helyett, `data-i18n` / `t()` minden szövegre (hu **és** en), az Apple HIG ihletésű design rendszer

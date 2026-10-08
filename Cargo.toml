@@ -1,0 +1,92 @@
+[package]
+name = "scrabble"
+version = "0.1.0"
+edition = "2024"
+
+# A külső motor (third_party/pg-scrabble) tagja a munkaterületnek: a tesztjei `cargo test -p pg-scrabble --all-features`
+# paranccsal futnak, de a sima `cargo build` / `cargo test` csak a szervert fordítja.
+[workspace]
+members = ["third_party/pg-scrabble"]
+
+[features]
+# A robot és egy független külső Scrabble motor párharca (src/engine_duel/, src/bin/engine_duel.rs, docs/ENGINE_DUEL.md)
+engine-duel = ["dep:pg-scrabble"]
+
+[dependencies]
+aes-gcm = "0.11.1"
+axum = "0.8.9"
+base64 = "0.23.1"
+bytes = "1.12.1"
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+futures-util = "0.3.34"
+hex = "0.4.3"
+libc = "0.2"
+hkdf = "0.13.0"
+hmac = "0.13.0"
+http-body-util = "0.1.5"
+lettre = { version = "0.11.23", default-features = false, features = ["smtp-transport", "builder", "hostname", "rustls-tls"] }
+mime_guess = "2.0.5"
+once_cell = "1.21.4"
+p256 = { version = "0.14.0", features = ["ecdsa", "ecdh", "pem"] }
+parking_lot = "0.12.5"
+pbkdf2 = "0.13.0"
+rand = "0.10.3"
+regex = "1.13.1"
+rusqlite = { version = "0.40.2", features = ["bundled", "functions", "backup"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_urlencoded = "0.7"
+similar = "2"
+serde_json = { version = "1.0.151", features = ["preserve_order", "float_roundtrip"] }
+sha2 = "0.11.0"
+socketioxide = { version = "0.18.7", features = ["state"] }
+subtle = "2.6.1"
+tokio = { version = "1.53.2", features = ["full"] }
+tower = { version = "0.5.3", features = ["util"] }
+tower-http = { version = "0.7.1", features = ["fs", "set-header"] }
+unicode-normalization = "0.1.25"
+ureq = "3.4.2"
+pg-scrabble = { path = "third_party/pg-scrabble", optional = true, default-features = false, features = ["std", "ai"] }
+
+# Kisebb tesztfájlok és gyorsabb fordítás: a hibakereséshez elég a sorinformáció
+[profile.dev]
+debug = "line-tables-only"
+
+# A függőségek a fejlesztői és a teszt-fordításban is optimalizáltak (jelszó-hash, szótár-keresés)
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+panic = "unwind"
+strip = true
+
+[dev-dependencies]
+tokio-tungstenite = "0.30.0"
+
+# A párharc a `engine-duel` kapcsolóval fordul: `cargo run --release --features engine-duel --bin engine_duel -- help`
+[[bin]]
+name = "engine_duel"
+path = "src/bin/engine_duel.rs"
+required-features = ["engine-duel"]
+
+[[test]]
+name = "engine_duel"
+path = "tests/engine_duel.rs"
+required-features = ["engine-duel"]
+
+# Teljesítményteszt a Python és a Rust verzió között: `cargo bench --bench compare` (lásd scripts/perf.sh)
+[[bench]]
+name = "compare"
+harness = false
+
+# A szerkezeti jellegű stílusfigyelmeztetések tudatosan kikapcsoltak: a hosszú paraméterlista és az összetett
+# típus a JSON-hoz közeli kód természetes velejárója, a teszteknél a soros zár (SERIAL) szándékosan marad kézben.
+[lints.clippy]
+type_complexity = "allow"
+too_many_arguments = "allow"
+result_large_err = "allow"
+should_implement_trait = "allow"
+needless_range_loop = "allow"
+await_holding_lock = "allow"
+assertions_on_constants = "allow"
