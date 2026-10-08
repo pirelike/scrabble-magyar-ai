@@ -11,9 +11,10 @@ use crate::db::StoredMove;
 use crate::tiles::Tile;
 use serde_json::{Map, Value, json};
 
+/// 7: a szótár-építő gépi átnézésének kizárásai (2595 szó) után a robot szókincse változott.
 /// 6: a kétjegyű betű csak a saját zsetonjával rakható ki (5: a szótár-építő második köre, 4: első kör, 3: a furcsa
 /// alakok szűrése)
-pub const ANALYSIS_VERSION: i64 = 6;
+pub const ANALYSIS_VERSION: i64 = 7;
 pub const SECONDS_PER_MOVE: f64 = 0.8;
 /// Ezek a lépések számítanak a játékos körének (az elutasított lerakás nem).
 const TURN_TYPES: [&str; 4] = ["place", "challenge_accept", "exchange", "pass"];
